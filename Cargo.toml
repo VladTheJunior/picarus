@@ -1,0 +1,104 @@
+[package]
+name = "picarus"
+version = "0.0.0-dev"
+edition = "2024"
+build = "build.rs"
+
+[package.metadata.winresource]
+OriginalFilename = "picarus.exe"
+LegalCopyright = "Copyright © VladTheJunior, 2026"
+FileDescription = "Interactive items viewer for Riders of Icarus"
+
+[dependencies.gpui]
+git = "https://github.com/zed-industries/zed"
+
+[dependencies.gpui_platform]
+git = "https://github.com/zed-industries/zed"
+
+[dependencies.gpui-component]
+git = "https://github.com/longbridge/gpui-component"
+
+[dependencies.gpui-component-macros]
+git = "https://github.com/longbridge/gpui-component"
+
+
+[dependencies.image-extras]
+version = "0.1.1"
+default-features = false
+features = ["dds"]
+
+[dependencies.image]
+version = "0.25.10"
+default-features = false
+
+[dependencies.rust-embed]
+version = "8.11.0"
+features = ["interpolate-folder-path"]
+
+[dependencies.tracing]
+version = "0.1.44"
+
+[dependencies.tracing-subscriber]
+version = "0.3.22"
+
+[dependencies.itertools]
+version = "0.15.0"
+
+[dependencies.zip]
+version = "8.6.0"
+
+[dependencies.fluent]
+version = "0.17.0"
+
+[dependencies.unic-langid]
+version = "0.9.6"
+features = ["macros"]
+
+[dependencies.tokio]
+version = "1.49.0"
+features = ["macros", "rt-multi-thread", "fs", "io-util", "time"]
+
+[dependencies.anyhow]
+version = "1.0.102"
+
+[dependencies.serde_json]
+version = "1.0.149"
+
+[dependencies.serde]
+version = "1.0.228"
+features = ["derive"]
+
+[dependencies.strum]
+version = "0.28.0"
+features = ["derive"]
+
+[dependencies.toml]
+version = "1.1.4"
+
+[dependencies.encoding_rs]
+version = "0.8.35"
+
+[dependencies.sys-locale]
+version = "0.3.2"
+
+[dependencies.indexmap]
+version = "2.13.0"
+features = ["rayon", "serde"]
+
+
+[build-dependencies]
+winresource = "0.1.30"
+vergen-gitcl = { version = "10.0.2", features = ["build", "cargo", "rustc"] }
+
+[profile.release]
+strip = true
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+
+[profile.dev]
+opt-level = 0
+incremental = true
+codegen-units = 256
