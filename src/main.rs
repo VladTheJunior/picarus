@@ -65,7 +65,7 @@ fn main() {
         gpui_component::init(cx);
         game_data_view::init(cx);
         Theme::global_mut(cx).apply_config(&dark_theme);
-        Theme::global_mut(cx).scrollbar_show = gpui_component::scroll::ScrollbarShow::Always;
+        Theme::global_mut(cx).scrollbar_mode = gpui_component::scroll::ScrollbarMode::Always;
 
         LanguageController::switch(settings.language);
         cx.set_global(settings);

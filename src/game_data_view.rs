@@ -5,20 +5,7 @@ use gpui::{
     uniform_list,
 };
 use gpui_component::{
-    ActiveTheme, Icon, IconName, InteractiveElementExt, Root, Sizable, StyledExt, TitleBar, WindowExt,
-    button::{Button, ButtonVariants},
-    combobox::Combobox,
-    h_flex,
-    input::{Input, InputState},
-    menu::{DropdownMenu, PopupMenuItem},
-    notification::NotificationType,
-    scroll::ScrollableElement,
-    select::SearchableVec,
-    spinner::Spinner,
-    status_bar::StatusBar,
-    switch::Switch,
-    tab::{Tab, TabBar},
-    v_flex,
+    ActiveTheme, Icon, IconName, InteractiveElementExt, Root, Sizable, StyledExt, TitleBar, WindowExt, button::{Button, ButtonVariants}, combobox::Combobox, h_flex, input::{Editor, EditorState, Input, InputState}, menu::{DropdownMenu, PopupMenuItem}, notification::NotificationType, scroll::ScrollableElement, select::SearchableVec, spinner::Spinner, status_bar::StatusBar, switch::Switch, tab::{Tab, TabBar}, v_flex,
 };
 
 use indexmap::{IndexMap, IndexSet};
@@ -160,7 +147,7 @@ pub struct GameDataView {
     tabs_scroll_handle: ScrollHandle,
     focus_handle: FocusHandle,
     debug: bool,
-    debug_preview: Entity<InputState>,
+    debug_preview: Entity<EditorState>,
     loading_status: Entity<GameDataLoadingStatus>,
     game_path: Entity<InputState>,
     preview: HashMap<SharedString, PreviewValues>,
@@ -206,7 +193,7 @@ impl GameDataView {
                     .default_value(Settings::global(cx).game_path.clone())
             }),
             loading_status: cx.new(|_| GameDataLoadingStatus::Weapon),
-            debug_preview: cx.new(|cx| InputState::new(window, cx).code_editor("json").multi_line(true)),
+            debug_preview: cx.new(|cx| EditorState::new("json", window, cx)),
         }
     }
 
@@ -859,7 +846,7 @@ impl Render for GameDataView {
                                     .justify_center()
                                     .gap_3()
                                     .items_center()
-                                    .child(Input::new(&self.game_path).disabled(true).w(px(300.)).suffix(
+                                    .child(Input::new(&self.game_path).readonly(true).w(px(300.)).suffix(
                                         Button::new("select-game-path").ghost().icon(IconName::FolderOpen).on_click(cx.listener(
                                             |_, _, window, cx| {
                                                 let receiver = cx.prompt_for_paths(PathPromptOptions {
@@ -1532,11 +1519,11 @@ impl Render for GameDataView {
                                                                 self.debug,
                                                                 |this| {
                                                                     this.child(
-                                                                        Input::new(&self.debug_preview)
+                                                                        Editor::new(&self.debug_preview)
                                                                             .font_family(cx.theme().mono_font_family.clone())
                                                                             .text_size(cx.theme().mono_font_size)
-                                                                            .disabled(true)
-                                                                            .border_0()
+                                                                            .readonly(true)
+                                                                            .bordered(false)
                                                                             .rounded_none()
                                                                             .size_full(),
                                                                     )
