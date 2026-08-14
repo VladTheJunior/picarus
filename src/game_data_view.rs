@@ -6,11 +6,11 @@ use gpui::{
 };
 use gpui_component::{
     ActiveTheme, Icon, IconName, InteractiveElementExt, Root, Sizable, StyledExt, TitleBar, WindowExt,
-    button::{Button, ButtonCustomVariant, ButtonVariants, DropdownButton},
+    button::{Button, ButtonVariants},
     combobox::Combobox,
     h_flex,
     input::{Input, InputState},
-    menu::{ContextMenuExt, DropdownMenu, PopupMenuItem},
+    menu::{DropdownMenu, PopupMenuItem},
     notification::NotificationType,
     scroll::ScrollableElement,
     select::SearchableVec,
@@ -22,12 +22,12 @@ use gpui_component::{
 };
 
 use indexmap::{IndexMap, IndexSet};
-use itertools::DuplicatesBy;
 use serde::Deserialize;
 
 use std::{
     collections::{BTreeSet, HashMap},
     ops::Range,
+    path::Path,
     rc::Rc,
     sync::Arc,
     time::Duration,
@@ -39,9 +39,8 @@ use crate::{
     assets::AppIcon,
     extensions::EnumNameExt,
     game_data::{
-        DataType, GameClass, GameData, Grade, Item, ItemEffect, ItemMinMaxEffect, ItemType, Quality,
+        DataType, GameClass, GameData, Grade, Item, ItemEffect, ItemMinMaxEffect, Quality,
         filters::{GameDataFilters, ItemEffectFilter},
-        item_option::ItemOption,
         item_set::ItemSet,
     },
     language::{LanguageController, t, t_v},
@@ -819,7 +818,24 @@ impl Render for GameDataView {
         let language = LanguageController::get_current_language();
         v_flex()
             .size_full()
-            .child(TitleBar::new().child("PICARUS"))
+            .child(
+                TitleBar::new().child(
+                    h_flex()
+                        .gap_1()
+                        .child("PICARUS")
+                        .when_some(option_env!("VERGEN_GIT_DESCRIBE"), |this, git_describe| {
+                            this.child("-").child(
+                                Button::new("button-github")
+                                    .occlude()
+                                    .text_color(cx.theme().foreground)
+                                    .link()
+                                    .small()
+                                    .label(git_describe)
+                                    .on_click(|_, _, cx| cx.open_url("https://github.com/VladTheJunior/picarus")),
+                            )
+                        }),
+                ),
+            )
             .when_else(
                 self.is_reading,
                 |this| {
@@ -881,6 +897,30 @@ impl Render for GameDataView {
                                                 let game_path = Settings::global(cx).game_path.clone();
                                                 let loading_status = this.loading_status.clone();
                                                 cx.spawn_in(window, async move |this, cx| {
+                                                    let path = Path::new(&game_path);
+                                                    if path.try_exists().ok().is_none_or(|f| f == false) || !path.is_dir() {
+                                                        let _ = this.update_in(cx, |this, window, cx| {
+                                                            window.push_notification(
+                                                                (NotificationType::Error, t("message-game-folder-not-selected")),
+                                                                cx,
+                                                            );
+                                                            this.is_reading = false;
+                                                            cx.notify();
+                                                        });
+                                                        return;
+                                                    }
+
+                                                    if path.join(r"Game\gamedatas.npk").try_exists().ok().is_none_or(|f| f == false)
+                                                        || path.join(r"Game\gamelibs.npk").try_exists().ok().is_none_or(|f| f == false)
+                                                    {
+                                                        let _ = this.update_in(cx, |this, window, cx| {
+                                                            window.push_notification((NotificationType::Error, t("message-game-data-not-found")), cx);
+                                                            this.is_reading = false;
+                                                            cx.notify();
+                                                        });
+                                                        return;
+                                                    }
+
                                                     match GameData::load(&game_path, &loading_status, cx).await {
                                                         Ok(data) => {
                                                             let _ = this.update_in(cx, |this, window, cx| {
@@ -1483,142 +1523,168 @@ impl Render for GameDataView {
                                                         }
                                                     };
                                                     /* */
+                                                    this.child(
+                                                        div()
+                                                            .flex()
+                                                            .size_full()
+                                                            .relative()
+                                                            .when_else(
+                                                                self.debug,
+                                                                |this| {
+                                                                    this.child(
+                                                                        Input::new(&self.debug_preview)
+                                                                            .font_family(cx.theme().mono_font_family.clone())
+                                                                            .text_size(cx.theme().mono_font_size)
+                                                                            .disabled(true)
+                                                                            .border_0()
+                                                                            .rounded_none()
+                                                                            .size_full(),
+                                                                    )
+                                                                },
+                                                                |this| {
+                                                                    this.child(
+                                                                        v_flex()
+                                                                            .min_h_0()
+                                                                            .id("item-preview")
+                                                                            .p_2()
+                                                                            .size_full()
+                                                                            .overflow_y_scrollbar()
+                                                                            .map(|this| {
+                                                                                this.child(Self::render_preview(
+                                                                                    id.clone(),
+                                                                                    quality,
+                                                                                    temper_limit,
+                                                                                    reverse_limit,
+                                                                                    transcendence_limit,
+                                                                                    transcendence_effect,
+                                                                                    icon,
+                                                                                    grade,
+                                                                                    item_locale.clone(),
+                                                                                    skill_locale,
+                                                                                    usable_class,
+                                                                                    attack,
+                                                                                    attack_tempering_effect,
+                                                                                    physic_defense,
+                                                                                    physic_defense_tempering_effect,
+                                                                                    magic_defense,
+                                                                                    magic_defense_tempering_effect,
+                                                                                    attack_speed,
+                                                                                    required_level,
+                                                                                    min_sealed_slots,
+                                                                                    max_sealed_slots,
+                                                                                    min_random_effects,
+                                                                                    max_random_effects,
+                                                                                    random_effects,
+                                                                                    item_set,
+                                                                                    equip_effect_1,
+                                                                                    equip_effect_2,
+                                                                                    equip_effect_3,
+                                                                                    equip_effect_4,
+                                                                                    preview,
+                                                                                    &self.game_data.items,
+                                                                                    cx.listener({
+                                                                                        let id = id.clone();
+                                                                                        move |this, _, _, cx| {
+                                                                                            let preview = this
+                                                                                                .preview
+                                                                                                .entry(id.clone())
+                                                                                                .or_insert_with(|| PreviewValues::default());
+                                                                                            preview.decrease_transcendence();
+                                                                                            cx.notify();
+                                                                                        }
+                                                                                    }),
+                                                                                    cx.listener({
+                                                                                        let id = id.clone();
+                                                                                        move |this, _, _, cx| {
+                                                                                            let preview = this
+                                                                                                .preview
+                                                                                                .entry(id.clone())
+                                                                                                .or_insert_with(|| PreviewValues::default());
+                                                                                            preview.increase_transcendence(transcendence_limit);
 
-                                                    this.when_else(
-                                                        self.debug,
-                                                        |this| {
-                                                            this.child(
-                                                                Input::new(&self.debug_preview)
-                                                                    .font_family(cx.theme().mono_font_family.clone())
-                                                                    .text_size(cx.theme().mono_font_size)
-                                                                    .disabled(true)
-                                                                    .size_full(),
+                                                                                            cx.notify();
+                                                                                        }
+                                                                                    }),
+                                                                                    cx.listener({
+                                                                                        let id = id.clone();
+                                                                                        move |this, _, _, cx| {
+                                                                                            let preview = this
+                                                                                                .preview
+                                                                                                .entry(id.clone())
+                                                                                                .or_insert_with(|| PreviewValues::default());
+                                                                                            preview.decrease_tempering();
+                                                                                            cx.notify();
+                                                                                        }
+                                                                                    }),
+                                                                                    cx.listener({
+                                                                                        let id = id.clone();
+                                                                                        move |this, _, _, cx| {
+                                                                                            let preview = this
+                                                                                                .preview
+                                                                                                .entry(id.clone())
+                                                                                                .or_insert_with(|| PreviewValues::default());
+                                                                                            preview.increase_tempering(temper_limit, reverse_limit);
+
+                                                                                            cx.notify();
+                                                                                        }
+                                                                                    }),
+                                                                                    cx.listener({
+                                                                                        let id = id.clone();
+                                                                                        move |this, _, _, cx| {
+                                                                                            let preview = this
+                                                                                                .preview
+                                                                                                .entry(id.clone())
+                                                                                                .or_insert_with(|| PreviewValues::default());
+                                                                                            preview.decrease_reverse_tempering();
+                                                                                            cx.notify();
+                                                                                        }
+                                                                                    }),
+                                                                                    cx.listener({
+                                                                                        let id = id.clone();
+                                                                                        move |this, _, _, cx| {
+                                                                                            let preview = this
+                                                                                                .preview
+                                                                                                .entry(id.clone())
+                                                                                                .or_insert_with(|| PreviewValues::default());
+                                                                                            preview.increase_reverse_tempering(
+                                                                                                temper_limit,
+                                                                                                reverse_limit,
+                                                                                            );
+
+                                                                                            cx.notify();
+                                                                                        }
+                                                                                    }),
+                                                                                    cx.listener({
+                                                                                        let item_locale = item_locale.clone();
+                                                                                        move |_, _, window, cx| {
+                                                                                            cx.write_to_clipboard(ClipboardItem::new_string(
+                                                                                                item_locale.to_string(),
+                                                                                            ));
+                                                                                            window.push_notification(
+                                                                                                (NotificationType::Info, t("message-copy-item-name")),
+                                                                                                cx,
+                                                                                            );
+                                                                                        }
+                                                                                    }),
+                                                                                    cx.entity(),
+                                                                                    cx,
+                                                                                ))
+                                                                            }),
+                                                                    )
+                                                                },
                                                             )
-                                                        },
-                                                        |this| {
-                                                            this.child(
-                                                                v_flex().min_h_0().id("item-preview").p_2().size_full().overflow_y_scrollbar().map(
-                                                                    |this| {
-                                                                        this.child(Self::render_preview(
-                                                                            id.clone(),
-                                                                            quality,
-                                                                            temper_limit,
-                                                                            reverse_limit,
-                                                                            transcendence_limit,
-                                                                            transcendence_effect,
-                                                                            icon,
-                                                                            grade,
-                                                                            item_locale.clone(),
-                                                                            skill_locale,
-                                                                            usable_class,
-                                                                            attack,
-                                                                            attack_tempering_effect,
-                                                                            physic_defense,
-                                                                            physic_defense_tempering_effect,
-                                                                            magic_defense,
-                                                                            magic_defense_tempering_effect,
-                                                                            attack_speed,
-                                                                            required_level,
-                                                                            min_sealed_slots,
-                                                                            max_sealed_slots,
-                                                                            min_random_effects,
-                                                                            max_random_effects,
-                                                                            random_effects,
-                                                                            item_set,
-                                                                            equip_effect_1,
-                                                                            equip_effect_2,
-                                                                            equip_effect_3,
-                                                                            equip_effect_4,
-                                                                            preview,
-                                                                            &self.game_data.items,
-                                                                            cx.listener({
-                                                                                let id = id.clone();
-                                                                                move |this, _, _, cx| {
-                                                                                    let preview = this
-                                                                                        .preview
-                                                                                        .entry(id.clone())
-                                                                                        .or_insert_with(|| PreviewValues::default());
-                                                                                    preview.decrease_transcendence();
-                                                                                    cx.notify();
-                                                                                }
-                                                                            }),
-                                                                            cx.listener({
-                                                                                let id = id.clone();
-                                                                                move |this, _, _, cx| {
-                                                                                    let preview = this
-                                                                                        .preview
-                                                                                        .entry(id.clone())
-                                                                                        .or_insert_with(|| PreviewValues::default());
-                                                                                    preview.increase_transcendence(transcendence_limit);
-
-                                                                                    cx.notify();
-                                                                                }
-                                                                            }),
-                                                                            cx.listener({
-                                                                                let id = id.clone();
-                                                                                move |this, _, _, cx| {
-                                                                                    let preview = this
-                                                                                        .preview
-                                                                                        .entry(id.clone())
-                                                                                        .or_insert_with(|| PreviewValues::default());
-                                                                                    preview.decrease_tempering();
-                                                                                    cx.notify();
-                                                                                }
-                                                                            }),
-                                                                            cx.listener({
-                                                                                let id = id.clone();
-                                                                                move |this, _, _, cx| {
-                                                                                    let preview = this
-                                                                                        .preview
-                                                                                        .entry(id.clone())
-                                                                                        .or_insert_with(|| PreviewValues::default());
-                                                                                    preview.increase_tempering(temper_limit, reverse_limit);
-
-                                                                                    cx.notify();
-                                                                                }
-                                                                            }),
-                                                                            cx.listener({
-                                                                                let id = id.clone();
-                                                                                move |this, _, _, cx| {
-                                                                                    let preview = this
-                                                                                        .preview
-                                                                                        .entry(id.clone())
-                                                                                        .or_insert_with(|| PreviewValues::default());
-                                                                                    preview.decrease_reverse_tempering();
-                                                                                    cx.notify();
-                                                                                }
-                                                                            }),
-                                                                            cx.listener({
-                                                                                let id = id.clone();
-                                                                                move |this, _, _, cx| {
-                                                                                    let preview = this
-                                                                                        .preview
-                                                                                        .entry(id.clone())
-                                                                                        .or_insert_with(|| PreviewValues::default());
-                                                                                    preview.increase_reverse_tempering(temper_limit, reverse_limit);
-
-                                                                                    cx.notify();
-                                                                                }
-                                                                            }),
-                                                                            cx.listener({
-                                                                                let item_locale = item_locale.clone();
-                                                                                move |_, _, window, cx| {
-                                                                                    cx.write_to_clipboard(ClipboardItem::new_string(
-                                                                                        item_locale.to_string(),
-                                                                                    ));
-                                                                                    window.push_notification(
-                                                                                        (NotificationType::Info, t("message-copy-item-name")),
-                                                                                        cx,
-                                                                                    );
-                                                                                }
-                                                                            }),
-                                                                            cx.entity(),
-                                                                            cx,
-                                                                        ))
-                                                                    },
-                                                                ),
-                                                            )
-                                                        },
+                                                            .child(
+                                                                Switch::new("debug-switch")
+                                                                    .absolute()
+                                                                    .bottom(px(16.0))
+                                                                    .right(px(16.0))
+                                                                    .checked(self.debug)
+                                                                    .tooltip(t("tooltip-debug-switch"))
+                                                                    .on_click(cx.listener(|this, checked, _, cx| {
+                                                                        this.debug = *checked;
+                                                                        cx.notify();
+                                                                    })),
+                                                            ),
                                                     )
                                                 },
                                             )
@@ -1663,14 +1729,6 @@ impl Render for GameDataView {
                             .small()
                             .cleanable(true)
                             .placeholder(t("item-effects")),
-                    )
-                    .right(
-                        Switch::new("debug-switch")
-                            .checked(self.debug)
-                            .on_click(cx.listener(|this, checked, _, cx| {
-                                this.debug = *checked;
-                                cx.notify();
-                            })),
                     )
                     .right(
                         Button::new("lang-switcher")

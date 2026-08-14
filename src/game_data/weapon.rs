@@ -218,9 +218,6 @@ impl AbstractItem for Weapon {
                         5 => self.item_level = value as u16,
                         9 => {
                             self.grade = Grade::from_repr(value as u8);
-                            if self.grade.is_none() {
-                                println!("{}, {}", self.id, value)
-                            }
                         }
                         14 => self.gauge_increase_amount = value,
                         15 => self.range = value,

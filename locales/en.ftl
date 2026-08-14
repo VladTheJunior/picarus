@@ -74,6 +74,8 @@ message-game-folder-not-selected = Game folder is not selected. Please select a 
 message-game-data-not-found = Unable to locate game files in the selected directory. Please check the folder path and try again
 message-copy-item-name = Item name copied to clipboard
 
+tooltip-debug-switch = Debug view switcher
+
 item-set-effects-count = Set Effects
 item-equipped-skill = [Equipped Skill]
 item-equipped-effects = Equipped Effects

@@ -34,7 +34,7 @@ use zip::ZipArchive;
 
 use crate::{
     game_data::{
-        accessory::Accessory, armor::Armor, filters::ItemEffectFilter, item_option::ItemOption, item_quality::ItemQuality, item_res::ItemRes,
+        accessory::Accessory, armor::Armor, item_option::ItemOption, item_quality::ItemQuality, item_res::ItemRes,
         item_set::ItemSet, locale::Locale, secondary_weapon::SecondaryWeapon, tempering::Tempering, weapon::Weapon,
     },
     game_data_view::GameDataLoadingStatus,

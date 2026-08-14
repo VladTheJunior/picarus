@@ -75,6 +75,8 @@ message-game-folder-not-selected = Папка с игрой не выбрана.
 message-game-data-not-found = Не удалось найти файлы игры в выбранной папке. Проверьте путь к папке и попробуйте снова
 message-copy-item-name = Имя предмета скопировано в буфер обмена
 
+tooltip-debug-switch = Переключение debug вида
+
 item-set-effects-count = Эффекты комплекта
 item-equipped-skill = [Активный навык]
 item-equipped-effects = Эффекты снаряжения

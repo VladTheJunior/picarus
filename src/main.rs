@@ -18,7 +18,7 @@ use tracing::{Level, info};
 use crate::{
     assets::{Assets, Fonts},
     game_data_view::GameDataView,
-    language::{LanguageController},
+    language::LanguageController,
     settings::{Settings, config::Config},
 };
 
@@ -34,13 +34,21 @@ fn main() {
 
     tracing_subscriber::fmt().with_max_level(Level::DEBUG).init();
 
-if let Some(timestamp) = option_env!("VERGEN_BUILD_TIMESTAMP") {
-    info!("Build Timestamp: {timestamp}");
-}
-if let Some(describe) = option_env!("VERGEN_GIT_DESCRIBE") {
-    info!("git describe: {describe}");
-}
-
+    if let Some(timestamp) = option_env!("VERGEN_BUILD_TIMESTAMP") {
+        info!("build timestamp: {timestamp}");
+    }
+    if let Some(semver) = option_env!("VERGEN_RUSTC_SEMVER") {
+        info!("rustc: {semver}");
+    }
+    if let Some(branch) = option_env!("VERGEN_GIT_BRANCH") {
+        info!("git branch: {branch}");
+    }
+    if let Some(describe) = option_env!("VERGEN_GIT_DESCRIBE") {
+        info!("git describe: {describe}");
+    }
+    if let Some(timestamp) = option_env!("VERGEN_GIT_COMMIT_TIMESTAMP") {
+        info!("git commit timestamp: {timestamp}");
+    }
     let dark_theme =
         Rc::new(serde_json::from_slice::<ThemeConfig>(include_bytes!("../assets/themes/dark.json")).expect("Failed to parse dark theme"));
 
