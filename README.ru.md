@@ -1,5 +1,7 @@
-### Выберите язык:
+[Скачать последний релиз](https://github.com/VladTheJunior/picarus/releases/latest/download/picarus.zip)
+
 [English](./README.md) | [Русский](./README.ru.md)
+![GitHub Repo stars](https://img.shields.io/github/stars/VladTheJunior/picarus)[![Windows Release](https://github.com/VladTheJunior/picarus/actions/workflows/windows.yml/badge.svg)](https://github.com/VladTheJunior/picarus/actions/workflows/windows.yml)![GitHub Downloads (specific asset, all releases)](https://img.shields.io/github/downloads/VladTheJunior/picarus/picarus.zip)![GitHub Release](https://img.shields.io/github/v/release/VladTheJunior/picarus)![GitHub Release Date](https://img.shields.io/github/release-date/VladTheJunior/picarus)
 
 ## Описание
 Интерактивный просмотрщик предметов для Riders of Icarus - это приложение, которое позволяет игрокам просматривать и искать игровые предметы, напрямую из файлов клиента непосредственно на компьютере пользователя. Обеспечивает быстрый доступ к данным предметов с фильтрацией и интерактивными функциями.

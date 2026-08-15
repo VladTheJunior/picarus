@@ -6,9 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
-    permissions:
-      contents: write 
+    runs-on: windows-latest 
     steps:
       - name: Clone repository
         uses: actions/checkout@v7

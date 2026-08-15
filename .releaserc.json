@@ -23,7 +23,7 @@
         [
             "@semantic-release/exec",
             {
-                "prepareCmd": "toml set Cargo.toml package.version \"${nextRelease.version}-${process.env.BRANCH_NAME}.${process.env.BUILD_NUMBER}\" > temp.toml && mv temp.toml Cargo.toml && cargo build --release"
+                "prepareCmd": "toml set Cargo.toml package.version \"${nextRelease.version}-${process.env.BRANCH_NAME}.${process.env.BUILD_NUMBER}\" > temp.toml && mv temp.toml Cargo.toml && cargo build --release && 7z a -tzip dist/picarus.zip ./target/release/picarus.exe"
             }
         ],
         [
@@ -31,7 +31,7 @@
             {
                 "assets": [
                     {
-                        "path": "target/release/picarus.exe"
+                        "path": "dist/picarus.zip"
                     }
                 ]
             }
