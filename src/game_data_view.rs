@@ -193,7 +193,7 @@ impl GameDataView {
                     .default_value(Settings::global(cx).game_path.clone())
             }),
             loading_status: cx.new(|_| GameDataLoadingStatus::Weapon),
-            debug_preview: cx.new(|cx| EditorState::new("json", window, cx)),
+            debug_preview: cx.new(|cx| EditorState::new(window, cx).language("json")),
         }
     }
 
