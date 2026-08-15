@@ -76,7 +76,7 @@ fn main() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     titlebar: Some(TitlebarOptions {
-                        title: Some("PIcarus".into()),
+                        title: Some("picarus".into()),
                         appears_transparent: true,
                         ..Default::default()
                     }),
