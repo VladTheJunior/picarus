@@ -17,6 +17,13 @@ item-no-transcendence = No Transcendence
 item-no-tempering = No Tempering
 item-no-reverse-tempering = No Reverse Tempering
 
+item-material-type-alchemy = Alchemy
+item-material-type-cooking = Cooking
+item-material-type-weapon = Weapon Crafting
+item-material-type-armor = Armor Crafting
+item-material-type-jewelry = Jewelry Crafting
+item-material-type-barder = Barder Crafting
+
 item-common-grade = Common
 item-elite-grade = Elite
 item-heroic-grade = Heroic

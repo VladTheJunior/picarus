@@ -13,6 +13,13 @@ item-no-transcendence = Нет просветления
 item-no-tempering = Нет закалки
 item-no-reverse-tempering = Нет реверса
 
+item-material-type-alchemy = Алхимия
+item-material-type-cooking = Кулинария
+item-material-type-weapon = Изготовл. оружия
+item-material-type-armor = Изготовл. доспехов
+item-material-type-jewelry = Изготовл. украшений
+item-material-type-barder = Изготовл. сбруи
+
 item-common-grade = Обычное
 item-elite-grade = Элитное
 item-heroic-grade = Героическое
@@ -45,7 +52,7 @@ item-quality-good = (Хорошее)
 item-quality-perfect = (Отличное)
 
 item-type-weapon = Оружие
-item-type-armor = Броня
+item-type-armor = Доспехи
 item-type-accessory = Украшения
 item-type-secondary-weapon = Второе оружие
 item-type-material = Материалы
@@ -59,7 +66,7 @@ item-binding-obtain = Привязка при получении
 
 game-data-loading-weapon = Загрузка данных оружия...
 game-data-loading-accessory = Загрузка данных украшений...
-game-data-loading-armor = Загрузка данных брони...
+game-data-loading-armor = Загрузка данных доспехов...
 game-data-loading-secondary-weapon = Загрузка данных второго оружия...
 game-data-loading-tempering = Загрузка данных закалки...
 game-data-loading-itemset = Загрузка данных наборов...

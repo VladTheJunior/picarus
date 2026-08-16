@@ -9,6 +9,7 @@ use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 pub struct ItemRes {
     pub id: SharedString,
     pub icon: SharedString,
+    pub using_recipe_type: Option<SharedString>
 }
 
 impl AbstractItem for ItemRes {
@@ -57,7 +58,11 @@ impl AbstractItem for ItemRes {
                         self.icon = Self::read_string(format, reader).await?;
                     }
                 }
-
+                11 => {
+                    if tag_count == 17 {
+                        self.using_recipe_type = Some(Self::read_string(format, reader).await?);
+                    }
+                }
                 _ => {}
             }
         }

@@ -6,10 +6,10 @@ pub mod item_quality;
 pub mod item_res;
 pub mod item_set;
 pub mod locale;
+pub mod material;
 pub mod secondary_weapon;
 pub mod tempering;
 pub mod weapon;
-pub mod material;
 
 use anyhow::Result;
 
@@ -35,8 +35,11 @@ use zip::ZipArchive;
 
 use crate::{
     game_data::{
-        accessory::Accessory, armor::Armor, item_option::ItemOption, item_quality::ItemQuality, item_res::ItemRes, item_set::ItemSet, locale::Locale, material::Material, secondary_weapon::SecondaryWeapon, tempering::Tempering, weapon::Weapon,
-    }, game_data_view::GameDataLoadingStatus, language::{LanguageController, t, t_v},
+        accessory::Accessory, armor::Armor, item_option::ItemOption, item_quality::ItemQuality, item_res::ItemRes, item_set::ItemSet, locale::Locale,
+        material::Material, secondary_weapon::SecondaryWeapon, tempering::Tempering, weapon::Weapon,
+    },
+    game_data_view::GameDataLoadingStatus,
+    language::{LanguageController, t, t_v},
 };
 
 #[derive(Debug, EnumIter, Eq, PartialEq, Hash, Clone, Copy)]
@@ -45,7 +48,7 @@ pub enum ItemType {
     SecondaryWeapon,
     Weapon,
     Accessory,
-    Material
+    Material,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -56,12 +59,11 @@ pub enum Quality {
     Perfect,
 }
 
-#[derive(Clone, Copy, Serialize)]
-#[derive(Debug)]
-pub enum Binding{
+#[derive(Clone, Copy, Serialize, Debug)]
+pub enum Binding {
     None,
     Obtain,
-    Equip
+    Equip,
 }
 
 impl TryFrom<&str> for Binding {
@@ -81,7 +83,7 @@ impl Binding {
     pub fn locale(&self) -> Option<SharedString> {
         match self {
             Binding::Obtain => Some(t("item-binding-obtain")),
-            Binding::Equip => Some(t("item-quality-equip")),
+            Binding::Equip => Some(t("item-binding-equip")),
             Binding::None => None,
         }
     }
@@ -134,7 +136,7 @@ pub enum DataType {
     Weapon(Weapon),
     Armor(Armor),
     Accessory(Accessory),
-    Material(Material)
+    Material(Material),
 }
 #[derive(Debug, EnumIter, Copy, Clone, PartialEq, Eq, Hash, FromRepr, Serialize)]
 #[repr(u8)]
@@ -637,7 +639,7 @@ impl DataType {
                     }
                 }
             }
-            DataType::Material(_) => {},
+            DataType::Material(_) => {}
         };
 
         for e in effects.iter().filter(|f| f.parsed.is_none()) {
@@ -681,7 +683,7 @@ impl DataType {
             DataType::Armor(armor) => armor.icon.clone(),
             DataType::Accessory(accessory) => accessory.icon.clone(),
             DataType::SecondaryWeapon(secondary_weapon) => secondary_weapon.icon.clone(),
-            DataType::Material(material) => material.icon.clone()
+            DataType::Material(material) => material.icon.clone(),
         }
     }
 
@@ -810,7 +812,7 @@ impl DataType {
                     );
                 }
             }
-            DataType::Material(_) => {},
+            DataType::Material(_) => {}
         };
         effects.into_iter().filter_map(|f| f).collect()
     }
@@ -887,14 +889,14 @@ impl GameData {
         let mut data = Self::new();
 
         let item_set = data.read_itemset(&mut gamedatas_zip, on_load, cx).await?;
-       /* data.read_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
+        data.read_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
         data.read_accessory(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
 
         data.read_secondary_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx)
             .await?;
 
         data.read_armors(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
-*/ 
+
         data.read_material(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
 
         data.read_temperings(
@@ -1072,7 +1074,7 @@ impl GameData {
         self.read_items_itemset(&data, DataFormat::String, &locales, &skill_locales).await
     }
 
-        async fn read_material<R: Read + Seek>(
+    async fn read_material<R: Read + Seek>(
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,

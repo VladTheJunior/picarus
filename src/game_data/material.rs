@@ -1,24 +1,27 @@
 use std::{
-    collections::HashMap,
-    io::{Read, SeekFrom},
-    sync::Arc,
+    collections::{BTreeSet, HashMap}, io::{Read, SeekFrom}, sync::Arc,
 };
 
-use crate::game_data::{AbstractItem, Binding, DataFormat, Grade, Item, item_set::ItemSet, locale::Locale};
+use crate::{
+    game_data::{AbstractItem, Binding, DataFormat, Grade, Item, item_set::ItemSet, locale::Locale},
+    language::t,
+};
 use anyhow::Result;
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui::{Image, SharedString};
 use tracing::warn;
-
-/*pub enum MaterialType{
+#[derive(Debug, Serialize)]
+#[derive(Ord)]
+#[derive(PartialOrd, PartialEq, Eq, Clone, Copy)]
+pub enum MaterialType {
     Alchemy,
     Cooking,
     WeaponCrafting,
     ArmorCrafting,
     JewelryCrafting,
-    BarderCrafting
+    BarderCrafting,
 }
 
 impl TryFrom<&str> for MaterialType {
@@ -26,16 +29,35 @@ impl TryFrom<&str> for MaterialType {
 
     fn try_from(other: &str) -> Result<Self, Self::Error> {
         match other {
-            "re" => Ok(Self::BarderCrafting),
+            "al" => Ok(Self::Alchemy),
+            "co" => Ok(Self::Cooking),
+            "we" => Ok(Self::WeaponCrafting),
+            "ar" => Ok(Self::ArmorCrafting),
+            "as" => Ok(Self::JewelryCrafting),
+            "fe" => Ok(Self::BarderCrafting),
             unk => Err(format!("Cannot convert {} material type", unk)),
         }
     }
-}*/
+}
+
+impl MaterialType {
+    pub fn locale(&self) -> SharedString {
+        match self {
+            MaterialType::Alchemy => t("item-material-type-alchemy"),
+            MaterialType::Cooking => t("item-material-type-cooking"),
+            MaterialType::WeaponCrafting => t("item-material-type-weapon"),
+            MaterialType::ArmorCrafting => t("item-material-type-armor"),
+            MaterialType::JewelryCrafting => t("item-material-type-jewelry"),
+            MaterialType::BarderCrafting => t("item-material-type-barder"),
+        }
+    }
+}
 
 #[derive(Debug, Default, Serialize)]
 pub struct Material {
     pub locale: Option<Locale>,
     pub description_locale: Option<Locale>,
+    pub recipe_type: Option<BTreeSet<MaterialType>>,
     #[serde(skip)]
     pub icon: Option<Arc<Image>>,
     pub id: SharedString,
@@ -133,6 +155,8 @@ impl Item for Material {
         zip: &mut zip::ZipArchive<R>,
     ) -> Result<()> {
         if let Some(item_res) = res.get(&self.id) {
+            self.recipe_type = item_res.using_recipe_type.as_ref().map(|r| r.split("_").filter_map(|r| MaterialType::try_from(r).ok()).collect());
+
             if let Ok(mut file) = zip.by_path(&format!(r"libs\ui\resources\textures\slot_icons\{}.dds", item_res.icon.to_lowercase())) {
                 let mut buf = Vec::with_capacity(file.size() as usize);
                 file.read_to_end(&mut buf)?;

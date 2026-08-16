@@ -43,6 +43,7 @@ use crate::{
         Binding, DataType, GameClass, GameData, Grade, Item, ItemEffect, ItemMinMaxEffect, Quality,
         filters::{GameDataFilters, ItemEffectFilter},
         item_set::ItemSet,
+        material::MaterialType,
     },
     language::{LanguageController, t, t_v},
     settings::Settings,
@@ -262,6 +263,7 @@ impl GameDataView {
         attack_speed: Option<f32>,
         // no trade, no sell, no destroy
         tags: (Option<Binding>, bool, bool, bool),
+        material_recipe_types: Option<BTreeSet<MaterialType>>,
         required_level: u8,
         min_sealed_slots: u8,
         max_sealed_slots: u8,
@@ -546,6 +548,9 @@ impl GameDataView {
                     .when(tags.2, |this| this.child(t("item-tag-no-sell")))
                     .when(tags.3, |this| this.child(t("item-tag-no-destroy"))),
             )
+            .when_some(material_recipe_types, |this, material_recipe_types| {
+                this.child(h_flex().gap_1().children(material_recipe_types.iter().map(|m| m.locale())))
+            })
             .when_some(skill_locale, |this, skill_locale| {
                 this.child(div().mt_2().text_color(cx.theme().success).child(t("item-equipped-skill")))
                     .child(div().text_color(cx.theme().yellow).child(remove_html_tags_regex(&skill_locale)))
@@ -755,7 +760,7 @@ impl GameDataView {
                                         .gap_x_2()
                                         .children(set_effect.seteffect_effects.iter().map(|effect| div().child(effect.get_locale()))),
                                 )
-                                .when_some(set_effect.get_locale(), |this, skill| this.child(skill))
+                                .when_some(set_effect.get_locale(), |this, skill| this.child(remove_html_tags_regex(&skill)))
                         })))
                     })
             })
@@ -1222,6 +1227,7 @@ impl Render for GameDataView {
                                                         attack_speed,
                                                         required_level,
                                                         tags,
+                                                        material_recipe_types,
                                                         min_sealed_slots,
                                                         max_sealed_slots,
                                                         min_random_effects,
@@ -1307,6 +1313,7 @@ impl Render for GameDataView {
                                                                     secondary_weapon.no_disposal,
                                                                     secondary_weapon.indestructible,
                                                                 ),
+                                                                None,
                                                                 0,
                                                                 0,
                                                                 secondary_weapon.random_option_count_min,
@@ -1424,6 +1431,7 @@ impl Render for GameDataView {
                                                                 Some(weapon.attack_speed),
                                                                 weapon.required_level,
                                                                 (weapon.binding, weapon.cannot_trade, weapon.cannot_sell, weapon.indestructible),
+                                                                None,
                                                                 weapon.min_crafting_seal_slots,
                                                                 weapon.max_crafting_seal_slots,
                                                                 weapon.min_random_options,
@@ -1505,6 +1513,7 @@ impl Render for GameDataView {
                                                                 None,
                                                                 armor.required_level,
                                                                 (armor.binding, armor.no_trade, armor.no_sell, armor.no_destroy),
+                                                                None,
                                                                 armor.sealed_fellow_slots_min,
                                                                 armor.sealed_fellow_slots_max,
                                                                 armor.random_option_count_min,
@@ -1539,6 +1548,7 @@ impl Render for GameDataView {
                                                                 material.non_disposable,
                                                                 material.non_destroyable,
                                                             ),
+                                                            material.recipe_type.clone(),
                                                             0,
                                                             0,
                                                             0,
@@ -1612,6 +1622,7 @@ impl Render for GameDataView {
                                                                 None,
                                                                 accessory.required_level,
                                                                 (accessory.binding, accessory.no_trade, accessory.no_disposal, accessory.no_destroy),
+                                                                None,
                                                                 0,
                                                                 0,
                                                                 accessory.random_option_count_min,
@@ -1674,6 +1685,7 @@ impl Render for GameDataView {
                                                                                     magic_defense_tempering_effect,
                                                                                     attack_speed,
                                                                                     tags,
+                                                                                    material_recipe_types,
                                                                                     required_level,
                                                                                     min_sealed_slots,
                                                                                     max_sealed_slots,
