@@ -5,8 +5,7 @@ use std::{
 };
 
 use crate::{
-    game_data::{AbstractItem, DataFormat, GameClass, Grade, Item, ItemEffect, item_set::ItemSet, locale::Locale},
-    language::LanguageController,
+    game_data::{AbstractItem, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, item_set::ItemSet, locale::Locale}, language::LanguageController,
 };
 use anyhow::Result;
 
@@ -25,7 +24,7 @@ pub struct SecondaryWeapon {
     pub id: SharedString,
     pub name: SharedString,
     for_development: f32,
-    pub required_level: f32,
+    pub required_level: u8,
     level_restriction: f32,
     pub item_level: u16,
     pub usable_class: BTreeSet<GameClass>,
@@ -57,11 +56,11 @@ pub struct SecondaryWeapon {
     pub enchant_limit: u8,
     enchant_probability: SharedString,
     no_drop: f32,
-    no_trade: f32,
-    no_disposal: f32,
-    indestructible: f32,
+    pub no_trade: bool,
+    pub no_disposal: bool,
+    pub indestructible: bool,
     drop_level_check: SharedString,
-    binding: SharedString,
+    pub binding: Option<Binding>,
     binding_target: SharedString,
     binding_release_count: f32,
     use_restriction: SharedString,
@@ -157,7 +156,7 @@ impl AbstractItem for SecondaryWeapon {
                 33 => self.enchant_probability = Self::read_string(format, reader).await?,
                 38 => self.drop_level_check = Self::read_string(format, reader).await?,
 
-                39 => self.binding = Self::read_string(format, reader).await?,
+                39 => self.binding = Binding::try_from(Self::read_string(format, reader).await?.as_str()).ok(),
                 40 => self.binding_target = Self::read_string(format, reader).await?,
                 42 => self.use_restriction = Self::read_string(format, reader).await?,
                 44 => self.consignment_category = Self::read_string(format, reader).await?,
@@ -187,7 +186,7 @@ impl AbstractItem for SecondaryWeapon {
                     // Assign to the appropriate field based on index
                     match tag_idx {
                         2 => self.for_development = value,
-                        3 => self.required_level = value,
+                        3 => self.required_level = value as u8,
                         4 => self.level_restriction = value,
                         5 => self.item_level = value as u16,
                         9 => self.grade = Grade::from_repr(value as u8),
@@ -207,9 +206,9 @@ impl AbstractItem for SecondaryWeapon {
                         31 => self.variable_option_max = value,
                         32 => self.enchant_limit = value as u8,
                         34 => self.no_drop = value,
-                        35 => self.no_trade = value,
-                        36 => self.no_disposal = value,
-                        37 => self.indestructible = value,
+                        35 => self.no_trade = value  != 0.0,
+                        36 => self.no_disposal = value != 0.0,
+                        37 => self.indestructible = value != 0.0,
                         41 => self.binding_release_count = value,
                         43 => self.dyeable = value,
                         46 => self.ignore_drop_level_check = value,

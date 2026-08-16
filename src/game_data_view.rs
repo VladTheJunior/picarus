@@ -5,10 +5,24 @@ use gpui::{
     uniform_list,
 };
 use gpui_component::{
-    ActiveTheme, Icon, IconName, InteractiveElementExt, Root, Sizable, StyledExt, TitleBar, WindowExt, button::{Button, ButtonVariants}, combobox::Combobox, h_flex, input::{Editor, EditorState, Input, InputState}, menu::{DropdownMenu, PopupMenuItem}, notification::NotificationType, scroll::ScrollableElement, select::SearchableVec, spinner::Spinner, status_bar::StatusBar, switch::Switch, tab::{Tab, TabBar}, v_flex,
+    ActiveTheme, Icon, IconName, InteractiveElementExt, Root, Sizable, StyledExt, TitleBar, WindowExt,
+    button::{Button, ButtonVariants},
+    combobox::Combobox,
+    h_flex,
+    input::{Editor, EditorState, Input, InputState},
+    menu::{DropdownMenu, PopupMenuItem},
+    notification::NotificationType,
+    scroll::ScrollableElement,
+    select::SearchableVec,
+    spinner::Spinner,
+    status_bar::StatusBar,
+    switch::Switch,
+    tab::{Tab, TabBar},
+    v_flex,
 };
 
 use indexmap::{IndexMap, IndexSet};
+use regex::Regex;
 use serde::Deserialize;
 
 use std::{
@@ -16,7 +30,7 @@ use std::{
     ops::Range,
     path::Path,
     rc::Rc,
-    sync::Arc,
+    sync::{Arc, LazyLock},
     time::Duration,
 };
 
@@ -26,7 +40,7 @@ use crate::{
     assets::AppIcon,
     extensions::EnumNameExt,
     game_data::{
-        DataType, GameClass, GameData, Grade, Item, ItemEffect, ItemMinMaxEffect, Quality,
+        Binding, DataType, GameClass, GameData, Grade, Item, ItemEffect, ItemMinMaxEffect, Quality,
         filters::{GameDataFilters, ItemEffectFilter},
         item_set::ItemSet,
     },
@@ -54,6 +68,12 @@ pub fn init(cx: &mut App) {
     ]);
 }
 
+static TAGS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
+
+fn remove_html_tags_regex(text: &str) -> String {
+    TAGS_RE.replace_all(&text.replace("<br>", "\n"), "").to_string()
+}
+
 #[derive(Debug)]
 pub enum GameDataViewEvent {
     LoadingStep(SharedString),
@@ -71,27 +91,37 @@ struct PreviewValues {
 }
 
 impl PreviewValues {
-    pub fn increase_transcendence(&mut self, transcendence_limit: u8) {
-        self.transcendence = self.transcendence.saturating_add(1).min(transcendence_limit);
+    pub fn increase_transcendence(&mut self, transcendence_limit: Option<u8>) {
+        if let Some(transcendence_limit) = transcendence_limit {
+            self.transcendence = self.transcendence.saturating_add(1).min(transcendence_limit);
+        }
     }
 
     pub fn decrease_transcendence(&mut self) {
         self.transcendence = self.transcendence.saturating_sub(1);
     }
 
-    pub fn increase_tempering(&mut self, temper_limit: u8, reverse_limit: u8) {
-        if self.tempering < temper_limit {
-            self.tempering = self.tempering.saturating_add(1).min(temper_limit);
+    pub fn increase_tempering(&mut self, temper_limit: Option<u8>, reverse_limit: Option<u8>) {
+        if let Some(temper_limit) = temper_limit
+            && let Some(reverse_limit) = reverse_limit
+        {
+            if self.tempering < temper_limit {
+                self.tempering = self.tempering.saturating_add(1).min(temper_limit);
 
-            self.total_tempering = self.total_tempering.saturating_add(1).min(temper_limit + reverse_limit);
+                self.total_tempering = self.total_tempering.saturating_add(1).min(temper_limit + reverse_limit);
+            }
         }
     }
 
-    pub fn increase_reverse_tempering(&mut self, temper_limit: u8, reverse_limit: u8) {
-        if self.reverse_tempering < reverse_limit {
-            self.reverse_tempering = self.reverse_tempering.saturating_add(1).min(reverse_limit);
+    pub fn increase_reverse_tempering(&mut self, temper_limit: Option<u8>, reverse_limit: Option<u8>) {
+        if let Some(temper_limit) = temper_limit
+            && let Some(reverse_limit) = reverse_limit
+        {
+            if self.reverse_tempering < reverse_limit {
+                self.reverse_tempering = self.reverse_tempering.saturating_add(1).min(reverse_limit);
 
-            self.total_tempering = self.total_tempering.saturating_add(1).min(temper_limit + reverse_limit);
+                self.total_tempering = self.total_tempering.saturating_add(1).min(temper_limit + reverse_limit);
+            }
         }
     }
 
@@ -120,6 +150,7 @@ pub enum GameDataLoadingStatus {
     Tempering,
     Effects,
     Quality,
+    Material,
 }
 
 impl GameDataLoadingStatus {
@@ -133,6 +164,7 @@ impl GameDataLoadingStatus {
             GameDataLoadingStatus::Tempering => t("game-data-loading-tempering"),
             GameDataLoadingStatus::Effects => t("game-data-loading-effects"),
             GameDataLoadingStatus::Quality => t("game-data-loading-quality"),
+            GameDataLoadingStatus::Material => t("game-data-loading-material"),
         }
     }
 }
@@ -210,16 +242,17 @@ impl GameDataView {
 
     fn render_preview(
         id: SharedString,
-        quality: Quality,
-        temper_limit: u8,
-        reverse_limit: u8,
-        transcendence_limit: u8,
+        quality: Option<Quality>,
+        temper_limit: Option<u8>,
+        reverse_limit: Option<u8>,
+        transcendence_limit: Option<u8>,
         transcendence_effect: Option<f32>,
         icon: Option<Arc<Image>>,
         grade: Option<Grade>,
         item_locale: SharedString,
         skill_locale: Option<SharedString>,
-        usable_class: BTreeSet<GameClass>,
+        description_locale: Option<SharedString>,
+        usable_class: Option<BTreeSet<GameClass>>,
         attack: Option<(f32, f32, f32)>,
         attack_tempering_effect: Option<(f32, f32)>,
         physic_defense: Option<f32>,
@@ -227,7 +260,9 @@ impl GameDataView {
         magic_defense: Option<f32>,
         magic_defense_tempering_effect: Option<f32>,
         attack_speed: Option<f32>,
-        required_level: f32,
+        // no trade, no sell, no destroy
+        tags: (Option<Binding>, bool, bool, bool),
+        required_level: u8,
         min_sealed_slots: u8,
         max_sealed_slots: u8,
         min_random_effects: u8,
@@ -302,28 +337,30 @@ impl GameDataView {
                                     .gap_1()
                                     .child(grade.map(|g| g.locale()).unwrap_or_else(|| t("item-unknown-grade")))
                                     .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
-                                    .child(
-                                        Button::new("button-quality")
-                                            .small()
-                                            .link()
-                                            .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
-                                            .label(quality.locale())
-                                            .on_click({
-                                                let viewer_entity: Entity<GameDataView> = viewer_entity.clone();
-                                                let id = id.clone();
-                                                move |_, _, cx| {
-                                                    viewer_entity.update(cx, {
-                                                        let id = id.clone();
-                                                        move |this, cx| {
-                                                            this.preview.entry(id.clone()).and_modify(|v| {
-                                                                v.quality = v.quality.next();
-                                                            });
-                                                            cx.notify();
-                                                        }
-                                                    })
-                                                }
-                                            }),
-                                    ),
+                                    .when_some(quality, |this, quality| {
+                                        this.child(
+                                            Button::new("button-quality")
+                                                .small()
+                                                .link()
+                                                .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
+                                                .label(quality.locale())
+                                                .on_click({
+                                                    let viewer_entity: Entity<GameDataView> = viewer_entity.clone();
+                                                    let id = id.clone();
+                                                    move |_, _, cx| {
+                                                        viewer_entity.update(cx, {
+                                                            let id = id.clone();
+                                                            move |this, cx| {
+                                                                this.preview.entry(id.clone()).and_modify(|v| {
+                                                                    v.quality = v.quality.next();
+                                                                });
+                                                                cx.notify();
+                                                            }
+                                                        })
+                                                    }
+                                                }),
+                                        )
+                                    }),
                             )
                             .when_some(attack, |this, (dps, min, max)| {
                                 this.child(h_flex().gap_1().child(format!("{} {:.1}", t("item-attack-dps"), dps)).when_some(
@@ -372,122 +409,154 @@ impl GameDataView {
                     .items_start()
                     .child(
                         v_flex()
-                            .when_else(
-                                transcendence_limit == 0,
-                                |this| this.child(t("item-no-transcendence")),
-                                |this| this.child(t("item-transcendence-limit")),
-                            )
-                            .when_else(
-                                temper_limit == 0,
-                                |this| this.child(t("item-no-tempering")),
-                                |this| this.child(t("item-tempering-limit")),
-                            )
-                            .when_else(
-                                reverse_limit == 0,
-                                |this| this.child(t("item-no-reverse-tempering")),
-                                |this| this.child(t("item-reverse-tempering-limit")),
-                            ),
+                            .when_some(transcendence_limit, |this, transcendence_limit| {
+                                this.when_else(
+                                    transcendence_limit == 0,
+                                    |this| this.child(t("item-no-transcendence")),
+                                    |this| this.child(t("item-transcendence-limit")),
+                                )
+                            })
+                            .when_some(temper_limit, |this, temper_limit| {
+                                this.when_else(
+                                    temper_limit == 0,
+                                    |this| this.child(t("item-no-tempering")),
+                                    |this| this.child(t("item-tempering-limit")),
+                                )
+                            })
+                            .when_some(reverse_limit, |this, reverse_limit| {
+                                this.when_else(
+                                    reverse_limit == 0,
+                                    |this| this.child(t("item-no-reverse-tempering")),
+                                    |this| this.child(t("item-reverse-tempering-limit")),
+                                )
+                            }),
                     )
                     .child(
                         v_flex()
                             .justify_start()
-                            .when_else(
-                                transcendence_limit == 0,
-                                |this| this.child(div().child(" ")),
-                                |this| {
-                                    this.child(
-                                        h_flex()
-                                            .child(
-                                                Button::new("decrease-transcendence")
-                                                    //   .ghost()
-                                                    .xsmall()
-                                                    .icon(IconName::Minus)
-                                                    .on_click(decrease_transcendence_handler),
-                                            )
-                                            .child(
-                                                h_flex()
-                                                    .justify_center()
-                                                    .w(px(50.))
-                                                    .child(format!("{}/{}", preview.transcendence, transcendence_limit)),
-                                            )
-                                            .child(
-                                                Button::new("increase-transcendence")
-                                                    //   .ghost()
-                                                    .xsmall()
-                                                    .icon(IconName::Plus)
-                                                    .on_click(increase_transcendence_handler),
-                                            ),
-                                    )
-                                },
-                            )
-                            .when_else(
-                                temper_limit == 0,
-                                |this| this.child(div().child(" ")),
-                                |this| {
-                                    this.child(
-                                        h_flex()
-                                            .child(
-                                                Button::new("decrease-tempering")
-                                                    //   .ghost()
-                                                    .xsmall()
-                                                    .icon(IconName::Minus)
-                                                    .on_click(decrease_tempering_handler),
-                                            )
-                                            .child(
-                                                h_flex()
-                                                    .justify_center()
-                                                    .w(px(50.))
-                                                    .child(format!("{}/{}", preview.tempering, temper_limit)),
-                                            )
-                                            .child(
-                                                Button::new("increase-tempering")
-                                                    //   .ghost()
-                                                    .xsmall()
-                                                    .icon(IconName::Plus)
-                                                    .on_click(increase_tempering_handler),
-                                            ),
-                                    )
-                                },
-                            )
-                            .when_else(
-                                reverse_limit == 0,
-                                |this| this.child(div().child(" ")),
-                                |this| {
-                                    this.child(
-                                        h_flex()
-                                            .child(
-                                                Button::new("decrease-reverse-tempering")
-                                                    //   .ghost()
-                                                    .xsmall()
-                                                    .icon(IconName::Minus)
-                                                    .on_click(decrease_reverse_tempering_handler),
-                                            )
-                                            .child(
-                                                h_flex()
-                                                    .justify_center()
-                                                    .w(px(50.))
-                                                    .child(format!("{}/{}", preview.reverse_tempering, reverse_limit)),
-                                            )
-                                            .child(
-                                                Button::new("increase-reverse-tempering")
-                                                    //   .ghost()
-                                                    .xsmall()
-                                                    .icon(IconName::Plus)
-                                                    .on_click(increase_reverse_tempering_handler),
-                                            ),
-                                    )
-                                },
-                            ),
+                            .when_some(transcendence_limit, |this, transcendence_limit| {
+                                this.when_else(
+                                    transcendence_limit == 0,
+                                    |this| this.child(div().child(" ")),
+                                    |this| {
+                                        this.child(
+                                            h_flex()
+                                                .child(
+                                                    Button::new("decrease-transcendence")
+                                                        //   .ghost()
+                                                        .xsmall()
+                                                        .icon(IconName::Minus)
+                                                        .on_click(decrease_transcendence_handler),
+                                                )
+                                                .child(
+                                                    h_flex()
+                                                        .justify_center()
+                                                        .w(px(50.))
+                                                        .child(format!("{}/{}", preview.transcendence, transcendence_limit)),
+                                                )
+                                                .child(
+                                                    Button::new("increase-transcendence")
+                                                        //   .ghost()
+                                                        .xsmall()
+                                                        .icon(IconName::Plus)
+                                                        .on_click(increase_transcendence_handler),
+                                                ),
+                                        )
+                                    },
+                                )
+                            })
+                            .when_some(temper_limit, |this, temper_limit| {
+                                this.when_else(
+                                    temper_limit == 0,
+                                    |this| this.child(div().child(" ")),
+                                    |this| {
+                                        this.child(
+                                            h_flex()
+                                                .child(
+                                                    Button::new("decrease-tempering")
+                                                        //   .ghost()
+                                                        .xsmall()
+                                                        .icon(IconName::Minus)
+                                                        .on_click(decrease_tempering_handler),
+                                                )
+                                                .child(
+                                                    h_flex()
+                                                        .justify_center()
+                                                        .w(px(50.))
+                                                        .child(format!("{}/{}", preview.tempering, temper_limit)),
+                                                )
+                                                .child(
+                                                    Button::new("increase-tempering")
+                                                        //   .ghost()
+                                                        .xsmall()
+                                                        .icon(IconName::Plus)
+                                                        .on_click(increase_tempering_handler),
+                                                ),
+                                        )
+                                    },
+                                )
+                            })
+                            .when_some(reverse_limit, |this, reverse_limit| {
+                                this.when_else(
+                                    reverse_limit == 0,
+                                    |this| this.child(div().child(" ")),
+                                    |this| {
+                                        this.child(
+                                            h_flex()
+                                                .child(
+                                                    Button::new("decrease-reverse-tempering")
+                                                        //   .ghost()
+                                                        .xsmall()
+                                                        .icon(IconName::Minus)
+                                                        .on_click(decrease_reverse_tempering_handler),
+                                                )
+                                                .child(
+                                                    h_flex()
+                                                        .justify_center()
+                                                        .w(px(50.))
+                                                        .child(format!("{}/{}", preview.reverse_tempering, reverse_limit)),
+                                                )
+                                                .child(
+                                                    Button::new("increase-reverse-tempering")
+                                                        //   .ghost()
+                                                        .xsmall()
+                                                        .icon(IconName::Plus)
+                                                        .on_click(increase_reverse_tempering_handler),
+                                                ),
+                                        )
+                                    },
+                                )
+                            }),
                     ),
             )
             .child(format!("{}: {}", t("item-required-level"), required_level))
             .when(max_sealed_slots > 0, |this| {
                 this.child(format!("{}: {} - {}", t("item-sealed-stones-slots"), min_sealed_slots, max_sealed_slots))
             })
-            .child(h_flex().gap_1().children(usable_class.iter().map(|c| c.locale())))
+            .when_some(usable_class, |this, usable_class| {
+                this.child(h_flex().gap_1().children(usable_class.iter().map(|c| c.locale())))
+            })
+            .child(
+                h_flex()
+                    .gap_1()
+                    .when_some(tags.0.and_then(|t| t.locale()), |this, locale| {
+                        this.child(div().text_color(cx.theme().yellow).child(locale))
+                    })
+                    .when(tags.1, |this| this.child(t("item-tag-no-trade")))
+                    .when(tags.2, |this| this.child(t("item-tag-no-sell")))
+                    .when(tags.3, |this| this.child(t("item-tag-no-destroy"))),
+            )
             .when_some(skill_locale, |this, skill_locale| {
                 this.child(div().mt_2().text_color(cx.theme().success).child(t("item-equipped-skill")))
-                    .child(div().text_color(cx.theme().yellow).child(skill_locale))
+                    .child(div().text_color(cx.theme().yellow).child(remove_html_tags_regex(&skill_locale)))
+            })
+            .when_some(description_locale, |this, description_locale| {
+                this.child(
+                    div()
+                        .mt_2()
+                        .text_color(cx.theme().yellow)
+                        .child(remove_html_tags_regex(&description_locale)),
+                )
             })
             .when(max_random_effects > 0, {
                 let viewer_entity = viewer_entity.clone();
@@ -1142,6 +1211,7 @@ impl Render for GameDataView {
                                                         reverse_limit,
                                                         transcendence_limit,
                                                         skill_locale,
+                                                        description_locale,
                                                         usable_class,
                                                         attack,
                                                         attack_tempering_effect,
@@ -1151,6 +1221,7 @@ impl Render for GameDataView {
                                                         magic_defense_tempering_effect,
                                                         attack_speed,
                                                         required_level,
+                                                        tags,
                                                         min_sealed_slots,
                                                         max_sealed_slots,
                                                         min_random_effects,
@@ -1215,12 +1286,13 @@ impl Render for GameDataView {
                                                                 .map_or((None, None), |(x, y)| (Some(x), Some(y)));
 
                                                             (
-                                                                preview.quality,
-                                                                temper_limit,
-                                                                reverse_limit,
-                                                                transcendence_limit,
+                                                                Some(preview.quality),
+                                                                Some(temper_limit),
+                                                                Some(reverse_limit),
+                                                                Some(transcendence_limit),
                                                                 secondary_weapon.get_skill_locale(),
-                                                                secondary_weapon.usable_class.clone(),
+                                                                None,
+                                                                Some(secondary_weapon.usable_class.clone()),
                                                                 None,
                                                                 None,
                                                                 Some(secondary_weapon.physical_defense + quality_effect.unwrap_or_default()),
@@ -1229,6 +1301,12 @@ impl Render for GameDataView {
                                                                 magic_tempering_effect,
                                                                 None,
                                                                 secondary_weapon.required_level,
+                                                                (
+                                                                    secondary_weapon.binding,
+                                                                    secondary_weapon.no_trade,
+                                                                    secondary_weapon.no_disposal,
+                                                                    secondary_weapon.indestructible,
+                                                                ),
                                                                 0,
                                                                 0,
                                                                 secondary_weapon.random_option_count_min,
@@ -1321,12 +1399,13 @@ impl Render for GameDataView {
                                                                 });
 
                                                             (
-                                                                preview.quality,
-                                                                temper_limit,
-                                                                reverse_limit,
-                                                                transcendence_limit,
+                                                                Some(preview.quality),
+                                                                Some(temper_limit),
+                                                                Some(reverse_limit),
+                                                                Some(transcendence_limit),
                                                                 weapon.get_skill_locale(),
-                                                                weapon.usable_class.clone(),
+                                                                None,
+                                                                Some(weapon.usable_class.clone()),
                                                                 Some((
                                                                     (weapon.max_attack
                                                                         + quality_effect.unwrap_or_default()
@@ -1344,6 +1423,7 @@ impl Render for GameDataView {
                                                                 None,
                                                                 Some(weapon.attack_speed),
                                                                 weapon.required_level,
+                                                                (weapon.binding, weapon.cannot_trade, weapon.cannot_sell, weapon.indestructible),
                                                                 weapon.min_crafting_seal_slots,
                                                                 weapon.max_crafting_seal_slots,
                                                                 weapon.min_random_options,
@@ -1409,12 +1489,13 @@ impl Render for GameDataView {
                                                                 .map_or((None, None), |(x, y)| (Some(x), Some(y)));
 
                                                             (
-                                                                preview.quality,
-                                                                temper_limit,
-                                                                reverse_limit,
-                                                                transcendence_limit,
+                                                                Some(preview.quality),
+                                                                Some(temper_limit),
+                                                                Some(reverse_limit),
+                                                                Some(transcendence_limit),
                                                                 armor.get_skill_locale(),
-                                                                armor.usable_class.clone(),
+                                                                None,
+                                                                Some(armor.usable_class.clone()),
                                                                 None,
                                                                 None,
                                                                 Some(armor.physical_defense + quality_effect.unwrap_or_default()),
@@ -1423,6 +1504,7 @@ impl Render for GameDataView {
                                                                 magic_tempering_effect,
                                                                 None,
                                                                 armor.required_level,
+                                                                (armor.binding, armor.no_trade, armor.no_sell, armor.no_destroy),
                                                                 armor.sealed_fellow_slots_min,
                                                                 armor.sealed_fellow_slots_max,
                                                                 armor.random_option_count_min,
@@ -1435,7 +1517,39 @@ impl Render for GameDataView {
                                                                 armor.equip_effect_4.clone(),
                                                             )
                                                         }
-
+                                                        crate::game_data::DataType::Material(material) => (
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            material.description_locale.as_ref().and_then(|f| f.locale()),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            material.required_level,
+                                                            (
+                                                                material.binding,
+                                                                material.non_tradeable,
+                                                                material.non_disposable,
+                                                                material.non_destroyable,
+                                                            ),
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                        ),
                                                         crate::game_data::DataType::Accessory(accessory) => {
                                                             let temper_limit = accessory.enhancement_limit;
                                                             let reverse_limit = accessory.reverse_enhancement_limit;
@@ -1482,12 +1596,13 @@ impl Render for GameDataView {
                                                                 });
 
                                                             (
-                                                                preview.quality,
-                                                                temper_limit,
-                                                                reverse_limit,
-                                                                transcendence_limit,
+                                                                Some(preview.quality),
+                                                                Some(temper_limit),
+                                                                Some(reverse_limit),
+                                                                Some(transcendence_limit),
                                                                 accessory.get_skill_locale(),
-                                                                accessory.usable_class.clone(),
+                                                                None,
+                                                                Some(accessory.usable_class.clone()),
                                                                 None,
                                                                 None,
                                                                 None,
@@ -1496,6 +1611,7 @@ impl Render for GameDataView {
                                                                 tempering_effect,
                                                                 None,
                                                                 accessory.required_level,
+                                                                (accessory.binding, accessory.no_trade, accessory.no_disposal, accessory.no_destroy),
                                                                 0,
                                                                 0,
                                                                 accessory.random_option_count_min,
@@ -1548,6 +1664,7 @@ impl Render for GameDataView {
                                                                                     grade,
                                                                                     item_locale.clone(),
                                                                                     skill_locale,
+                                                                                    description_locale,
                                                                                     usable_class,
                                                                                     attack,
                                                                                     attack_tempering_effect,
@@ -1556,6 +1673,7 @@ impl Render for GameDataView {
                                                                                     magic_defense,
                                                                                     magic_defense_tempering_effect,
                                                                                     attack_speed,
+                                                                                    tags,
                                                                                     required_level,
                                                                                     min_sealed_slots,
                                                                                     max_sealed_slots,

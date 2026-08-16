@@ -9,6 +9,7 @@ pub mod locale;
 pub mod secondary_weapon;
 pub mod tempering;
 pub mod weapon;
+pub mod material;
 
 use anyhow::Result;
 
@@ -34,11 +35,8 @@ use zip::ZipArchive;
 
 use crate::{
     game_data::{
-        accessory::Accessory, armor::Armor, item_option::ItemOption, item_quality::ItemQuality, item_res::ItemRes,
-        item_set::ItemSet, locale::Locale, secondary_weapon::SecondaryWeapon, tempering::Tempering, weapon::Weapon,
-    },
-    game_data_view::GameDataLoadingStatus,
-    language::{LanguageController, t, t_v},
+        accessory::Accessory, armor::Armor, item_option::ItemOption, item_quality::ItemQuality, item_res::ItemRes, item_set::ItemSet, locale::Locale, material::Material, secondary_weapon::SecondaryWeapon, tempering::Tempering, weapon::Weapon,
+    }, game_data_view::GameDataLoadingStatus, language::{LanguageController, t, t_v},
 };
 
 #[derive(Debug, EnumIter, Eq, PartialEq, Hash, Clone, Copy)]
@@ -47,6 +45,7 @@ pub enum ItemType {
     SecondaryWeapon,
     Weapon,
     Accessory,
+    Material
 }
 
 #[derive(Default, Clone, Copy)]
@@ -55,6 +54,37 @@ pub enum Quality {
     Simple,
     Good,
     Perfect,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[derive(Debug)]
+pub enum Binding{
+    None,
+    Obtain,
+    Equip
+}
+
+impl TryFrom<&str> for Binding {
+    type Error = String;
+
+    fn try_from(other: &str) -> Result<Self, Self::Error> {
+        match other {
+            "get" => Ok(Self::Obtain),
+            "equip" => Ok(Self::Equip),
+            "none" => Ok(Self::None),
+            unk => Err(format!("Cannot convert {} binding", unk)),
+        }
+    }
+}
+
+impl Binding {
+    pub fn locale(&self) -> Option<SharedString> {
+        match self {
+            Binding::Obtain => Some(t("item-binding-obtain")),
+            Binding::Equip => Some(t("item-quality-equip")),
+            Binding::None => None,
+        }
+    }
 }
 
 impl Quality {
@@ -82,6 +112,7 @@ impl ItemType {
             ItemType::SecondaryWeapon => t("item-type-secondary-weapon"),
             ItemType::Weapon => t("item-type-weapon"),
             ItemType::Accessory => t("item-type-accessory"),
+            ItemType::Material => t("item-type-material"),
         }
     }
 }
@@ -103,6 +134,7 @@ pub enum DataType {
     Weapon(Weapon),
     Armor(Armor),
     Accessory(Accessory),
+    Material(Material)
 }
 #[derive(Debug, EnumIter, Copy, Clone, PartialEq, Eq, Hash, FromRepr, Serialize)]
 #[repr(u8)]
@@ -605,6 +637,7 @@ impl DataType {
                     }
                 }
             }
+            DataType::Material(_) => {},
         };
 
         for e in effects.iter().filter(|f| f.parsed.is_none()) {
@@ -612,21 +645,23 @@ impl DataType {
         }
     }
 
-    pub fn get_full_type(&self) -> SharedString {
+    pub fn get_full_type(&self) -> Option<SharedString> {
         match self {
-            DataType::Weapon(weapon) => weapon.get_full_type(),
-            DataType::Armor(armor) => armor.get_full_type(),
-            DataType::Accessory(accessory) => accessory.get_full_type(),
-            DataType::SecondaryWeapon(secondary_weapon) => secondary_weapon.get_full_type(),
+            DataType::Weapon(weapon) => Some(weapon.get_full_type()),
+            DataType::Armor(armor) => Some(armor.get_full_type()),
+            DataType::Accessory(accessory) => Some(accessory.get_full_type()),
+            DataType::SecondaryWeapon(secondary_weapon) => Some(secondary_weapon.get_full_type()),
+            DataType::Material(_) => None,
         }
     }
 
-    pub fn get_type(&self) -> SharedString {
+    pub fn get_type(&self) -> Option<SharedString> {
         match self {
-            DataType::Weapon(weapon) => weapon.get_type(),
-            DataType::Armor(armor) => armor.get_type(),
-            DataType::Accessory(accessory) => accessory.get_type(),
-            DataType::SecondaryWeapon(secondary_weapon) => secondary_weapon.get_type(),
+            DataType::Weapon(weapon) => Some(weapon.get_type()),
+            DataType::Armor(armor) => Some(armor.get_type()),
+            DataType::Accessory(accessory) => Some(accessory.get_type()),
+            DataType::SecondaryWeapon(secondary_weapon) => Some(secondary_weapon.get_type()),
+            DataType::Material(_) => None,
         }
     }
 
@@ -636,6 +671,7 @@ impl DataType {
             DataType::Armor(armor) => armor.id.clone(),
             DataType::Accessory(accessory) => accessory.id.clone(),
             DataType::SecondaryWeapon(secondary_weapon) => secondary_weapon.id.clone(),
+            DataType::Material(material) => material.id.clone(),
         }
     }
 
@@ -645,6 +681,7 @@ impl DataType {
             DataType::Armor(armor) => armor.icon.clone(),
             DataType::Accessory(accessory) => accessory.icon.clone(),
             DataType::SecondaryWeapon(secondary_weapon) => secondary_weapon.icon.clone(),
+            DataType::Material(material) => material.icon.clone()
         }
     }
 
@@ -654,6 +691,7 @@ impl DataType {
             DataType::Armor(_) => types.contains(&ItemType::Armor),
             DataType::Accessory(_) => types.contains(&ItemType::Accessory),
             DataType::SecondaryWeapon(_) => types.contains(&ItemType::SecondaryWeapon),
+            DataType::Material(_) => types.contains(&ItemType::Material),
         };
 
         if !include {
@@ -772,6 +810,7 @@ impl DataType {
                     );
                 }
             }
+            DataType::Material(_) => {},
         };
         effects.into_iter().filter_map(|f| f).collect()
     }
@@ -790,6 +829,7 @@ impl DataType {
             DataType::Armor(armor) => armor.grade,
             DataType::Accessory(accessory) => accessory.grade,
             DataType::SecondaryWeapon(secondary_weapon) => secondary_weapon.grade,
+            DataType::Material(material) => material.grade,
         }
     }
 
@@ -799,6 +839,7 @@ impl DataType {
             DataType::Armor(armor) => armor.locale.clone(),
             DataType::Accessory(accessory) => accessory.locale.clone(),
             DataType::SecondaryWeapon(secondary_weapon) => secondary_weapon.locale.clone(),
+            DataType::Material(material) => material.locale.clone(),
         }
     }
 
@@ -844,18 +885,20 @@ impl GameData {
         let mut gamedatas_zip = ZipArchive::new(gamedatas)?;
         let mut gamelibs_zip = ZipArchive::new(gamelibs)?;
         let mut data = Self::new();
-        /**/
+
         let item_set = data.read_itemset(&mut gamedatas_zip, on_load, cx).await?;
-        data.read_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
+       /* data.read_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
         data.read_accessory(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
 
         data.read_secondary_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx)
             .await?;
 
         data.read_armors(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
+*/ 
+        data.read_material(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
 
         data.read_temperings(
-            data.items.iter().map(|(_, item)| item.get_full_type()).unique().collect(),
+            data.items.iter().filter_map(|(_, item)| item.get_full_type()).unique().collect(),
             &mut gamedatas_zip,
             on_load,
             cx,
@@ -864,7 +907,7 @@ impl GameData {
         data.read_options(&mut gamedatas_zip, on_load, cx).await?;
 
         data.read_qualites(
-            data.items.iter().map(|(_, item)| item.get_type()).unique().collect(),
+            data.items.iter().filter_map(|(_, item)| item.get_type()).unique().collect(),
             &mut gamedatas_zip,
             on_load,
             cx,
@@ -1029,6 +1072,37 @@ impl GameData {
         self.read_items_itemset(&data, DataFormat::String, &locales, &skill_locales).await
     }
 
+        async fn read_material<R: Read + Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        gamelibs_zip: &mut ZipArchive<R>,
+        item_set: &Vec<ItemSet>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<()> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::Material;
+            cx.notify();
+        });
+
+        let locales = self.read_material_locales(gamedatas_zip).await?;
+        let res = self.read_material_itemres(gamedatas_zip).await?;
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemdata_material.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items(
+            &data,
+            DataFormat::String,
+            DataType::Material,
+            &locales,
+            &HashMap::new(),
+            &res,
+            &item_set,
+            gamelibs_zip,
+        )
+        .await
+    }
+
     async fn read_accessory<R: Read + Seek>(
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
@@ -1182,8 +1256,22 @@ impl GameData {
         self.read_items_locale(&data, DataFormat::WideString).await
     }
 
+    async fn read_material_locales<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, Locale>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\localized\localstringdata_item_material.sxb")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_locale(&data, DataFormat::WideString).await
+    }
+
     async fn read_accessory_itemres<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, ItemRes>> {
         let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemres_accessory.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_res(&data, DataFormat::String).await
+    }
+
+    async fn read_material_itemres<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, ItemRes>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemres_material.bin")?;
         let mut data = vec![];
         file.read_to_end(&mut data)?;
         self.read_items_res(&data, DataFormat::String).await
@@ -1239,6 +1327,7 @@ impl GameData {
         let mut reader = BufReader::new(cursor);
 
         let definitions = self.read_definitions(&mut reader).await?;
+        debug!(?definitions);
         let item_count = self.read_item_count(&mut reader).await?;
         let offsets = self.read_offsets(&mut reader, item_count, definitions.len()).await?;
 
@@ -1332,6 +1421,7 @@ impl GameData {
         let mut reader = BufReader::new(cursor);
 
         let definitions = self.read_definitions(&mut reader).await?;
+        debug!(?definitions);
         let item_count = self.read_item_count(&mut reader).await?;
         let offsets = self.read_offsets(&mut reader, item_count, definitions.len()).await?;
 

@@ -5,8 +5,7 @@ use std::{
 };
 
 use crate::{
-    game_data::{AbstractItem, DataFormat, GameClass, Grade, Item, ItemEffect, item_set::ItemSet, locale::Locale},
-    language::LanguageController,
+    game_data::{AbstractItem, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, item_set::ItemSet, locale::Locale}, language::LanguageController,
 };
 use anyhow::Result;
 
@@ -25,7 +24,7 @@ pub struct Weapon {
     pub id: SharedString,
     pub name: SharedString,
     for_development: f32,
-    pub required_level: f32,
+    pub required_level: u8,
     level_restriction: f32,
     pub item_level: u16,
     pub usable_class: BTreeSet<GameClass>,
@@ -76,11 +75,11 @@ pub struct Weapon {
     pub enhancement_limit: u8,
     enhancement_chance: SharedString,
     cannot_drop: f32,
-    cannot_trade: f32,
-    cannot_sell: f32,
-    indestructible: f32,
+    pub cannot_trade: bool,
+    pub cannot_sell: bool,
+    pub indestructible: bool,
     level_check_on_drop: SharedString,
-    bind: SharedString,
+    pub binding: Option<Binding>,
     bind_target: SharedString,
     bind_removal_count: f32,
     usage_restriction: SharedString,
@@ -182,7 +181,7 @@ impl AbstractItem for Weapon {
                 50 => self.soul_stone3 = Self::read_string(format, reader).await?,
                 52 => self.enhancement_chance = Self::read_string(format, reader).await?,
                 57 => self.level_check_on_drop = Self::read_string(format, reader).await?,
-                58 => self.bind = Self::read_string(format, reader).await?,
+                58 => self.binding = Binding::try_from(Self::read_string(format, reader).await?.as_str()).ok(),
                 59 => self.bind_target = Self::read_string(format, reader).await?,
                 61 => self.usage_restriction = Self::read_string(format, reader).await?,
                 63 => self.auction_category = Self::read_string(format, reader).await?,
@@ -213,7 +212,7 @@ impl AbstractItem for Weapon {
                     // Assign to the appropriate field based on index
                     match tag_idx {
                         2 => self.for_development = value,
-                        3 => self.required_level = value,
+                        3 => self.required_level = value as u8,
                         4 => self.level_restriction = value,
                         5 => self.item_level = value as u16,
                         9 => {
@@ -250,9 +249,9 @@ impl AbstractItem for Weapon {
                         47 => self.sealed_slots_count = value,
                         51 => self.enhancement_limit = value as u8,
                         53 => self.cannot_drop = value,
-                        54 => self.cannot_trade = value,
-                        55 => self.cannot_sell = value,
-                        56 => self.indestructible = value,
+                        54 => self.cannot_trade = value != 0.0,
+                        55 => self.cannot_sell = value != 0.0,
+                        56 => self.indestructible = value != 0.0,
                         60 => self.bind_removal_count = value,
                         62 => self.dyeable = value,
                         65 => self.ignore_level_check_on_drop = value,

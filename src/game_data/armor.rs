@@ -5,8 +5,7 @@ use std::{
 };
 
 use crate::{
-    game_data::{AbstractItem, DataFormat, GameClass, Grade, Item, ItemEffect, item_set::ItemSet, locale::Locale},
-    language::LanguageController,
+    game_data::{AbstractItem, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, item_set::ItemSet, locale::Locale}, language::LanguageController,
 };
 use anyhow::Result;
 use gpui::{Image, SharedString};
@@ -24,7 +23,7 @@ pub struct Armor {
     pub id: SharedString,
     pub name: SharedString,
     pub development_cost: f32,
-    pub required_level: f32,
+    pub required_level: u8,
     pub level_limit: f32,
     pub item_level: u16,
     pub usable_class: BTreeSet<GameClass>,
@@ -60,11 +59,11 @@ pub struct Armor {
     pub enhancement_limit: u8,
     pub enhancement_chance: SharedString,
     pub no_drop: f32,
-    pub no_trade: f32,
-    pub no_sell: f32,
-    pub no_destroy: f32,
+    pub no_trade: bool,
+    pub no_sell: bool,
+    pub no_destroy: bool,
     pub drop_level_check: SharedString,
-    pub binding: SharedString,
+    pub binding: Option<Binding>,
     pub binding_target: SharedString,
     pub binding_release_count: f32,
     pub usage_restriction: SharedString,
@@ -159,7 +158,7 @@ impl AbstractItem for Armor {
                 35 => self.soul_stone_slot_3 = Self::read_string(format, reader).await?,
                 37 => self.enhancement_chance = Self::read_string(format, reader).await?,
                 42 => self.drop_level_check = Self::read_string(format, reader).await?,
-                43 => self.binding = Self::read_string(format, reader).await?,
+                43 => self.binding = Binding::try_from(Self::read_string(format, reader).await?.as_str()).ok(),
                 44 => self.binding_target = Self::read_string(format, reader).await?,
                 46 => self.usage_restriction = Self::read_string(format, reader).await?,
                 48 => self.sales_agency_category = Self::read_string(format, reader).await?,
@@ -185,7 +184,7 @@ impl AbstractItem for Armor {
 
                 // f32 fields
                 2 => self.development_cost = reader.read_f32_le().await?,
-                3 => self.required_level = reader.read_f32_le().await?,
+                3 => self.required_level = reader.read_f32_le().await? as u8,
                 4 => self.level_limit = reader.read_f32_le().await?,
                 5 => self.item_level = reader.read_f32_le().await? as u16,
                 9 => self.grade = Grade::from_repr(reader.read_f32_le().await? as u8),
@@ -205,9 +204,9 @@ impl AbstractItem for Armor {
                 32 => self.sealed_fellow_slots = reader.read_f32_le().await?,
                 36 => self.enhancement_limit = reader.read_f32_le().await? as u8,
                 38 => self.no_drop = reader.read_f32_le().await?,
-                39 => self.no_trade = reader.read_f32_le().await?,
-                40 => self.no_sell = reader.read_f32_le().await?,
-                41 => self.no_destroy = reader.read_f32_le().await?,
+                39 => self.no_trade = reader.read_f32_le().await? != 0.0,
+                40 => self.no_sell = reader.read_f32_le().await? != 0.0,
+                41 => self.no_destroy = reader.read_f32_le().await? != 0.0,
                 45 => self.binding_release_count = reader.read_f32_le().await?,
                 47 => self.dyeable = reader.read_f32_le().await?,
                 50 => self.ignore_drop_level_check = reader.read_f32_le().await?,

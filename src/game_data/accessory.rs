@@ -5,8 +5,7 @@ use std::{
 };
 
 use crate::{
-    game_data::{AbstractItem, DataFormat, GameClass, Grade, Item, ItemEffect, item_set::ItemSet, locale::Locale},
-    language::LanguageController,
+    game_data::{AbstractItem, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, item_set::ItemSet, locale::Locale}, language::LanguageController,
 };
 use anyhow::Result;
 use serde::Serialize;
@@ -25,7 +24,7 @@ pub struct Accessory {
     pub id: SharedString,
     pub name: SharedString,
     pub development_use: f32,
-    pub required_level: f32,
+    pub required_level: u8,
     pub restricted_level: f32,
     pub item_level: u16,
     pub usable_class: BTreeSet<GameClass>,
@@ -53,11 +52,11 @@ pub struct Accessory {
     pub enhancement_limit: u8,
     pub enhancement_probability: SharedString,
     pub no_drop: f32,
-    pub no_trade: f32,
-    pub no_disposal: f32,
-    pub no_destroy: f32,
+    pub no_trade: bool,
+    pub no_disposal: bool,
+    pub no_destroy: bool,
     pub drop_level_check: SharedString,
-    pub binding: SharedString,
+    pub binding: Option<Binding>,
     pub binding_target: SharedString,
     pub binding_release_count: f32,
     pub usage_restriction: SharedString,
@@ -149,7 +148,7 @@ impl AbstractItem for Accessory {
                 25 => self.variable_attribute = Self::read_string(format, reader).await?,
                 29 => self.enhancement_probability = Self::read_string(format, reader).await?,
                 34 => self.drop_level_check = Self::read_string(format, reader).await?,
-                35 => self.binding = Self::read_string(format, reader).await?,
+                35 => self.binding = Binding::try_from(Self::read_string(format, reader).await?.as_str()).ok(),
                 36 => self.binding_target = Self::read_string(format, reader).await?,
                 38 => self.usage_restriction = Self::read_string(format, reader).await?,
                 40 => self.sales_agency_category = Self::read_string(format, reader).await?,
@@ -174,7 +173,7 @@ impl AbstractItem for Accessory {
                 61 => self.overrise_material_id2 = Self::read_string(format, reader).await?,
                 // f32 fields
                 2 => self.development_use = reader.read_f32_le().await?,
-                3 => self.required_level = reader.read_f32_le().await?,
+                3 => self.required_level = reader.read_f32_le().await? as u8,
                 4 => self.restricted_level = reader.read_f32_le().await?,
                 5 => self.item_level = reader.read_f32_le().await? as u16,
                 9 => self.grade = Grade::from_repr(reader.read_f32_le().await? as u8),
@@ -194,9 +193,9 @@ impl AbstractItem for Accessory {
                 27 => self.variable_attribute_max = reader.read_f32_le().await?,
                 28 => self.enhancement_limit = reader.read_f32_le().await? as u8,
                 30 => self.no_drop = reader.read_f32_le().await?,
-                31 => self.no_trade = reader.read_f32_le().await?,
-                32 => self.no_disposal = reader.read_f32_le().await?,
-                33 => self.no_destroy = reader.read_f32_le().await?,
+                31 => self.no_trade = reader.read_f32_le().await? != 0.0,
+                32 => self.no_disposal = reader.read_f32_le().await? != 0.0,
+                33 => self.no_destroy = reader.read_f32_le().await? != 0.0,
                 37 => self.binding_release_count = reader.read_f32_le().await?,
                 39 => self.dyeable = reader.read_f32_le().await?,
                 42 => self.ignore_drop_level_check = reader.read_f32_le().await?,

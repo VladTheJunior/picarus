@@ -47,7 +47,11 @@ impl AbstractItem for ItemRes {
                         self.icon = Self::read_string(format, reader).await?;
                     }
                 }
-
+                4 => {
+                    if tag_count == 17 {
+                        self.icon = Self::read_string(format, reader).await?;
+                    }
+                }
                 5 => {
                     if tag_count == 35 {
                         self.icon = Self::read_string(format, reader).await?;

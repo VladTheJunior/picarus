@@ -1,6 +1,9 @@
 use std::io::SeekFrom;
 
-use crate::game_data::{AbstractItem, DataFormat};
+use crate::{
+    game_data::{AbstractItem, DataFormat},
+    language::LanguageController,
+};
 use anyhow::Result;
 use gpui::SharedString;
 use serde::Serialize;
@@ -17,6 +20,23 @@ pub struct Locale {
     pub eng: SharedString,
     pub rus: SharedString,
 }
+
+impl Locale {
+    pub fn locale(&self) -> Option<SharedString> {
+        let language = LanguageController::get_current_language();
+
+        let s = match language {
+            crate::settings::Language::English => self.eng.clone(),
+            crate::settings::Language::Russian => self.rus.clone(),
+        };
+        if s.is_empty() {
+            return None;
+        } else {
+            return Some(s);
+        }
+    }
+}
+
 impl AbstractItem for Locale {
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
         mut self,
