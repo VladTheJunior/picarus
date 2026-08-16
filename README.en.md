@@ -10,7 +10,7 @@ Interactive Item Viewer for Riders of Icarus is a desktop application that allow
 ![Screenshot](screenshots/en.png)
 
 ## Current Features
-- Item Categories: Weapons, Secondary Weapons, Armors, Jewelry
+- Item Categories: Weapons, Secondary Weapons, Armors, Jewelry, Materials
 - Detailed Information:
   - Basic stats (attack, defense, etc.)
   - Item grade and quality
