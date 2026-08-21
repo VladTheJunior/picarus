@@ -2,7 +2,7 @@ use gpui::{
     Action, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable, Image, ImageSource, InteractiveElement, IntoElement,
     KeyBinding, ListSizingBehavior, ObjectFit, ParentElement, PathPromptOptions, ReadGlobal, Render, ScrollHandle, ScrollStrategy, SharedString,
     StatefulInteractiveElement, Styled, StyledImage, UniformListScrollHandle, UpdateGlobal, Window, actions, div, img, prelude::FluentBuilder, px,
-    uniform_list,
+    rgb, uniform_list,
 };
 use gpui_component::{
     ActiveTheme, Icon, IconName, InteractiveElementExt, Root, Sizable, StyledExt, TitleBar, WindowExt,
@@ -18,6 +18,7 @@ use gpui_component::{
     status_bar::StatusBar,
     switch::Switch,
     tab::{Tab, TabBar},
+    tooltip::Tooltip,
     v_flex,
 };
 
@@ -26,10 +27,11 @@ use regex::Regex;
 use serde::Deserialize;
 
 use std::{
+    cell::RefCell,
     collections::{BTreeSet, HashMap},
     ops::Range,
     path::Path,
-    rc::Rc,
+    rc::{Rc, Weak},
     sync::{Arc, LazyLock},
     time::Duration,
 };
@@ -40,10 +42,11 @@ use crate::{
     assets::AppIcon,
     extensions::EnumNameExt,
     game_data::{
-        Binding, DataType, GameClass, GameData, Grade, Item, ItemEffect, ItemMinMaxEffect, Quality,
+        Binding, DataType, GameClass, GameData, Grade, Item, ItemEffect, ItemMinMaxEffect, ItemMinMaxNoStepEffect, ItemMinMaxStepEffect, Quality,
         filters::{GameDataFilters, ItemEffectFilter},
         item_set::ItemSet,
-        material::MaterialType,
+        product::Product,
+        recipe::RecipeType,
     },
     language::{LanguageController, t, t_v},
     settings::Settings,
@@ -53,7 +56,7 @@ const CONTEXT: &str = "game_data";
 
 actions!(game_data, [ClearSelection, CopySelection,]);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Action)]
+#[derive(Clone, Copy, PartialEq, Eq, Deserialize, Action)]
 #[action(no_json)]
 pub enum SelectionMove {
     Up,
@@ -75,7 +78,6 @@ fn remove_html_tags_regex(text: &str) -> String {
     TAGS_RE.replace_all(&text.replace("<br>", "\n"), "").to_string()
 }
 
-#[derive(Debug)]
 pub enum GameDataViewEvent {
     LoadingStep(SharedString),
     Reset,
@@ -89,6 +91,7 @@ struct PreviewValues {
     reverse_tempering: u8,
     transcendence: u8,
     random_effects: HashMap<u8, ItemMinMaxEffect>,
+    materials: HashMap<u8, bool>,
 }
 
 impl PreviewValues {
@@ -141,7 +144,7 @@ impl PreviewValues {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum GameDataLoadingStatus {
     ItemSet,
     SecondaryWeapon,
@@ -152,6 +155,15 @@ pub enum GameDataLoadingStatus {
     Effects,
     Quality,
     Material,
+    Recipe,
+    ProductMaterial,
+    FellowEquip,
+    Consume,
+    Boost,
+    Gem,
+    SealedFellow,
+    SkillBook,
+    Exchange,
 }
 
 impl GameDataLoadingStatus {
@@ -166,6 +178,15 @@ impl GameDataLoadingStatus {
             GameDataLoadingStatus::Effects => t("game-data-loading-effects"),
             GameDataLoadingStatus::Quality => t("game-data-loading-quality"),
             GameDataLoadingStatus::Material => t("game-data-loading-material"),
+            GameDataLoadingStatus::Recipe => t("game-data-loading-recipe"),
+            GameDataLoadingStatus::ProductMaterial => t("game-data-loading-product-material"),
+            GameDataLoadingStatus::FellowEquip => t("game-data-loading-fellow-equip"),
+            GameDataLoadingStatus::Consume => t("game-data-loading-consume"),
+            GameDataLoadingStatus::Boost => t("game-data-loading-boost"),
+            GameDataLoadingStatus::Gem => t("game-data-loading-gem"),
+            GameDataLoadingStatus::SealedFellow => t("game-data-loading-sealed-fellow"),
+            GameDataLoadingStatus::SkillBook => t("game-data-loading-skill-book"),
+            GameDataLoadingStatus::Exchange => t("game-data-loading-exchange"),
         }
     }
 }
@@ -261,10 +282,13 @@ impl GameDataView {
         magic_defense: Option<f32>,
         magic_defense_tempering_effect: Option<f32>,
         attack_speed: Option<f32>,
+        talent_power: Option<u16>,
         // no trade, no sell, no destroy
         tags: (Option<Binding>, bool, bool, bool),
-        material_recipe_types: Option<BTreeSet<MaterialType>>,
-        required_level: u8,
+        recipe_types: Option<BTreeSet<RecipeType>>,
+        recipe_stage: Option<u8>,
+        product: Option<Weak<RefCell<Product>>>,
+        required_level: Option<u8>,
         min_sealed_slots: u8,
         max_sealed_slots: u8,
         min_random_effects: u8,
@@ -275,6 +299,14 @@ impl GameDataView {
         equip_effect_2: Option<ItemEffect>,
         equip_effect_3: Option<ItemEffect>,
         equip_effect_4: Option<ItemEffect>,
+        fellow_stone_effects: Option<(
+            Option<ItemMinMaxStepEffect>,
+            Option<ItemMinMaxStepEffect>,
+            Option<ItemMinMaxStepEffect>,
+            Option<ItemMinMaxNoStepEffect>,
+            u8,
+            f32,
+        )>,
         preview: &PreviewValues,
         items: &IndexMap<SharedString, Rc<DataType>>,
         decrease_transcendence_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -285,6 +317,7 @@ impl GameDataView {
         increase_reverse_tempering_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
         copy_item_name_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
         viewer_entity: Entity<GameDataView>,
+        max_ep: Option<f32>,
         cx: &App,
     ) -> gpui::Div {
         v_flex()
@@ -364,6 +397,9 @@ impl GameDataView {
                                         )
                                     }),
                             )
+                            .when_some(max_ep, |this, max_ep| {
+                                this.child(h_flex().gap_1().child(format!("{} {:.1}", t("item-effect-max-ep"), max_ep)))
+                            })
                             .when_some(attack, |this, (dps, min, max)| {
                                 this.child(h_flex().gap_1().child(format!("{} {:.1}", t("item-attack-dps"), dps)).when_some(
                                     attack_tempering_effect,
@@ -402,6 +438,9 @@ impl GameDataView {
                             })
                             .when_some(attack_speed, |this, attack_speed| {
                                 this.child(format!("{} {:.1}", t("item-attack-speed"), attack_speed))
+                            })
+                            .when_some(talent_power, |this, talent_power| {
+                                this.child(format!("{} {}", t("item-talent-power"), talent_power))
                             }),
                     ),
             )
@@ -531,7 +570,9 @@ impl GameDataView {
                             }),
                     ),
             )
-            .child(format!("{}: {}", t("item-required-level"), required_level))
+            .when_some(required_level, |this, required_level| {
+                this.child(format!("{}: {}", t("item-required-level"), required_level))
+            })
             .when(max_sealed_slots > 0, |this| {
                 this.child(format!("{}: {} - {}", t("item-sealed-stones-slots"), min_sealed_slots, max_sealed_slots))
             })
@@ -548,23 +589,23 @@ impl GameDataView {
                     .when(tags.2, |this| this.child(t("item-tag-no-sell")))
                     .when(tags.3, |this| this.child(t("item-tag-no-destroy"))),
             )
-            .when_some(material_recipe_types, |this, material_recipe_types| {
-                this.child(h_flex().gap_1().children(material_recipe_types.iter().map(|m| m.locale())))
+            .when_some(recipe_types, |this, recipe_types| {
+                this.child(
+                    h_flex()
+                        .gap_1()
+                        .children(recipe_types.iter().map(|m| m.locale()))
+                        .when_some(recipe_stage, |this, recipe_stage| {
+                            this.child(t_v("item-recipe-stage", vec![("stage", recipe_stage)]))
+                        }),
+                )
             })
             .when_some(skill_locale, |this, skill_locale| {
                 this.child(div().mt_2().text_color(cx.theme().success).child(t("item-equipped-skill")))
                     .child(div().text_color(cx.theme().yellow).child(remove_html_tags_regex(&skill_locale)))
             })
-            .when_some(description_locale, |this, description_locale| {
-                this.child(
-                    div()
-                        .mt_2()
-                        .text_color(cx.theme().yellow)
-                        .child(remove_html_tags_regex(&description_locale)),
-                )
-            })
             .when(max_random_effects > 0, {
                 let viewer_entity = viewer_entity.clone();
+                let id = id.clone();
                 move |this| {
                     this.child(div().mt_2().text_color(cx.theme().yellow).child(format!(
                         "{} - {} {}",
@@ -763,6 +804,626 @@ impl GameDataView {
                                 .when_some(set_effect.get_locale(), |this, skill| this.child(remove_html_tags_regex(&skill)))
                         })))
                     })
+            })
+            .when_some(fellow_stone_effects, |this, (e1, e2, e3, plus, tempered, tempered_effect)| {
+                this.child(
+                    h_flex()
+                        .mt_2()
+                        .text_color(cx.theme().success)
+                        .gap_2()
+                        .items_start()
+                        .child(
+                            v_flex()
+                                .child(div().text_color(cx.theme().yellow).child(t("item-equipped-effects")))
+                                .when_some(e1.as_ref(), |this, e| {
+                                    this.child(
+                                        e.parsed
+                                            .as_ref()
+                                            .map(|f| SharedString::new(t_v(&f.0, vec![("value", "")]).trim_end_matches(&['-']).trim_end()))
+                                            .unwrap_or_else(|| e.effect.clone()),
+                                    )
+                                })
+                                .when_some(e2.as_ref(), |this, e| {
+                                    this.child(
+                                        e.parsed
+                                            .as_ref()
+                                            .map(|f| SharedString::new(t_v(&f.0, vec![("value", "")]).trim_end_matches(&['-']).trim_end()))
+                                            .unwrap_or_else(|| e.effect.clone()),
+                                    )
+                                })
+                                .when_some(e3.as_ref(), |this, e| {
+                                    this.child(
+                                        e.parsed
+                                            .as_ref()
+                                            .map(|f| SharedString::new(t_v(&f.0, vec![("value", "")]).trim_end_matches(&['-']).trim_end()))
+                                            .unwrap_or_else(|| e.effect.clone()),
+                                    )
+                                })
+                                .when_some(plus.as_ref(), |this, e| {
+                                    this.child(
+                                        div().text_color(cx.theme().cyan).child(
+                                            e.parsed
+                                                .as_ref()
+                                                .map(|f| SharedString::new(t_v(&f.0, vec![("value", "")]).trim_end_matches(&['-']).trim_end()))
+                                                .unwrap_or_else(|| e.effect.clone()),
+                                        ),
+                                    )
+                                }),
+                        )
+                        .child(
+                            v_flex()
+                                .child(div().text_color(cx.theme().yellow).child(t("sealed-fellow-min-level")))
+                                .when_some(e1.as_ref(), |this, e| {
+                                    this.child(
+                                        e.parsed
+                                            .as_ref()
+                                            .map(|(key, min, max, _)| {
+                                                if key.ends_with("-minus-percent") {
+                                                    format!("{:-.2}% ~ -{:.2}%", min, max)
+                                                } else if key.ends_with("-percent") {
+                                                    format!("{:+.2}% ~ {:+.2}%", min, max)
+                                                } else {
+                                                    format!("{:+.0} ~ {:+.0}", min, max)
+                                                }
+                                            })
+                                            .unwrap_or_default(),
+                                    )
+                                })
+                                .when_some(e2.as_ref(), |this, e| {
+                                    this.child(
+                                        e.parsed
+                                            .as_ref()
+                                            .map(|(key, min, max, _)| {
+                                                if key.ends_with("-minus-percent") {
+                                                    format!("{:-.2}% ~ -{:.2}%", min, max)
+                                                } else if key.ends_with("-percent") {
+                                                    format!("{:+.2}% ~ {:+.2}%", min, max)
+                                                } else {
+                                                    format!("{:+.0} ~ {:+.0}", min, max)
+                                                }
+                                            })
+                                            .unwrap_or_default(),
+                                    )
+                                })
+                                .when_some(e3.as_ref(), |this, e| {
+                                    this.child(
+                                        e.parsed
+                                            .as_ref()
+                                            .map(|(key, min, max, _)| {
+                                                if key.ends_with("-minus-percent") {
+                                                    format!("{:-.2}% ~ -{:.2}%", min, max)
+                                                } else if key.ends_with("-percent") {
+                                                    format!("{:+.2}% ~ {:+.2}%", min, max)
+                                                } else {
+                                                    format!("{:+.0} ~ {:+.0}", min, max)
+                                                }
+                                            })
+                                            .unwrap_or_default(),
+                                    )
+                                }),
+                        )
+                        .child(
+                            v_flex()
+                                .child(div().text_color(cx.theme().yellow).child(t("sealed-fellow-max-level")))
+                                .when_some(e1.as_ref(), |this, e| {
+                                    this.child(
+                                        e.parsed
+                                            .as_ref()
+                                            .map(|(key, min, max, step)| {
+                                                if key.ends_with("-minus-percent") {
+                                                    format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
+                                                } else if key.ends_with("-percent") {
+                                                    format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
+                                                } else {
+                                                    format!("{:+.0} ~ {:+.0}", min + step, max + step)
+                                                }
+                                            })
+                                            .unwrap_or_default(),
+                                    )
+                                })
+                                .when_some(e2.as_ref(), |this, e| {
+                                    this.child(
+                                        e.parsed
+                                            .as_ref()
+                                            .map(|(key, min, max, step)| {
+                                                if key.ends_with("-minus-percent") {
+                                                    format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
+                                                } else if key.ends_with("-percent") {
+                                                    format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
+                                                } else {
+                                                    format!("{:+.0} ~ {:+.0}", min + step, max + step)
+                                                }
+                                            })
+                                            .unwrap_or_default(),
+                                    )
+                                })
+                                .when_some(e3.as_ref(), |this, e| {
+                                    this.child(
+                                        e.parsed
+                                            .as_ref()
+                                            .map(|(key, min, max, step)| {
+                                                if key.ends_with("-minus-percent") {
+                                                    format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
+                                                } else if key.ends_with("-percent") {
+                                                    format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
+                                                } else {
+                                                    format!("{:+.0} ~ {:+.0}", min + step, max + step)
+                                                }
+                                            })
+                                            .unwrap_or_default(),
+                                    )
+                                }),
+                        )
+                        .when(plus.is_some(), |this| {
+                            this.child(
+                                v_flex()
+                                    .child(div().text_color(cx.theme().yellow).child(t("sealed-fellow-plus-level")))
+                                    .when_some(e1.as_ref(), |this, e| {
+                                        this.child(
+                                            e.parsed
+                                                .as_ref()
+                                                .map(|(key, min, max, step)| {
+                                                    if key.ends_with("-minus-percent") {
+                                                        format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
+                                                    } else if key.ends_with("-percent") {
+                                                        format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
+                                                    } else {
+                                                        format!("{:+.0} ~ {:+.0}", min + step, max + step)
+                                                    }
+                                                })
+                                                .unwrap_or_default(),
+                                        )
+                                    })
+                                    .when_some(e2.as_ref(), |this, e| {
+                                        this.child(
+                                            e.parsed
+                                                .as_ref()
+                                                .map(|(key, min, max, step)| {
+                                                    if key.ends_with("-minus-percent") {
+                                                        format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
+                                                    } else if key.ends_with("-percent") {
+                                                        format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
+                                                    } else {
+                                                        format!("{:+.0} ~ {:+.0}", min + step, max + step)
+                                                    }
+                                                })
+                                                .unwrap_or_default(),
+                                        )
+                                    })
+                                    .when_some(e3.as_ref(), |this, e| {
+                                        this.child(
+                                            e.parsed
+                                                .as_ref()
+                                                .map(|(key, min, max, step)| {
+                                                    if key.ends_with("-minus-percent") {
+                                                        format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
+                                                    } else if key.ends_with("-percent") {
+                                                        format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
+                                                    } else {
+                                                        format!("{:+.0} ~ {:+.0}", min + step, max + step)
+                                                    }
+                                                })
+                                                .unwrap_or_default(),
+                                        )
+                                    })
+                                    .when_some(plus.as_ref(), |this, e| {
+                                        this.child(
+                                            div().text_color(cx.theme().cyan).child(
+                                                e.parsed
+                                                    .as_ref()
+                                                    .map(|(key, min, max)| {
+                                                        if key.ends_with("-minus-percent") {
+                                                            format!("{:-.2}% ~ -{:.2}%", min, max)
+                                                        } else if key.ends_with("-percent") {
+                                                            format!("{:+.2}% ~ {:+.2}%", min, max)
+                                                        } else {
+                                                            format!("{:+.0} ~ {:+.0}", min, max)
+                                                        }
+                                                    })
+                                                    .unwrap_or_default(),
+                                            ),
+                                        )
+                                    }),
+                            )
+                        })
+                        .when(tempered != 0, |this| {
+                            this.child(
+                                v_flex()
+                                    .child(
+                                        div()
+                                            .text_color(cx.theme().yellow)
+                                            .child(t_v("sealed-fellow-tempered-level", vec![("level", tempered)])),
+                                    )
+                                    .when_some(e1.as_ref(), |this, e| {
+                                        this.child(
+                                            h_flex()
+                                                .gap_1()
+                                                .child(
+                                                    e.parsed
+                                                        .as_ref()
+                                                        .map(|(key, min, max, step)| {
+                                                            if key.ends_with("-minus-percent") {
+                                                                format!(
+                                                                    "{:-.2}% ~ -{:.2}%",
+                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
+                                                                )
+                                                            } else if key.ends_with("-percent") {
+                                                                format!(
+                                                                    "{:+.2}% ~ {:+.2}%",
+                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
+                                                                )
+                                                            } else {
+                                                                format!(
+                                                                    "{:+.0} ~ {:+.0}",
+                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
+                                                                )
+                                                            }
+                                                        })
+                                                        .unwrap_or_default(),
+                                                )
+                                                .when(e.parsed.is_some(), |this| {
+                                                    this.child(div().text_color(cx.theme().yellow).child(format!("({:+.0}%)", tempered_effect)))
+                                                }),
+                                        )
+                                    })
+                                    .when_some(e2.as_ref(), |this, e| {
+                                        this.child(
+                                            h_flex()
+                                                .gap_1()
+                                                .child(
+                                                    e.parsed
+                                                        .as_ref()
+                                                        .map(|(key, min, max, step)| {
+                                                            if key.ends_with("-minus-percent") {
+                                                                format!(
+                                                                    "{:-.2}% ~ -{:.2}%",
+                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
+                                                                )
+                                                            } else if key.ends_with("-percent") {
+                                                                format!(
+                                                                    "{:+.2}% ~ {:+.2}%",
+                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
+                                                                )
+                                                            } else {
+                                                                format!(
+                                                                    "{:+.0} ~ {:+.0}",
+                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
+                                                                )
+                                                            }
+                                                        })
+                                                        .unwrap_or_default(),
+                                                )
+                                                .when(e.parsed.is_some(), |this| {
+                                                    this.child(div().text_color(cx.theme().yellow).child(format!("({:+.0}%)", tempered_effect)))
+                                                }),
+                                        )
+                                    })
+                                    .when_some(e3.as_ref(), |this, e| {
+                                        this.child(
+                                            h_flex()
+                                                .gap_1()
+                                                .child(
+                                                    e.parsed
+                                                        .as_ref()
+                                                        .map(|(key, min, max, step)| {
+                                                            if key.ends_with("-minus-percent") {
+                                                                format!(
+                                                                    "{:-.2}% ~ -{:.2}%",
+                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
+                                                                )
+                                                            } else if key.ends_with("-percent") {
+                                                                format!(
+                                                                    "{:+.2}% ~ {:+.2}%",
+                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
+                                                                )
+                                                            } else {
+                                                                format!(
+                                                                    "{:+.0} ~ {:+.0}",
+                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
+                                                                )
+                                                            }
+                                                        })
+                                                        .unwrap_or_default(),
+                                                )
+                                                .when(e.parsed.is_some(), |this| {
+                                                    this.child(div().text_color(cx.theme().yellow).child(format!("({:+.0}%)", tempered_effect)))
+                                                }),
+                                        )
+                                    })
+                                    .when_some(plus.as_ref(), |this, e| {
+                                        this.child(
+                                            h_flex()
+                                                .text_color(cx.theme().cyan)
+                                                .gap_1()
+                                                .child(
+                                                    e.parsed
+                                                        .as_ref()
+                                                        .map(|(key, min, max)| {
+                                                            if key.ends_with("-minus-percent") {
+                                                                format!(
+                                                                    "{:-.2}% ~ -{:.2}%",
+                                                                    min * (1.0 + tempered_effect / 100.0),
+                                                                    max * (1.0 + tempered_effect / 100.0)
+                                                                )
+                                                            } else if key.ends_with("-percent") {
+                                                                format!(
+                                                                    "{:+.2}% ~ {:+.2}%",
+                                                                    min * (1.0 + tempered_effect / 100.0),
+                                                                    max * (1.0 + tempered_effect / 100.0)
+                                                                )
+                                                            } else {
+                                                                format!(
+                                                                    "{:+.0} ~ {:+.0}",
+                                                                    min * (1.0 + tempered_effect / 100.0),
+                                                                    max * (1.0 + tempered_effect / 100.0)
+                                                                )
+                                                            }
+                                                        })
+                                                        .unwrap_or_default(),
+                                                )
+                                                .when(e.parsed.is_some(), |this| {
+                                                    this.child(div().text_color(cx.theme().yellow).child(format!("({:+.0}%)", tempered_effect)))
+                                                }),
+                                        )
+                                    }),
+                            )
+                        }),
+                )
+            })
+            .when_some(description_locale, |this, description_locale| {
+                this.child(
+                    div()
+                        .mt_2()
+                        .text_color(cx.theme().yellow)
+                        .child(remove_html_tags_regex(&description_locale)),
+                )
+            })
+            .when_some(product.and_then(|f| f.upgrade()).map(|f| f.borrow().clone()), {
+                let viewer_entity = viewer_entity.clone();
+                let id = id.clone();
+                move |this, product| {
+                    let item = product.node.data_type.clone();
+
+                    let icon = item.as_ref().and_then(|f| f.upgrade()).and_then(|i| i.get_icon());
+                    let grade = item.as_ref().and_then(|f| f.upgrade()).and_then(|i| i.get_grade());
+                    let chance = product.success_probability;
+                    let inheritance_enhancement_condition = product.inheritance_enhancement_condition;
+                    let inheritance_transcendence_condition = product.inheritance_transcendence_condition;
+                    let materials = vec![
+                        product
+                            .material1
+                            .clone()
+                            .map(|m| (m, product.count1, product.material1_1.clone(), product.count1_1)),
+                        product
+                            .material2
+                            .clone()
+                            .map(|m| (m, product.count2, product.material2_1.clone(), product.count2_1)),
+                        product
+                            .material3
+                            .clone()
+                            .map(|m| (m, product.count3, product.material3_1.clone(), product.count3_1)),
+                        product
+                            .material4
+                            .clone()
+                            .map(|m| (m, product.count4, product.material4_1.clone(), product.count4_1)),
+                        product
+                            .material5
+                            .clone()
+                            .map(|m| (m, product.count5, product.material5_1.clone(), product.count5_1)),
+                    ];
+
+                    this.child(
+                        v_flex()
+                            .gap_1()
+                            .child(div().mt_2().text_color(cx.theme().success).child(t("item-product-result")))
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .child(
+                                        h_flex()
+                                            .when_none(&icon, |this| {
+                                                this.child(
+                                                    div()
+                                                        .size(px(64.))
+                                                        .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color))
+                                                        .border_2(),
+                                                )
+                                            })
+                                            .when_some(icon, |this, icon| {
+                                                this.child(
+                                                    img(ImageSource::Image(icon))
+                                                        .object_fit(ObjectFit::Cover)
+                                                        .size(px(64.))
+                                                        .border_2()
+                                                        .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
+                                                )
+                                            }),
+                                    )
+                                    .child(
+                                        v_flex()
+                                            .items_start()
+                                            .child(
+                                                Button::new(format!("button-{}", product.node.id))
+                                                    .label(
+                                                        item.as_ref()
+                                                            .and_then(|f| f.upgrade())
+                                                            .map(|i| i.get_locale_name())
+                                                            .unwrap_or_else(|| product.node.id.clone()),
+                                                    )
+                                                    .link()
+                                                    .small()
+                                                    .mb_2()
+                                                    .text_color(cx.theme().foreground)
+                                                    .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
+                                                    .when(product.inheritance_on_craft, move |this| {
+                                                        this.child(
+                                                            div()
+                                                                .id("item-product-inheritance")
+                                                                .text_color(cx.theme().yellow)
+                                                                .tooltip(move |window, cx| {
+                                                                    Tooltip::new(t_v(
+                                                                        "item-product-inheritance-conditions",
+                                                                        vec![
+                                                                            ("tempering", format!("{:+}", inheritance_enhancement_condition)),
+                                                                            ("transcendence", format!("{:+}", inheritance_transcendence_condition)),
+                                                                        ],
+                                                                    ))
+                                                                    .build(window, cx)
+                                                                })
+                                                                .child(t("item-product-inheritance")),
+                                                        )
+                                                    })
+                                                    .when(item.is_some(), |this| {
+                                                        this.on_click({
+                                                            let viewer_entity = viewer_entity.clone();
+                                                            move |_, window, cx| {
+                                                                cx.update_entity(&viewer_entity, |this, cx| {
+                                                                    this.tabs.insert(product.node.id.clone());
+                                                                    this.set_selected_item(Some(product.node.id.clone()), window, cx);
+                                                                    cx.notify();
+                                                                })
+                                                            }
+                                                        })
+                                                    }),
+                                            )
+                                            .child(t_v("item-effect-crafting-chance-percent", vec![("value", format!("{:.0}", chance))])),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        v_flex()
+                            .gap_1()
+                            .child(div().mt_2().text_color(cx.theme().success).child(t("item-product-materials")))
+                            .children(materials.into_iter().enumerate().filter_map(|(idx, opt)| opt.map(|val| (idx, val))).map({
+                                let viewer_entity = viewer_entity.clone();
+
+                                move |(index, (node, count, additional_node, additional_count))| {
+                                    let use_additional = preview.materials.get(&(index as u8)).cloned().unwrap_or_default();
+                                    let (is_present, node_id, count, grade, icon, name) = if !use_additional {
+                                        (
+                                            node.data_type.is_some(),
+                                            node.id.clone(),
+                                            count,
+                                            node.data_type.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.get_grade()),
+                                            node.data_type.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.get_icon()),
+                                            node.data_type
+                                                .as_ref()
+                                                .and_then(|f| f.upgrade())
+                                                .map(|m| m.get_locale_name())
+                                                .unwrap_or_else(|| node.id.clone()),
+                                        )
+                                    } else {
+                                        (
+                                            additional_node.as_ref().and_then(|f| f.data_type.as_ref()).is_some(),
+                                            additional_node.as_ref().unwrap().id.clone(),
+                                            additional_count,
+                                            additional_node
+                                                .as_ref()
+                                                .and_then(|f| f.data_type.as_ref())
+                                                .and_then(|f| f.upgrade())
+                                                .and_then(|m| m.get_grade()),
+                                            additional_node
+                                                .as_ref()
+                                                .and_then(|f| f.data_type.as_ref())
+                                                .and_then(|f| f.upgrade())
+                                                .and_then(|m| m.get_icon()),
+                                            additional_node
+                                                .as_ref()
+                                                .and_then(|f| f.data_type.as_ref())
+                                                .and_then(|f| f.upgrade())
+                                                .map(|m| m.get_locale_name())
+                                                .unwrap_or_else(|| additional_node.as_ref().unwrap().id.clone()),
+                                        )
+                                    };
+
+                                    h_flex()
+                                        .gap_2()
+                                        .child(
+                                            h_flex()
+                                                .relative()
+                                                .id(format!("icon-additional-{index}"))
+                                                .when_none(&icon, |this| {
+                                                    this.child(
+                                                        div()
+                                                            .size(px(40.))
+                                                            .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color))
+                                                            .border_2(),
+                                                    )
+                                                })
+                                                .when_some(icon, |this, icon| {
+                                                    this.child(
+                                                        img(ImageSource::Image(icon))
+                                                            .object_fit(ObjectFit::Cover)
+                                                            .size(px(40.))
+                                                            .border_2()
+                                                            .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
+                                                    )
+                                                })
+                                                .when(additional_node.is_some(), {
+                                                    let viewer_entity = viewer_entity.clone();
+                                                    let id = id.clone();
+                                                    move |this| {
+                                                        this.child(
+                                                            div()
+                                                                .flex()
+                                                                .justify_center()
+                                                                .items_center()
+                                                                .bg(cx.theme().blue)
+                                                                .bottom(px(0.0))
+                                                                .right(px(0.0))
+                                                                .size(px(16.0))
+                                                                .absolute()
+                                                                .child(Icon::new(AppIcon::Repeat).text_color(rgb(0xffffff))),
+                                                        )
+                                                        .on_click({
+                                                            let viewer_entity = viewer_entity.clone();
+
+                                                            move |_, _, cx| {
+                                                                cx.update_entity(&viewer_entity, |this, cx| {
+                                                                    this.preview.entry(id.clone()).and_modify(|v| {
+                                                                        v.materials.insert(index as u8, !use_additional);
+                                                                    });
+                                                                    cx.notify();
+                                                                })
+                                                            }
+                                                        })
+                                                    }
+                                                }),
+                                        )
+                                        .child(
+                                            Button::new(format!("button-{}", node_id))
+                                                .label(format!("x{count} {}", name))
+                                                .link()
+                                                .small()
+                                                .mb_2()
+                                                .text_color(cx.theme().foreground)
+                                                .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
+                                                .when(is_present, |this| {
+                                                    this.on_click({
+                                                        let viewer_entity = viewer_entity.clone();
+                                                        move |_, window, cx| {
+                                                            cx.update_entity(&viewer_entity, |this, cx| {
+                                                                this.tabs.insert(node_id.clone());
+                                                                this.set_selected_item(Some(node_id.clone()), window, cx);
+                                                                cx.notify();
+                                                            })
+                                                        }
+                                                    })
+                                                }),
+                                        )
+                                }
+                            })),
+                    )
+                }
             })
         // .child(Self::render_item_set(items, item_set, cx))
     }
@@ -1226,8 +1887,11 @@ impl Render for GameDataView {
                                                         magic_defense_tempering_effect,
                                                         attack_speed,
                                                         required_level,
+                                                        talent_power,
                                                         tags,
-                                                        material_recipe_types,
+                                                        recipe_types,
+                                                        recipe_stage,
+                                                        product,
                                                         min_sealed_slots,
                                                         max_sealed_slots,
                                                         min_random_effects,
@@ -1238,6 +1902,8 @@ impl Render for GameDataView {
                                                         equip_effect_2,
                                                         equip_effect_3,
                                                         equip_effect_4,
+                                                        fellow_stone_effects,
+                                                        max_ep,
                                                     ) = match selected_item.as_ref() {
                                                         crate::game_data::DataType::SecondaryWeapon(secondary_weapon) => {
                                                             let transcendence_limit = secondary_weapon.overrise_max;
@@ -1306,13 +1972,16 @@ impl Render for GameDataView {
                                                                 Some(secondary_weapon.magical_defense),
                                                                 magic_tempering_effect,
                                                                 None,
-                                                                secondary_weapon.required_level,
+                                                                Some(secondary_weapon.required_level),
+                                                                None,
                                                                 (
                                                                     secondary_weapon.binding,
                                                                     secondary_weapon.no_trade,
                                                                     secondary_weapon.no_disposal,
                                                                     secondary_weapon.indestructible,
                                                                 ),
+                                                                None,
+                                                                None,
                                                                 None,
                                                                 0,
                                                                 0,
@@ -1324,6 +1993,8 @@ impl Render for GameDataView {
                                                                 secondary_weapon.equip_effect_2.clone(),
                                                                 secondary_weapon.equip_effect_3.clone(),
                                                                 secondary_weapon.equip_effect_4.clone(),
+                                                                None,
+                                                                None,
                                                             )
                                                         }
 
@@ -1429,8 +2100,11 @@ impl Render for GameDataView {
                                                                 None,
                                                                 None,
                                                                 Some(weapon.attack_speed),
-                                                                weapon.required_level,
+                                                                Some(weapon.required_level),
+                                                                None,
                                                                 (weapon.binding, weapon.cannot_trade, weapon.cannot_sell, weapon.indestructible),
+                                                                None,
+                                                                None,
                                                                 None,
                                                                 weapon.min_crafting_seal_slots,
                                                                 weapon.max_crafting_seal_slots,
@@ -1442,6 +2116,8 @@ impl Render for GameDataView {
                                                                 weapon.equip_effect_2.clone(),
                                                                 weapon.equip_effect_3.clone(),
                                                                 weapon.equip_effect_4.clone(),
+                                                                None,
+                                                                None,
                                                             )
                                                         }
 
@@ -1511,8 +2187,11 @@ impl Render for GameDataView {
                                                                 Some(armor.magical_defense + quality_effect.unwrap_or_default()),
                                                                 magic_tempering_effect,
                                                                 None,
-                                                                armor.required_level,
+                                                                Some(armor.required_level),
+                                                                None,
                                                                 (armor.binding, armor.no_trade, armor.no_sell, armor.no_destroy),
+                                                                None,
+                                                                None,
                                                                 None,
                                                                 armor.sealed_fellow_slots_min,
                                                                 armor.sealed_fellow_slots_max,
@@ -1524,6 +2203,8 @@ impl Render for GameDataView {
                                                                 armor.equip_effect_2.clone(),
                                                                 armor.equip_effect_3.clone(),
                                                                 armor.equip_effect_4.clone(),
+                                                                None,
+                                                                None,
                                                             )
                                                         }
                                                         crate::game_data::DataType::Material(material) => (
@@ -1541,7 +2222,8 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             None,
-                                                            material.required_level,
+                                                            Some(material.required_level),
+                                                            None,
                                                             (
                                                                 material.binding,
                                                                 material.non_tradeable,
@@ -1549,6 +2231,8 @@ impl Render for GameDataView {
                                                                 material.non_destroyable,
                                                             ),
                                                             material.recipe_type.clone(),
+                                                            None,
+                                                            None,
                                                             0,
                                                             0,
                                                             0,
@@ -1559,6 +2243,302 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             None,
+                                                            None,
+                                                            None,
+                                                        ),
+                                                        crate::game_data::DataType::Recipe(recipe) => (
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            Some(recipe.required_level),
+                                                            None,
+                                                            (recipe.binding, recipe.untradeable, recipe.unsellable, recipe.indestructible),
+                                                            recipe.recipe_type.as_ref().map(|f| BTreeSet::from([*f])).clone(),
+                                                            recipe
+                                                                .product
+                                                                .as_ref()
+                                                                .and_then(|f| f.upgrade())
+                                                                .map(|p| p.borrow().technology_grade)
+                                                                .or_else(|| Some(recipe.required_stage)),
+                                                            recipe.product.clone(),
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                        ),
+                                                        crate::game_data::DataType::Consume(consume) => (
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            consume.description_locale.as_ref().and_then(|f| f.locale()),
+                                                            Some(consume.usable_class.clone()),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            Some(consume.required_level),
+                                                            None,
+                                                            (consume.binding, consume.untradeable, consume.unsellable, consume.indestructible),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                        ),
+                                                        crate::game_data::DataType::SkillBook(skill_book) => (
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            Some(skill_book.usable_class.clone()),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            Some(skill_book.required_level),
+                                                            None,
+                                                            (skill_book.binding, skill_book.no_trade, skill_book.no_sell, skill_book.no_destroy),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                        ),
+                                                        crate::game_data::DataType::SealedFellow(sealed_fellow) => (
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            Some(sealed_fellow.characteristic_power),
+                                                            (
+                                                                sealed_fellow.binding,
+                                                                sealed_fellow.no_trade,
+                                                                sealed_fellow.no_sell,
+                                                                sealed_fellow.no_destroy,
+                                                            ),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            Some((
+                                                                sealed_fellow.sealed_fellow_effect_1.clone(),
+                                                                sealed_fellow.sealed_fellow_effect_2.clone(),
+                                                                sealed_fellow.sealed_fellow_effect_3.clone(),
+                                                                sealed_fellow.max_enhancement_sealed_fellow_effect.clone(),
+                                                                sealed_fellow.rf_grade,
+                                                                sealed_fellow.rf_effect,
+                                                            )),
+                                                            None,
+                                                        ),
+                                                        crate::game_data::DataType::Boost(boost) => (
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            boost.description_locale.as_ref().and_then(|f| f.locale()),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            Some(boost.required_level),
+                                                            None,
+                                                            (boost.binding, boost.no_trade, boost.no_sell, boost.no_destroy),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            None,
+                                                            None,
+                                                            boost.equip_effect_1.clone(),
+                                                            boost.equip_effect_2.clone(),
+                                                            boost.equip_effect_3.clone(),
+                                                            boost.equip_effect_4.clone(),
+                                                            None,
+                                                            None,
+                                                        ),
+                                                        crate::game_data::DataType::Exchange(exchange) => (
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            exchange.description_locale.as_ref().and_then(|f| f.locale()),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            (exchange.binding, exchange.untradeable, exchange.unsellable, exchange.indestructible),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                        ),
+                                                        crate::game_data::DataType::Gem(gem) => (
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            Some(gem.required_level),
+                                                            None,
+                                                            (gem.binding, gem.no_trade, gem.no_sell, gem.no_destroy),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            None,
+                                                            None,
+                                                            gem.equip_effect_1.clone(),
+                                                            gem.equip_effect_2.clone(),
+                                                            gem.equip_effect_3.clone(),
+                                                            gem.equip_effect_4.clone(),
+                                                            None,
+                                                            None,
+                                                        ),
+                                                        crate::game_data::DataType::FellowEquip(fellow_equip) => (
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            Some(fellow_equip.usable_class.clone()),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            Some(fellow_equip.required_level),
+                                                            None,
+                                                            (
+                                                                fellow_equip.binding,
+                                                                fellow_equip.untradeable,
+                                                                fellow_equip.unsellable,
+                                                                fellow_equip.indestructible,
+                                                            ),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            None,
+                                                            fellow_equip.item_set.as_ref(),
+                                                            fellow_equip.equip_effect_1.clone(),
+                                                            fellow_equip.equip_effect_2.clone(),
+                                                            fellow_equip.equip_effect_3.clone(),
+                                                            fellow_equip.equip_effect_4.clone(),
+                                                            None,
+                                                            fellow_equip.max_ep_plus,
                                                         ),
                                                         crate::game_data::DataType::Accessory(accessory) => {
                                                             let temper_limit = accessory.enhancement_limit;
@@ -1620,8 +2600,11 @@ impl Render for GameDataView {
                                                                 Some(accessory.magic_defense + quality_effect.unwrap_or_default()),
                                                                 tempering_effect,
                                                                 None,
-                                                                accessory.required_level,
+                                                                Some(accessory.required_level),
+                                                                None,
                                                                 (accessory.binding, accessory.no_trade, accessory.no_disposal, accessory.no_destroy),
+                                                                None,
+                                                                None,
                                                                 None,
                                                                 0,
                                                                 0,
@@ -1633,6 +2616,8 @@ impl Render for GameDataView {
                                                                 accessory.equip_effect_2.clone(),
                                                                 accessory.equip_effect_3.clone(),
                                                                 accessory.equip_effect_4.clone(),
+                                                                None,
+                                                                None,
                                                             )
                                                         }
                                                     };
@@ -1684,8 +2669,11 @@ impl Render for GameDataView {
                                                                                     magic_defense,
                                                                                     magic_defense_tempering_effect,
                                                                                     attack_speed,
+                                                                                    talent_power,
                                                                                     tags,
-                                                                                    material_recipe_types,
+                                                                                    recipe_types,
+                                                                                    recipe_stage,
+                                                                                    product,
                                                                                     required_level,
                                                                                     min_sealed_slots,
                                                                                     max_sealed_slots,
@@ -1697,6 +2685,7 @@ impl Render for GameDataView {
                                                                                     equip_effect_2,
                                                                                     equip_effect_3,
                                                                                     equip_effect_4,
+                                                                                    fellow_stone_effects,
                                                                                     preview,
                                                                                     &self.game_data.items,
                                                                                     cx.listener({
@@ -1784,6 +2773,7 @@ impl Render for GameDataView {
                                                                                         }
                                                                                     }),
                                                                                     cx.entity(),
+                                                                                    max_ep,
                                                                                     cx,
                                                                                 ))
                                                                             }),
@@ -1824,7 +2814,7 @@ impl Render for GameDataView {
                     )
                     .left(
                         Combobox::new(&self.filters.item_type_state)
-                            .w(px(150.))
+                            .w(px(200.))
                             .flex_shrink_0()
                             .disabled(self.is_reading)
                             .small()

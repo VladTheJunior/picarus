@@ -23,74 +23,74 @@ git = "https://github.com/longbridge/gpui-component"
 
 
 [dependencies.image-extras]
-version = "0.1.1"
+version = "=0.1.1"
 default-features = false
 features = ["dds"]
 
 [dependencies.image]
-version = "0.25.10"
+version = "=0.25.10"
 default-features = false
 
 [dependencies.rust-embed]
-version = "8.11.0"
+version = "=8.12.0"
 features = ["interpolate-folder-path"]
 
 [dependencies.tracing]
-version = "0.1.44"
+version = "=0.1.44"
 
 [dependencies.tracing-subscriber]
-version = "0.3.22"
+version = "=0.3.23"
 
 [dependencies.itertools]
-version = "0.15.0"
+version = "=0.15.0"
 
 [dependencies.zip]
-version = "8.6.0"
+version = "=8.6.0"
 
 [dependencies.fluent]
-version = "0.17.0"
+version = "=0.17.0"
 
 [dependencies.unic-langid]
-version = "0.9.6"
+version = "=0.9.6"
 features = ["macros"]
 
 [dependencies.tokio]
-version = "1.49.0"
+version = "=1.53.1"
 features = ["macros", "rt-multi-thread", "fs", "io-util", "time"]
 
 [dependencies.anyhow]
-version = "1.0.102"
+version = "=1.0.104"
 
 [dependencies.serde_json]
-version = "1.0.149"
+version = "=1.0.151"
 
 [dependencies.serde]
-version = "1.0.228"
+version = "=1.0.229"
 features = ["derive"]
 
 [dependencies.strum]
-version = "0.28.0"
+version = "=0.28.0"
 features = ["derive"]
 
 [dependencies.toml]
-version = "1.1.4"
+version = "=1.1.4"
 
 [dependencies.encoding_rs]
-version = "0.8.35"
+version = "=0.8.35"
 
 [dependencies.sys-locale]
-version = "0.3.2"
+version = "=0.3.2"
 
 [dependencies.indexmap]
-version = "2.13.0"
+version = "=2.14.0"
 features = ["rayon", "serde"]
 
 [dependencies.regex]
-version = "1.13.1"
+version = "=1.13.1"
 
 [build-dependencies]
-winresource = "0.1.30"
-vergen-gitcl = { version = "10.0.2", features = ["build", "cargo", "rustc"] }
+winresource = "=0.1.31"
+vergen-gitcl = { version = "=10.0.2", features = ["build", "cargo", "rustc"] }
 
 [profile.release]
 strip = true

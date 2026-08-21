@@ -1,16 +1,16 @@
 use std::{collections::HashMap, io::SeekFrom};
 
 use crate::{
-    game_data::{AbstractItem, DataFormat, ItemEffect, locale::Locale},
-    language::LanguageController,
+    game_data::{AbstractItem, DataFormat, ItemEffect, TagType, locale::Locale}, language::LanguageController,
 };
 use anyhow::Result;
 use gpui::SharedString;
+use indexmap::IndexMap;
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use tracing::warn;
 
-#[derive(Debug, Default, Serialize, Clone)]
+#[derive(Default, Serialize, Clone)]
 pub struct ItemSetEffects {
     pub locale: Option<Locale>,
     pub seteffect_count: u8,
@@ -18,7 +18,7 @@ pub struct ItemSetEffects {
     pub seteffect_skill: Option<SharedString>,
 }
 
-#[derive(Debug, Default, Serialize, Clone)]
+#[derive(Default, Serialize, Clone)]
 pub struct ItemSet {
     pub locale: Option<Locale>,
     pub setid: SharedString,
@@ -74,11 +74,12 @@ impl AbstractItem for ItemSet {
         reader: &mut R,
         offsets: &[u32],
         item_idx: usize,
-        tag_count: usize,
+        definitions: &IndexMap<String, TagType>,
         global_offset: u64,
         format: DataFormat,
     ) -> Result<Self> {
         // Read all fields sequentially
+        let tag_count = definitions.len();
         let mut set_effects = ItemSetEffects::default();
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;
@@ -91,38 +92,72 @@ impl AbstractItem for ItemSet {
                     reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
                 }
             };
+            if tag_count == 58 {
+                match tag_idx {
+                    0 => self.setid = SharedString::new(Self::read_string(format, reader).await?.to_uppercase()),
 
-            match tag_idx {
-                0 => self.setid = SharedString::new(Self::read_string(format, reader).await?.to_uppercase()),
-
-                1 => self.setname = Self::read_string(format, reader).await?,
-                2..16 => {
-                    let id = Self::read_string(format, reader).await?.to_uppercase();
-                    if id != "*" {
-                        self.items.push(SharedString::new(id));
+                    1 => self.setname = Self::read_string(format, reader).await?,
+                    2..10 => {
+                        let id = Self::read_string(format, reader).await?.to_uppercase();
+                        if id != "*" {
+                            self.items.push(SharedString::new(id));
+                        }
                     }
+
+                    10 | 16 | 22 | 28 | 34 | 40 | 46 | 52 => set_effects.seteffect_count = reader.read_f32_le().await? as u8,
+                    11..15 | 17..21 | 23..27 | 29..33 | 35..39 | 41..45 | 47..51 | 53..57 => {
+                        let effect = Self::read_string(format, reader).await?;
+                        if effect != "*" && effect != "0" {
+                            set_effects.seteffect_effects.push(ItemEffect::new(effect));
+                        }
+                    }
+                    15 | 21 | 27 | 33 | 39 | 45 | 51 | 57 => {
+                        let effect_skill = Self::read_string(format, reader).await?.to_uppercase();
+                        if effect_skill != "*" {
+                            set_effects.seteffect_skill = Some(SharedString::new(format!("{}_DESCRIPTION_1", effect_skill)));
+                        }
+
+                        if !set_effects.seteffect_effects.is_empty() || set_effects.seteffect_skill.is_some() {
+                            self.effects.push(set_effects);
+                        }
+                        set_effects = ItemSetEffects::default();
+                    }
+
+                    _ => {}
                 }
+            } else {
+                match tag_idx {
+                    0 => self.setid = SharedString::new(Self::read_string(format, reader).await?.to_uppercase()),
 
-                16 | 22 | 28 | 34 | 40 | 46 | 52 | 58 => set_effects.seteffect_count = reader.read_f32_le().await? as u8,
-                17..21 | 23..27 | 29..33 | 35..39 | 41..45 | 47..51 | 53..57 | 59..63 => {
-                    let effect = Self::read_string(format, reader).await?;
-                    if effect != "*" && effect != "0" {
-                        set_effects.seteffect_effects.push(ItemEffect::new(effect));
+                    1 => self.setname = Self::read_string(format, reader).await?,
+                    2..16 => {
+                        let id = Self::read_string(format, reader).await?.to_uppercase();
+                        if id != "*" {
+                            self.items.push(SharedString::new(id));
+                        }
                     }
+
+                    16 | 22 | 28 | 34 | 40 | 46 | 52 | 58 => set_effects.seteffect_count = reader.read_f32_le().await? as u8,
+                    17..21 | 23..27 | 29..33 | 35..39 | 41..45 | 47..51 | 53..57 | 59..63 => {
+                        let effect = Self::read_string(format, reader).await?;
+                        if effect != "*" && effect != "0" {
+                            set_effects.seteffect_effects.push(ItemEffect::new(effect));
+                        }
+                    }
+                    21 | 27 | 33 | 39 | 45 | 51 | 57 | 63 => {
+                        let effect_skill = Self::read_string(format, reader).await?.to_uppercase();
+                        if effect_skill != "*" {
+                            set_effects.seteffect_skill = Some(SharedString::new(format!("{}_DESCRIPTION_1", effect_skill)));
+                        }
+
+                        if !set_effects.seteffect_effects.is_empty() || set_effects.seteffect_skill.is_some() {
+                            self.effects.push(set_effects);
+                        }
+                        set_effects = ItemSetEffects::default();
+                    }
+
+                    _ => {}
                 }
-                21 | 27 | 33 | 39 | 45 | 51 | 57 | 63 => {
-                    let effect_skill = Self::read_string(format, reader).await?.to_uppercase();
-                    if effect_skill != "*" {
-                        set_effects.seteffect_skill = Some(SharedString::new(format!("{}_DESCRIPTION_1", effect_skill)));
-                    }
-
-                    if !set_effects.seteffect_effects.is_empty() || set_effects.seteffect_skill.is_some() {
-                        self.effects.push(set_effects);
-                    }
-                    set_effects = ItemSetEffects::default();
-                }
-
-                _ => {}
             }
         }
         Ok(self)

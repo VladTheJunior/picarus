@@ -28,6 +28,7 @@ item-common-grade = Common
 item-elite-grade = Elite
 item-heroic-grade = Heroic
 item-legendary-grade = Legendary
+item-legendary-plus-grade = Legendary+
 item-unique-grade = Unique
 item-mythical-grade = Mythical
 item-unknown-grade = Unknown grade
@@ -56,13 +57,36 @@ item-type-armor = Armor
 item-type-accessory = Jewelry
 item-type-secondary-weapon = Secondary Weapon
 item-type-material = Material
+item-type-recipe = Recipe
+item-type-fellow-equip = Fellow Equips
+item-type-consume = Consumes
+item-type-boost = Boosts
+item-type-gem = Gems
+item-type-sealed-fellow = Sealed Familiars
+item-type-skill-book = Skill Books
 
 item-tag-no-trade = Untradable
 item-tag-no-sell = Unsellable
 item-tag-no-destroy = Indestructible
 
+item-recipe-stage = Stage { $stage }
+item-product-result = Crafted Item:
+item-product-materials = Materials Required:
+item-product-inheritance = (Inheritance)
+
+item-product-inheritance-conditions = Inheritance Conditions:
+
+    { $tempering } tempering
+    { $transcendence } transcendence
+
 item-binding-equip = Bind on Equip
 item-binding-obtain = Bind on Obtain
+
+item-talent-power = Talent Power
+sealed-fellow-min-level = Min. Level
+sealed-fellow-max-level = Max. Level
+sealed-fellow-plus-level = Max. Level (+5)
+sealed-fellow-tempered-level = Max. Level (+{ $level })
 
 game-data-loading-weapon = Loading weapon data...
 game-data-loading-accessory = Loading jewelry data...
@@ -73,6 +97,14 @@ game-data-loading-itemset = Loading item set data...
 game-data-loading-effects = Loading effects data...
 game-data-loading-quality = Loading quality data...
 game-data-loading-material = Loading material data...
+game-data-loading-recipe = Loading recipe data...
+game-data-loading-product-material = Loading product materials data...
+game-data-loading-fellow-equip = Loading fellow equips data...
+game-data-loading-comsume = Loading consumes data...
+game-data-loading-boost = Loading boosts data...
+game-data-loading-gem = Loading gems data...
+game-data-loading-sealed-fellow = Loading sealed familiars data...
+game-data-loading-skill-book = Loading skill books data...
 
 label-select-random-equipped-effect = Select effect
 button-load-game-data = Load
@@ -113,12 +145,15 @@ item-effect-mount-speed-percent = Mount Move Speed { $value }%
 item-effect-crit-defense = Critical Damage Defense { $value }
 item-effect-magic-defense-percent = Magic Defense { $value }%
 item-effect-vitality = Constitution { $value }
+item-effect-vitality-percent = Constitution { $value }%
 item-effect-mentality = Willpower { $value }
+item-effect-mentality-percent = Willpower { $value }%
 item-effect-intelligence = Intelligence { $value }
 item-effect-intelligence-percent = Intelligence { $value }%
 item-effect-strength = Strength { $value }
 item-effect-strength-percent = Strength { $value }%
 item-effect-dexterity = Dexterity { $value }
+item-effect-dexterity-percent = Dexterity { $value }%
 item-effect-pvp-attack-percent = PvP Attack Rate { $value }%
 item-effect-bleed-chance-percent = Bleed Rate { $value }%
 item-effect-defense-percent = Overall Defense { $value }%
@@ -158,15 +193,23 @@ item-effect-damage-reduction-percent = Damage Reduction { $value }%
 item-effect-health-absorption-chance-percent = Health Absorption Chance { $value }%
 item-effect-health-absorption-amount-percent = Health Absorption Amount { $value }%
 item-effect-max-ep-percent = Max EP { $value }%
+item-effect-max-ep = Max EP { $value }
 item-effect-defense = Overall Defense { $value }
 item-effect-bleed-damage-reduction = Bleed Damage Reduction { $value }
 item-effect-bleed-damage-reduction-percent = Bleed Damage Reduction { $value }%
 item-effect-evasion-percent = Evasion { $value }%
 item-effect-taming-points-percent = Taming Points { $value }%
 item-effect-intelligence-break-limit = Intelligence Break Limit { $value }
+item-effect-intelligence-break-limit-percent = Intelligence Break Limit { $value }%
 item-effect-strength-break-limit = Strength Break Limit { $value }
+item-effect-strength-break-limit-percent = Strength Break Limit { $value }%
+item-effect-vitality-break-limit = Constitution Break Limit { $value }
 item-effect-vitality-break-limit-percent = Constitution Break Limit { $value }%
-
+item-effect-dexterity-break-limit = Dexterity Break Limit { $value }
+item-effect-dexterity-break-limit-percent = Dexterity Break Limit { $value }%
+item-effect-mentality-break-limit = Willpower Break Limit { $value }
+item-effect-mentality-break-limit-percent = Willpower Break Limit { $value }%
+item-effect-mount-altitude = Familiar Altitude { $value }
 
 item-effect-money-drop-increase-percent = Money Drop Increase { $value }%
 item-effect-money-drop-increase = Dropped Money Total { $value }
@@ -179,3 +222,10 @@ item-effect-health-regen-percent = Health Regen { $value }%
 item-effect-threat-percent = Threat { $value }%
 item-effect-base-health-regen-percent = Base Health Regen { $value }%
 item-effect-magic-and-physical-defense = Magic and Physical Defense { $value }
+
+item-effect-auction-sales-fee-percent = Marketplace Sales Fee { $value }%
+item-effect-fishing-time-sec = Fishing Time (Sec.) { $value }
+item-effect-capturing-chance-percent = Capturing Chance { $value }%
+item-effect-fishing-very-rare-drop-percent = Very Rare Catch Chance { $value }%
+item-effect-fishing-drop-percent = Catch Chance { $value }%
+item-effect-fishing-rare-drop-percent = Rare Catch Chance { $value }%

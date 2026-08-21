@@ -1,11 +1,12 @@
 use std::io::SeekFrom;
 
-use crate::game_data::{AbstractItem, DataFormat, ItemEffect};
+use crate::game_data::{AbstractItem, DataFormat, ItemEffect, TagType};
 use anyhow::Result;
+use indexmap::IndexMap;
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-#[derive(Debug, Default, Serialize, Clone)]
+#[derive(Default, Serialize, Clone)]
 pub struct ItemQuality {
     pub level: u16,
     pub intermediate_fixed_effect: Option<ItemEffect>,
@@ -20,10 +21,11 @@ impl AbstractItem for ItemQuality {
         reader: &mut R,
         offsets: &[u32],
         item_idx: usize,
-        tag_count: usize,
+        definitions: &IndexMap<String, TagType>,
         global_offset: u64,
         format: DataFormat,
     ) -> Result<Self> {
+        let tag_count = definitions.len();
         // Read all fields sequentially
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;

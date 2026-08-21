@@ -41,7 +41,7 @@ impl EnumNameExt for Language {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub language: Language,
     pub game_path: String

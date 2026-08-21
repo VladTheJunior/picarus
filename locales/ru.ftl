@@ -24,6 +24,7 @@ item-common-grade = Обычное
 item-elite-grade = Элитное
 item-heroic-grade = Героическое
 item-legendary-grade = Легендарное
+item-legendary-plus-grade = Легендарное+
 item-unique-grade = Уникальное
 item-mythical-grade = Мифическое
 item-unknown-grade = Неизвестное
@@ -51,11 +52,28 @@ item-quality-simple = (Простое)
 item-quality-good = (Хорошее)
 item-quality-perfect = (Отличное)
 
+item-recipe-stage = Уровень { $stage }
+item-product-inheritance-conditions = Требования к материалу:
+
+    { $tempering } закалка
+    { $transcendence } наследование
+
+item-product-result = Изготовленный предмет:
+item-product-materials = Необходимые материалы:
+item-product-inheritance = (Наследование)
+
 item-type-weapon = Оружие
 item-type-armor = Доспехи
 item-type-accessory = Украшения
 item-type-secondary-weapon = Второе оружие
 item-type-material = Материалы
+item-type-recipe = Рецепты
+item-type-fellow-equip = Снаряжение спутников
+item-type-consume = Расходники
+item-type-boost = Усиления
+item-type-gem = Самоцветы
+item-type-sealed-fellow = Запечатанные спутники
+item-type-skill-book = Книги навыков
 
 item-tag-no-trade = Нельзя передать
 item-tag-no-sell = Нельзя продать
@@ -63,6 +81,12 @@ item-tag-no-destroy = Нельзя разобрать
 
 item-binding-equip = Привязка при экипировке
 item-binding-obtain = Привязка при получении
+
+item-talent-power = Сила таланта
+sealed-fellow-min-level = Мин. уровень
+sealed-fellow-max-level = Макс. уровень
+sealed-fellow-plus-level = Макс. уровень (+5)
+sealed-fellow-tempered-level = Макс. уровень (+{ $level })
 
 game-data-loading-weapon = Загрузка данных оружия...
 game-data-loading-accessory = Загрузка данных украшений...
@@ -73,6 +97,14 @@ game-data-loading-itemset = Загрузка данных наборов...
 game-data-loading-effects = Загрузка данных эффектов...
 game-data-loading-quality = Загрузка данных качества...
 game-data-loading-material = Загрузка данных материалов...
+game-data-loading-recipe = Загрузка данных рецептов...
+game-data-loading-product-material = Загрузка данных компонентов для крафта...
+game-data-loading-fellow-equip = Загрузка данных снаряжения спутников...
+game-data-loading-consume = Загрузка данных расходников...
+game-data-loading-boost = Загрузка данных усилений...
+game-data-loading-gem = Загрузка данных самоцветов...
+game-data-loading-sealed-fellow = Загрузка данных запечатанных спутников...
+game-data-loading-skill-book = Загрузка данных книг навыков...
 
 label-select-random-equipped-effect = Выбрать эффект
 button-load-game-data = Загрузить
@@ -114,12 +146,15 @@ item-effect-mount-speed-percent = Скорость маунта { $value }%
 item-effect-crit-defense = Защита от крита { $value }
 item-effect-magic-defense-percent = Маг. защита { $value }%
 item-effect-vitality = Выносливость { $value }
+item-effect-vitality-percent = Выносливость { $value }%
 item-effect-mentality = Воля { $value }
+item-effect-mentality-percent = Воля { $value }%
 item-effect-intelligence = Интеллект { $value }
 item-effect-intelligence-percent = Интеллект { $value }%
 item-effect-strength = Сила { $value }
 item-effect-strength-percent = Сила { $value }%
 item-effect-dexterity = Ловкость { $value }
+item-effect-dexterity-percent = Ловкость { $value }%
 item-effect-pvp-attack-percent = Атака PvP { $value }%
 item-effect-bleed-chance-percent = Шанс кровотечения { $value }%
 item-effect-defense-percent = Вся защита { $value }%
@@ -165,9 +200,16 @@ item-effect-bleed-damage-reduction-percent = Уменьшение урона о�
 item-effect-evasion-percent = Уклонение { $value }%
 item-effect-taming-points-percent = Очки приручения { $value }%
 item-effect-intelligence-break-limit = Макс. статов интеллекта { $value }
+item-effect-intelligence-break-limit-percent = Макс. статов интеллекта { $value }%
 item-effect-strength-break-limit = Макс. статов силы { $value }
+item-effect-strength-break-limit-percent = Макс. статов силы { $value }%
+item-effect-vitality-break-limit = Макс. статов выносливости { $value }
 item-effect-vitality-break-limit-percent = Макс. статов выносливости { $value }%
-
+item-effect-dexterity-break-limit =  Макс. статов ловкости { $value }
+item-effect-dexterity-break-limit-percent = Макс. статов ловкости { $value }%
+item-effect-mentality-break-limit = Макс. статов воли { $value }
+item-effect-mentality-break-limit-percent = Макс. статов воли { $value }%
+item-effect-mount-altitude = Высота полета { $value }
 
 item-effect-money-drop-increase-percent = Увеличение выпадения денег { $value }%
 item-effect-money-drop-increase = Добыча золота { $value }
@@ -180,3 +222,10 @@ item-effect-health-regen-percent = Восстановление здоровья
 item-effect-threat-percent = Агрессия { $value }%
 item-effect-base-health-regen-percent = Базовое восст. здоровья { $value }%
 item-effect-magic-and-physical-defense = Магическая и физическая защита { $value }
+
+item-effect-auction-sales-fee-percent = Комиссия с продажи { $value }%
+item-effect-fishing-time-sec = Время рыбалки (сек.) { $value }
+item-effect-capturing-chance-percent = Шанс захвата { $value }%
+item-effect-fishing-very-rare-drop-percent = Шанс очень редкого улова { $value }%
+item-effect-fishing-drop-percent = Шанс улова { $value }%
+item-effect-fishing-rare-drop-percent = Шанс редкого улова { $value }%

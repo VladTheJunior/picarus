@@ -1,15 +1,15 @@
 use std::io::SeekFrom;
 
 use crate::{
-    game_data::{AbstractItem, DataFormat},
-    language::LanguageController,
+    game_data::{AbstractItem, DataFormat, TagType}, language::LanguageController,
 };
 use anyhow::Result;
 use gpui::SharedString;
+use indexmap::IndexMap;
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Default, Clone, Serialize)]
 pub struct Locale {
     //_type: SharedString,
     //typename: SharedString,
@@ -43,10 +43,11 @@ impl AbstractItem for Locale {
         reader: &mut R,
         offsets: &[u32],
         item_idx: usize,
-        tag_count: usize,
+        definitions: &IndexMap<String, TagType>,
         global_offset: u64,
         format: DataFormat,
     ) -> Result<Self> {
+        let tag_count = definitions.len();
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;

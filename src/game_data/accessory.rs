@@ -1,21 +1,21 @@
 use std::{
-    collections::{BTreeSet, HashMap},
-    io::{Read, SeekFrom},
-    sync::Arc,
+    cell::RefCell, collections::{BTreeMap, BTreeSet, HashMap}, io::{Read, SeekFrom}, rc::{Rc, Weak}, sync::Arc,
 };
 
 use crate::{
-    game_data::{AbstractItem, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, item_set::ItemSet, locale::Locale}, language::LanguageController,
+    game_data::{AbstractItem, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, TagType, item_set::ItemSet, locale::Locale, product::Product}, language::LanguageController,
 };
 use anyhow::Result;
+use indexmap::IndexMap;
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui::{Image, SharedString};
 use tracing::warn;
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Default, Serialize)]
 pub struct Accessory {
+    pub linked_recipes: BTreeMap<SharedString, Weak<RefCell<Product>>>,
     pub item_set: Option<ItemSet>,
     pub locale: Option<Locale>,
     pub skill_locale: Option<Locale>,
@@ -91,10 +91,11 @@ impl AbstractItem for Accessory {
         reader: &mut R,
         offsets: &[u32],
         item_idx: usize,
-        tag_count: usize,
+        definitions: &IndexMap<String, TagType>,
         global_offset: u64,
         format: DataFormat,
     ) -> Result<Self> {
+        let tag_count = definitions.len();
         // Read all fields sequentially
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;
@@ -154,9 +155,9 @@ impl AbstractItem for Accessory {
                 40 => self.sales_agency_category = Self::read_string(format, reader).await?,
                 41 => {
                     self.skill_effect = {
-                        let effect_skill = Self::read_string(format, reader).await?.to_uppercase().replace(".1", "");
+                        let effect_skill = Self::read_string(format, reader).await?.to_uppercase().replace(".", "_DESCRIPTION_");
                         if effect_skill != "*" {
-                            Some(SharedString::new(format!("{}_DESCRIPTION_1", effect_skill)))
+                            Some(SharedString::new(effect_skill))
                         } else {
                             None
                         }
@@ -280,5 +281,17 @@ impl Item for Accessory {
 
     fn set_item_set(&mut self, item_set: &Vec<ItemSet>) {
         self.item_set = item_set.iter().find(|f| f.items.contains(&self.id)).cloned();
+    }
+    
+    fn set_product(&mut self, products_by_recipe_id: &HashMap<SharedString, Rc<RefCell<Product>>>, products_by_result_id: &HashMap<SharedString,  Rc<RefCell<Product>>>) {
+       if let Some(p) = products_by_recipe_id.get(&self.id){
+            let id = p.borrow().node.id.clone();
+            self.linked_recipes.insert(id, Rc::downgrade(p));
+       }
+
+              if let Some(p) = products_by_result_id.get(&self.id){
+            let id = p.borrow().node.id.clone();
+            self.linked_recipes.insert(id, Rc::downgrade(p));
+       }
     }
 }

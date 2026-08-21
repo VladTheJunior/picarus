@@ -1,21 +1,21 @@
 use std::{
-    collections::{BTreeSet, HashMap},
-    io::{Read, SeekFrom},
-    sync::Arc,
+    cell::RefCell, collections::{BTreeSet, HashMap}, io::{Read, SeekFrom}, rc::Rc, sync::Arc,
 };
 
 use crate::{
-    game_data::{AbstractItem, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, item_set::ItemSet, locale::Locale}, language::LanguageController,
+    game_data::{AbstractItem, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, TagType, item_set::ItemSet, locale::Locale, product::Product}, language::LanguageController,
 };
 use anyhow::Result;
 
 use gpui::{Image, SharedString};
+use indexmap::IndexMap;
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use tracing::warn;
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Default, Serialize)]
 pub struct Weapon {
+    pub linked_recipes: BTreeSet<SharedString>,
     pub item_set: Option<ItemSet>,
     pub locale: Option<Locale>,
     pub skill_locale: Option<Locale>,
@@ -119,11 +119,11 @@ impl AbstractItem for Weapon {
         reader: &mut R,
         offsets: &[u32],
         item_idx: usize,
-        tag_count: usize,
+        definitions: &IndexMap<String, TagType>,
         global_offset: u64,
         format: DataFormat,
     ) -> Result<Self> {
-        // Read all fields sequentially
+        let tag_count = definitions.len();
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
@@ -187,9 +187,9 @@ impl AbstractItem for Weapon {
                 63 => self.auction_category = Self::read_string(format, reader).await?,
                 64 => {
                     self.skill_effect = {
-                        let effect_skill = Self::read_string(format, reader).await?.to_uppercase().replace(".1", "");
+                        let effect_skill = Self::read_string(format, reader).await?.to_uppercase().replace(".", "_DESCRIPTION_");
                         if effect_skill != "*" {
-                            Some(SharedString::new(format!("{}_DESCRIPTION_1", effect_skill)))
+                            Some(SharedString::new(effect_skill))
                         } else {
                             None
                         }
@@ -340,5 +340,8 @@ impl Item for Weapon {
 
     fn set_item_set(&mut self, item_set: &Vec<super::item_set::ItemSet>) {
         self.item_set = item_set.iter().find(|f| f.items.contains(&self.id)).cloned();
+    }
+    
+    fn set_product(&mut self, products_by_recipe_id: &HashMap<SharedString, Rc<RefCell<Product>>>, products_by_result_id: &HashMap<SharedString,  Rc<RefCell<Product>>>) {
     }
 }

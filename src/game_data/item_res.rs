@@ -1,15 +1,16 @@
 use std::io::SeekFrom;
 
-use crate::game_data::{AbstractItem, DataFormat};
+use crate::game_data::{AbstractItem, DataFormat, TagType};
 use anyhow::Result;
 use gpui::SharedString;
+use indexmap::IndexMap;
 use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 
 #[derive(Debug, Default)]
 pub struct ItemRes {
     pub id: SharedString,
     pub icon: SharedString,
-    pub using_recipe_type: Option<SharedString>
+    pub using_recipe_type: Option<SharedString>,
 }
 
 impl AbstractItem for ItemRes {
@@ -18,11 +19,13 @@ impl AbstractItem for ItemRes {
         reader: &mut R,
         offsets: &[u32],
         item_idx: usize,
-        tag_count: usize,
+        definitions: &IndexMap<String, TagType>,
         global_offset: u64,
         format: DataFormat,
     ) -> Result<Self> {
         // Read all fields sequentially
+        let tag_count = definitions.len();
+        let icon_index = definitions.get_index_of("icon");
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
@@ -43,7 +46,7 @@ impl AbstractItem for ItemRes {
                     }
                 }
 
-                2 => {
+                /*2 => {
                     if tag_count == 13 || tag_count == 21 || tag_count == 44 {
                         self.icon = Self::read_string(format, reader).await?;
                     }
@@ -58,12 +61,21 @@ impl AbstractItem for ItemRes {
                         self.icon = Self::read_string(format, reader).await?;
                     }
                 }
+                8 => {
+                    if tag_count == 18 {
+                        self.icon = Self::read_string(format, reader).await?;
+                    }
+                }*/
                 11 => {
                     if tag_count == 17 {
                         self.using_recipe_type = Some(Self::read_string(format, reader).await?);
                     }
                 }
-                _ => {}
+                i => {
+                    if icon_index.is_some_and(|f| f == i) {
+                        self.icon = Self::read_string(format, reader).await?;
+                    }
+                }
             }
         }
         Ok(self)

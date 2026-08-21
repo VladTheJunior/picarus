@@ -1,15 +1,24 @@
 pub mod accessory;
 pub mod armor;
+pub mod boost;
+pub mod consume;
+mod fellow_equip;
 pub mod filters;
+pub mod gem;
 pub mod item_option;
 pub mod item_quality;
 pub mod item_res;
 pub mod item_set;
 pub mod locale;
 pub mod material;
+pub mod product;
+pub mod recipe;
+pub mod sealed_fellow;
 pub mod secondary_weapon;
 pub mod tempering;
 pub mod weapon;
+pub mod skill_book;
+pub mod exchange;
 
 use anyhow::Result;
 
@@ -21,8 +30,10 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::Serialize;
 use std::{
+    cell::RefCell,
     collections::{BTreeSet, HashMap, HashSet},
     fs::File,
+    hash::Hash,
     io::{Cursor, Read, Seek},
     path::Path,
     rc::Rc,
@@ -35,20 +46,25 @@ use zip::ZipArchive;
 
 use crate::{
     game_data::{
-        accessory::Accessory, armor::Armor, item_option::ItemOption, item_quality::ItemQuality, item_res::ItemRes, item_set::ItemSet, locale::Locale,
-        material::Material, secondary_weapon::SecondaryWeapon, tempering::Tempering, weapon::Weapon,
-    },
-    game_data_view::GameDataLoadingStatus,
-    language::{LanguageController, t, t_v},
+        accessory::Accessory, armor::Armor, boost::Boost, consume::Consume, exchange::Exchange, fellow_equip::FellowEquip, gem::Gem, item_option::ItemOption, item_quality::ItemQuality, item_res::ItemRes, item_set::ItemSet, locale::Locale, material::Material, product::Product, recipe::Recipe, sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon, skill_book::SkillBook, tempering::Tempering, weapon::Weapon,
+    }, game_data_view::GameDataLoadingStatus, language::{LanguageController, t, t_v},
 };
 
-#[derive(Debug, EnumIter, Eq, PartialEq, Hash, Clone, Copy)]
+#[derive(EnumIter, Eq, PartialEq, Hash, Clone, Copy)]
 pub enum ItemType {
     Armor,
     SecondaryWeapon,
     Weapon,
     Accessory,
     Material,
+    Recipe,
+    FellowEquip,
+    Consume,
+    Boost,
+    Gem,
+    SealedFellow,
+    SkillBook,
+    Exchange
 }
 
 #[derive(Default, Clone, Copy)]
@@ -115,6 +131,14 @@ impl ItemType {
             ItemType::Weapon => t("item-type-weapon"),
             ItemType::Accessory => t("item-type-accessory"),
             ItemType::Material => t("item-type-material"),
+            ItemType::Recipe => t("item-type-recipe"),
+            ItemType::FellowEquip => t("item-type-fellow-equip"),
+            ItemType::Consume => t("item-type-consume"),
+            ItemType::Boost => t("item-type-boost"),
+            ItemType::Gem => t("item-type-gem"),
+            ItemType::SealedFellow => t("item-type-sealed-fellow"),
+            ItemType::SkillBook => t("item-type-skill-book"),
+            ItemType::Exchange => t("item-type-exchange"),
         }
     }
 }
@@ -124,19 +148,27 @@ pub enum TagType {
     String,
     Float,
 }
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Copy, Clone, Default)]
 pub enum DataFormat {
     #[default]
     String,
     WideString,
 }
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub enum DataType {
     SecondaryWeapon(SecondaryWeapon),
     Weapon(Weapon),
     Armor(Armor),
     Accessory(Accessory),
     Material(Material),
+    Recipe(Recipe),
+    FellowEquip(FellowEquip),
+    Consume(Consume),
+    Boost(Boost),
+    Gem(Gem),
+    SealedFellow(SealedFellow),
+    SkillBook(SkillBook),
+    Exchange(Exchange)
 }
 #[derive(Debug, EnumIter, Copy, Clone, PartialEq, Eq, Hash, FromRepr, Serialize)]
 #[repr(u8)]
@@ -145,11 +177,12 @@ pub enum Grade {
     Elite = 2,
     Heroic = 3,
     Legendary = 4,
+    LegendaryPlus = 5,
     Unique = 6,
     Mythical = 7,
 }
 
-#[derive(Debug, EnumIter, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
+#[derive(EnumIter, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
 pub enum GameClass {
     Assassin,
     Berserker,
@@ -161,7 +194,7 @@ pub enum GameClass {
     Wizard,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
 pub enum _ArmorKind {
     HeavyArmor(ArmorTypes),
     LightArmorMagic(ArmorTypes),
@@ -169,13 +202,13 @@ pub enum _ArmorKind {
     RobeArmor(ArmorTypes),
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
 pub enum ArmorClassKind {
     Magic(ArmorTypes),
     Physical(ArmorTypes),
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
 pub enum ArmorTypes {
     Helmet,
     Pauldron,
@@ -184,7 +217,7 @@ pub enum ArmorTypes {
     Boots,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
 pub enum ItemSubType {
     Necklage,
     Ring,
@@ -557,6 +590,7 @@ impl Grade {
             Grade::Elite => t("item-elite-grade"),
             Grade::Heroic => t("item-heroic-grade"),
             Grade::Legendary => t("item-legendary-grade"),
+            Grade::LegendaryPlus => t("item-legendary-plus-grade"),
             Grade::Unique => t("item-unique-grade"),
             Grade::Mythical => t("item-mythical-grade"),
         }
@@ -567,7 +601,7 @@ impl Grade {
             Grade::Common => None,
             Grade::Elite => Some(hsla(210.0 / 360.0, 0.55, 0.67, 1.0)),
             Grade::Heroic => Some(hsla(25.0 / 360.0, 0.55, 0.67, 1.0)),
-            Grade::Legendary => Some(hsla(270.0 / 360.0, 0.55, 0.67, 1.0)),
+            Grade::Legendary | Grade::LegendaryPlus => Some(hsla(270.0 / 360.0, 0.55, 0.67, 1.0)),
             Grade::Unique => Some(hsla(8.0 / 360.0, 0.55, 0.67, 1.0)),
             Grade::Mythical => Some(hsla(8.0 / 360.0, 0.55, 0.45, 1.0)),
         }
@@ -575,7 +609,14 @@ impl Grade {
 }
 
 impl DataType {
-    pub fn test(&self) {
+    pub fn validate_grades(&self) {
+        if self.get_grade().is_none() {
+            let id = self.get_id();
+            let name = self.get_locale_name();
+            warn!(?id, ?name, "Can not detect grade");
+        }
+    }
+    pub fn validate_effects(&self) {
         let id = self.get_id();
         let name = self.get_locale_name();
         let mut effects = Vec::new();
@@ -640,6 +681,55 @@ impl DataType {
                 }
             }
             DataType::Material(_) => {}
+            DataType::Recipe(_) => {}
+            DataType::Consume(_) => {}
+DataType::SkillBook(_) => {}
+DataType::Exchange(_) => {}
+            DataType::SealedFellow(sealed_fellow) => {
+                [
+                    &sealed_fellow.sealed_fellow_effect_1,
+                    &sealed_fellow.sealed_fellow_effect_2,
+                    &sealed_fellow.sealed_fellow_effect_3,
+                ]
+                .iter()
+                .filter_map(|opt| opt.as_ref())
+                .filter(|f| f.parsed.is_none())
+                .for_each(|e| warn!(?id, ?name, ?e.effect, "Failed to detect effect"));
+
+                if let Some(e) = sealed_fellow.max_enhancement_sealed_fellow_effect.as_ref() {
+                    if e.parsed.is_none() {
+                        warn!(?id, ?name, ?e.effect, "Failed to detect effect");
+                    }
+                }
+            }
+            DataType::FellowEquip(fellow_equip) => {
+                [
+                    &fellow_equip.equip_effect_1,
+                    &fellow_equip.equip_effect_2,
+                    &fellow_equip.equip_effect_3,
+                    &fellow_equip.equip_effect_4,
+                ]
+                .iter()
+                .filter_map(|opt| opt.as_ref())
+                .for_each(|effect| effects.push(effect));
+                if let Some(set) = fellow_equip.item_set.as_ref() {
+                    for e in &set.effects {
+                        effects.extend(e.seteffect_effects.iter());
+                    }
+                }
+            }
+            DataType::Boost(boost) => {
+                [&boost.equip_effect_1, &boost.equip_effect_2, &boost.equip_effect_3, &boost.equip_effect_4]
+                    .iter()
+                    .filter_map(|opt| opt.as_ref())
+                    .for_each(|effect| effects.push(effect));
+            }
+            DataType::Gem(gem) => {
+                [&gem.equip_effect_1, &gem.equip_effect_2, &gem.equip_effect_3, &gem.equip_effect_4]
+                    .iter()
+                    .filter_map(|opt| opt.as_ref())
+                    .for_each(|effect| effects.push(effect));
+            }
         };
 
         for e in effects.iter().filter(|f| f.parsed.is_none()) {
@@ -654,6 +744,14 @@ impl DataType {
             DataType::Accessory(accessory) => Some(accessory.get_full_type()),
             DataType::SecondaryWeapon(secondary_weapon) => Some(secondary_weapon.get_full_type()),
             DataType::Material(_) => None,
+            DataType::Recipe(_) => None,
+            DataType::FellowEquip(_) => None,
+            DataType::Consume(_) => None,
+            DataType::Boost(_) => None,
+            DataType::Gem(_) => None,
+            DataType::SealedFellow(_) => None,
+            DataType::SkillBook(_) => None,
+            DataType::Exchange(_) => None,
         }
     }
 
@@ -664,6 +762,14 @@ impl DataType {
             DataType::Accessory(accessory) => Some(accessory.get_type()),
             DataType::SecondaryWeapon(secondary_weapon) => Some(secondary_weapon.get_type()),
             DataType::Material(_) => None,
+            DataType::Recipe(_) => None,
+            DataType::FellowEquip(_) => None,
+            DataType::Consume(_) => None,
+            DataType::Boost(_) => None,
+            DataType::Gem(_) => None,
+            DataType::SealedFellow(_) => None,
+            DataType::SkillBook(_) => None,
+            DataType::Exchange(_) => None,
         }
     }
 
@@ -674,6 +780,14 @@ impl DataType {
             DataType::Accessory(accessory) => accessory.id.clone(),
             DataType::SecondaryWeapon(secondary_weapon) => secondary_weapon.id.clone(),
             DataType::Material(material) => material.id.clone(),
+            DataType::Recipe(recipe) => recipe.id.clone(),
+            DataType::FellowEquip(fellow_equip) => fellow_equip.id.clone(),
+            DataType::Consume(consume) => consume.id.clone(),
+            DataType::Boost(boost) => boost.id.clone(),
+            DataType::Gem(gem) => gem.id.clone(),
+            DataType::SealedFellow(sealed_fellow) => sealed_fellow.id.clone(),
+            DataType::SkillBook(skill_book) => skill_book.id.clone(),
+            DataType::Exchange(exchange) => exchange.id.clone(),
         }
     }
 
@@ -684,6 +798,14 @@ impl DataType {
             DataType::Accessory(accessory) => accessory.icon.clone(),
             DataType::SecondaryWeapon(secondary_weapon) => secondary_weapon.icon.clone(),
             DataType::Material(material) => material.icon.clone(),
+            DataType::Recipe(recipe) => recipe.icon.clone(),
+            DataType::FellowEquip(fellow_equip) => fellow_equip.icon.clone(),
+            DataType::Consume(consume) => consume.icon.clone(),
+            DataType::Boost(boost) => boost.icon.clone(),
+            DataType::Gem(gem) => gem.icon.clone(),
+            DataType::SealedFellow(sealed_fellow) => sealed_fellow.icon.clone(),
+            DataType::SkillBook(skill_book) => skill_book.icon.clone(),
+            DataType::Exchange(exchange) => exchange.icon.clone(),
         }
     }
 
@@ -694,6 +816,14 @@ impl DataType {
             DataType::Accessory(_) => types.contains(&ItemType::Accessory),
             DataType::SecondaryWeapon(_) => types.contains(&ItemType::SecondaryWeapon),
             DataType::Material(_) => types.contains(&ItemType::Material),
+            DataType::Recipe(_) => types.contains(&ItemType::Recipe),
+            DataType::FellowEquip(_) => types.contains(&ItemType::FellowEquip),
+            DataType::Consume(_) => types.contains(&ItemType::Consume),
+            DataType::Boost(_) => types.contains(&ItemType::Boost),
+            DataType::Gem(_) => types.contains(&ItemType::Gem),
+            DataType::SealedFellow(_) => types.contains(&ItemType::SealedFellow),
+            DataType::SkillBook(_) => types.contains(&ItemType::SkillBook),
+            DataType::Exchange(_) => types.contains(&ItemType::Exchange),
         };
 
         if !include {
@@ -813,6 +943,68 @@ impl DataType {
                 }
             }
             DataType::Material(_) => {}
+            DataType::Recipe(_) => {}
+            DataType::Consume(_) => {}
+            DataType::SkillBook(_) => {}
+            DataType::Exchange(_) => {}
+            DataType::SealedFellow(sealed_fellow) => {
+                effects.insert(
+                    sealed_fellow
+                        .sealed_fellow_effect_1
+                        .as_ref()
+                        .and_then(|f| f.parsed.clone())
+                        .map(|(key, _, _, _)| key),
+                );
+                effects.insert(
+                    sealed_fellow
+                        .sealed_fellow_effect_2
+                        .as_ref()
+                        .and_then(|f| f.parsed.clone())
+                        .map(|(key, _, _, _)| key),
+                );
+                effects.insert(
+                    sealed_fellow
+                        .sealed_fellow_effect_3
+                        .as_ref()
+                        .and_then(|f| f.parsed.clone())
+                        .map(|(key, _, _, _)| key),
+                );
+                effects.insert(
+                    sealed_fellow
+                        .max_enhancement_sealed_fellow_effect
+                        .as_ref()
+                        .and_then(|f| f.parsed.clone())
+                        .map(|(key, _, _)| key),
+                );
+            }
+            DataType::FellowEquip(fellow_equip) => {
+                effects.insert(fellow_equip.equip_effect_1.as_ref().and_then(|f| f.parsed.clone()).map(|(key, _)| key));
+                effects.insert(fellow_equip.equip_effect_2.as_ref().and_then(|f| f.parsed.clone()).map(|(key, _)| key));
+                effects.insert(fellow_equip.equip_effect_3.as_ref().and_then(|f| f.parsed.clone()).map(|(key, _)| key));
+                effects.insert(fellow_equip.equip_effect_4.as_ref().and_then(|f| f.parsed.clone()).map(|(key, _)| key));
+                if let Some(set) = &fellow_equip.item_set {
+                    effects.extend(
+                        set.effects
+                            .iter()
+                            .map(|f| f.seteffect_effects.iter())
+                            .flatten()
+                            .filter_map(|f| f.parsed.clone())
+                            .map(|(key, _)| Some(key)),
+                    );
+                }
+            }
+            DataType::Boost(boost) => {
+                effects.insert(boost.equip_effect_1.as_ref().and_then(|f| f.parsed.clone()).map(|(key, _)| key));
+                effects.insert(boost.equip_effect_2.as_ref().and_then(|f| f.parsed.clone()).map(|(key, _)| key));
+                effects.insert(boost.equip_effect_3.as_ref().and_then(|f| f.parsed.clone()).map(|(key, _)| key));
+                effects.insert(boost.equip_effect_4.as_ref().and_then(|f| f.parsed.clone()).map(|(key, _)| key));
+            }
+            DataType::Gem(gem) => {
+                effects.insert(gem.equip_effect_1.as_ref().and_then(|f| f.parsed.clone()).map(|(key, _)| key));
+                effects.insert(gem.equip_effect_2.as_ref().and_then(|f| f.parsed.clone()).map(|(key, _)| key));
+                effects.insert(gem.equip_effect_3.as_ref().and_then(|f| f.parsed.clone()).map(|(key, _)| key));
+                effects.insert(gem.equip_effect_4.as_ref().and_then(|f| f.parsed.clone()).map(|(key, _)| key));
+            }
         };
         effects.into_iter().filter_map(|f| f).collect()
     }
@@ -832,6 +1024,14 @@ impl DataType {
             DataType::Accessory(accessory) => accessory.grade,
             DataType::SecondaryWeapon(secondary_weapon) => secondary_weapon.grade,
             DataType::Material(material) => material.grade,
+            DataType::Recipe(recipe) => recipe.grade,
+            DataType::FellowEquip(fellow_equip) => fellow_equip.grade,
+            DataType::Consume(consume) => consume.grade,
+            DataType::Boost(boost) => boost.grade,
+            DataType::Gem(gem) => gem.grade,
+            DataType::SealedFellow(sealed_fellow) => sealed_fellow.grade,
+            DataType::SkillBook(skill_book) => skill_book.grade,
+             DataType::Exchange(exchange) => exchange.grade,
         }
     }
 
@@ -842,6 +1042,14 @@ impl DataType {
             DataType::Accessory(accessory) => accessory.locale.clone(),
             DataType::SecondaryWeapon(secondary_weapon) => secondary_weapon.locale.clone(),
             DataType::Material(material) => material.locale.clone(),
+            DataType::Recipe(recipe) => recipe.locale.clone(),
+            DataType::FellowEquip(fellow_equip) => fellow_equip.locale.clone(),
+            DataType::Consume(consume) => consume.locale.clone(),
+            DataType::Boost(boost) => boost.locale.clone(),
+            DataType::Gem(gem) => gem.locale.clone(),
+            DataType::SealedFellow(sealed_fellow) => sealed_fellow.locale.clone(),
+            DataType::SkillBook(skill_book) => skill_book.locale.clone(),
+              DataType::Exchange(exchange) => exchange.locale.clone(),
         }
     }
 
@@ -865,6 +1073,8 @@ pub struct GameData {
     pub effects_by_grade: HashMap<Grade, HashMap<u16, ItemOption>>,
     pub tempering_by_types: HashMap<SharedString, HashMap<u16, Tempering>>,
     pub quality_by_types: HashMap<SharedString, HashMap<u16, ItemQuality>>,
+    pub products_by_recipe_id: HashMap<SharedString, Rc<RefCell<Product>>>,
+    pub products_by_result_id: HashMap<SharedString, Rc<RefCell<Product>>>,
 }
 
 impl GameData {
@@ -874,6 +1084,8 @@ impl GameData {
             tempering_by_types: HashMap::new(),
             effects_by_grade: HashMap::new(),
             quality_by_types: HashMap::new(),
+            products_by_recipe_id: HashMap::new(),
+            products_by_result_id: HashMap::new(),
         }
     }
 
@@ -889,12 +1101,29 @@ impl GameData {
         let mut data = Self::new();
 
         let item_set = data.read_itemset(&mut gamedatas_zip, on_load, cx).await?;
-        data.read_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
-        data.read_accessory(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
 
-        data.read_secondary_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx)
+        
+        
+       data.read_product_materials(&mut gamedatas_zip, on_load, cx).await?;
+
+        data.read_item_boost(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx)
             .await?;
 
+        let item_set_fellow = data.read_itemset_fellow(&mut gamedatas_zip, on_load, cx).await?;
+
+        data.read_consumes(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
+        data.read_recipes(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
+        data.read_fellow_equips(&mut gamedatas_zip, &mut gamelibs_zip, &item_set_fellow, on_load, cx)
+            .await?;
+        data.read_exchange(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
+        data.read_gems(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
+        data.read_skill_books(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
+        data.read_sealed_fellows(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx)
+            .await?;
+        data.read_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
+        data.read_accessory(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
+        data.read_secondary_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx)
+            .await?;
         data.read_armors(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
 
         data.read_material(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
@@ -915,6 +1144,10 @@ impl GameData {
             cx,
         )
         .await?;
+
+        for (id, item) in &data.products_by_recipe_id {
+            item.borrow_mut().validate(&data.items);
+        }
 
         Ok(data)
     }
@@ -942,6 +1175,55 @@ impl GameData {
         }
         debug!(tempering_keys = ?tempering_by_types.keys());
         self.tempering_by_types = tempering_by_types;
+        Ok(())
+    }
+
+    async fn read_item_boost<R: Read + Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        gamelibs_zip: &mut ZipArchive<R>,
+        item_set: &Vec<ItemSet>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<()> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::Boost;
+            cx.notify();
+        });
+        let locales = self.read_boost_locales(gamedatas_zip).await?;
+
+        let res = self.read_boost_itemres(gamedatas_zip).await?;
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemdata_boost.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items(
+            &data,
+            DataFormat::String,
+            DataType::Boost,
+            &locales,
+            &HashMap::new(),
+            &res,
+            &item_set,
+            gamelibs_zip,
+        )
+        .await
+    }
+
+    async fn read_product_materials<R: Read + Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<()> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::ProductMaterial;
+            cx.notify();
+        });
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\productdata_productmaterial.bin")?;
+
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_product_material(&data, DataFormat::String).await?;
         Ok(())
     }
 
@@ -975,7 +1257,7 @@ impl GameData {
             Grade::Common => gamedatas_zip.by_path(r"gamedata\adatabin\itemoption_basicstatnormal.bin")?,
             Grade::Elite => gamedatas_zip.by_path(r"gamedata\adatabin\itemoption_basicstatelite.bin")?,
             Grade::Heroic => gamedatas_zip.by_path(r"gamedata\adatabin\itemoption_basicstatrare.bin")?,
-            Grade::Legendary => gamedatas_zip.by_path(r"gamedata\adatabin\itemoption_basicstatlegend.bin")?,
+            Grade::Legendary | Grade::LegendaryPlus => gamedatas_zip.by_path(r"gamedata\adatabin\itemoption_basicstatlegend.bin")?,
             Grade::Unique => gamedatas_zip.by_path(r"gamedata\adatabin\itemoption_basicstatunique.bin")?,
             Grade::Mythical => gamedatas_zip.by_path(r"gamedata\adatabin\itemoption_basicstatancientmythic.bin")?,
         };
@@ -1074,6 +1356,24 @@ impl GameData {
         self.read_items_itemset(&data, DataFormat::String, &locales, &skill_locales).await
     }
 
+    async fn read_itemset_fellow<R: Read + Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<Vec<ItemSet>> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::ItemSet;
+            cx.notify();
+        });
+        let locales = self.read_itemset_locales(gamedatas_zip).await?;
+        let skill_locales = self.read_skill_locales(gamedatas_zip).await?;
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemset_setfellow.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_itemset(&data, DataFormat::String, &locales, &skill_locales).await
+    }
+
     async fn read_material<R: Read + Seek>(
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
@@ -1137,6 +1437,67 @@ impl GameData {
         .await
     }
 
+    async fn read_consumes<R: Read + Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        gamelibs_zip: &mut ZipArchive<R>,
+        item_set: &Vec<ItemSet>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<()> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::Consume;
+            cx.notify();
+        });
+        let locales = self.read_consume_locales(gamedatas_zip).await?;
+
+        let res = self.read_consume_itemres(gamedatas_zip).await?;
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemdata_consume.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items(
+            &data,
+            DataFormat::String,
+            DataType::Consume,
+            &locales,
+            &HashMap::new(),
+            &res,
+            &item_set,
+            gamelibs_zip,
+        )
+        .await
+    }
+
+    async fn read_recipes<R: Read + Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        gamelibs_zip: &mut ZipArchive<R>,
+        item_set: &Vec<ItemSet>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<()> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::Recipe;
+            cx.notify();
+        });
+        let locales = self.read_recipe_locales(gamedatas_zip).await?;
+        let res = self.read_recipe_itemres(gamedatas_zip).await?;
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemdata_recipe.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items(
+            &data,
+            DataFormat::String,
+            DataType::Recipe,
+            &locales,
+            &HashMap::new(),
+            &res,
+            &item_set,
+            gamelibs_zip,
+        )
+        .await
+    }
+
     async fn read_armors<R: Read + Seek>(
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
@@ -1159,6 +1520,37 @@ impl GameData {
             &data,
             DataFormat::String,
             DataType::Armor,
+            &locales,
+            &skill_locales,
+            &res,
+            &item_set,
+            gamelibs_zip,
+        )
+        .await
+    }
+
+    async fn read_fellow_equips<R: Read + Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        gamelibs_zip: &mut ZipArchive<R>,
+        item_set: &Vec<ItemSet>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<()> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::FellowEquip;
+            cx.notify();
+        });
+        let locales = self.read_fellow_equip_locales(gamedatas_zip).await?;
+        let skill_locales = self.read_skill_locales(gamedatas_zip).await?;
+        let res = self.read_fellow_equip_itemres(gamedatas_zip).await?;
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemdata_fellowequip.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items(
+            &data,
+            DataFormat::String,
+            DataType::FellowEquip,
             &locales,
             &skill_locales,
             &res,
@@ -1230,8 +1622,176 @@ impl GameData {
         .await
     }
 
+    async fn read_exchange<R: Read + Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        gamelibs_zip: &mut ZipArchive<R>,
+        item_set: &Vec<ItemSet>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<()> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::Exchange;
+            cx.notify();
+        });
+        let locales = self.read_exchange_locales(gamedatas_zip).await?;
+        let res = self.read_exchange_itemres(gamedatas_zip).await?;
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemdata_exchange.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items(
+            &data,
+            DataFormat::String,
+            DataType::Exchange,
+            &locales,
+            &HashMap::new(),
+            &res,
+            &item_set,
+            gamelibs_zip,
+        )
+        .await
+    }
+
+    async fn read_skill_books<R: Read + Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        gamelibs_zip: &mut ZipArchive<R>,
+        item_set: &Vec<ItemSet>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<()> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::SkillBook;
+            cx.notify();
+        });
+        let locales = self.read_skill_book_locales(gamedatas_zip).await?;
+        let res = self.read_skill_book_itemres(gamedatas_zip).await?;
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemdata_skillbook.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items(
+            &data,
+            DataFormat::String,
+            DataType::SkillBook,
+            &locales,
+            &HashMap::new(),
+            &res,
+            &item_set,
+            gamelibs_zip,
+        )
+        .await
+    }
+
+    async fn read_gems<R: Read + Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        gamelibs_zip: &mut ZipArchive<R>,
+        item_set: &Vec<ItemSet>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<()> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::Gem;
+            cx.notify();
+        });
+        let locales = self.read_gem_locales(gamedatas_zip).await?;
+        let res = self.read_gem_itemres(gamedatas_zip).await?;
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemdata_enchantstone.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items(
+            &data,
+            DataFormat::String,
+            DataType::Gem,
+            &locales,
+            &HashMap::new(),
+            &res,
+            &item_set,
+            gamelibs_zip,
+        )
+        .await
+    }
+
+    async fn read_sealed_fellows<R: Read + Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        gamelibs_zip: &mut ZipArchive<R>,
+        item_set: &Vec<ItemSet>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<()> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::SealedFellow;
+            cx.notify();
+        });
+        let locales = self.read_sealed_fellow_locales(gamedatas_zip).await?;
+        let res = self.read_sealed_fellow_itemres(gamedatas_zip).await?;
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemdata_sealedfellow.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items(
+            &data,
+            DataFormat::String,
+            DataType::SealedFellow,
+            &locales,
+            &HashMap::new(),
+            &res,
+            &item_set,
+            gamelibs_zip,
+        )
+        .await
+    }
+
+    async fn read_sealed_fellow_locales<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, Locale>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\localized\localstringdata_item_sealedfellow.sxb")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_locale(&data, DataFormat::WideString).await
+    }
+
     async fn read_secondary_weapon_locales<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, Locale>> {
         let mut file = gamedatas_zip.by_path(r"gamedata\localized\localstringdata_item_subitem.sxb")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_locale(&data, DataFormat::WideString).await
+    }
+
+    async fn read_gem_locales<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, Locale>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\localized\localstringdata_item_enchantstone.sxb")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_locale(&data, DataFormat::WideString).await
+    }
+    async fn read_exchange_locales<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, Locale>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\localized\localstringdata_item_exchange.sxb")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_locale(&data, DataFormat::WideString).await
+    }
+    
+    async fn read_skill_book_locales<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, Locale>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\localized\localstringdata_item_skillbook.sxb")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_locale(&data, DataFormat::WideString).await
+    }
+
+    async fn read_recipe_locales<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, Locale>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\localized\localstringdata_item_recipe.sxb")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_locale(&data, DataFormat::WideString).await
+    }
+
+    async fn read_consume_locales<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, Locale>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\localized\localstringdata_item_consume.sxb")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_locale(&data, DataFormat::WideString).await
+    }
+
+    async fn read_boost_locales<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, Locale>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\localized\localstringdata_item_boost.sxb")?;
         let mut data = vec![];
         file.read_to_end(&mut data)?;
         self.read_items_locale(&data, DataFormat::WideString).await
@@ -1264,6 +1824,18 @@ impl GameData {
         file.read_to_end(&mut data)?;
         self.read_items_locale(&data, DataFormat::WideString).await
     }
+    async fn read_exchange_itemres<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, ItemRes>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemres_exchange.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_res(&data, DataFormat::String).await
+    }
+    async fn read_sealed_fellow_itemres<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, ItemRes>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemres_sealedfellow.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_res(&data, DataFormat::String).await
+    }
 
     async fn read_accessory_itemres<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, ItemRes>> {
         let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemres_accessory.bin")?;
@@ -1286,6 +1858,48 @@ impl GameData {
         self.read_items_res(&data, DataFormat::String).await
     }
 
+        async fn read_skill_book_itemres<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, ItemRes>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemres_skillbook.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_res(&data, DataFormat::String).await
+    }
+
+    async fn read_gem_itemres<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, ItemRes>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemres_enchantstone.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_res(&data, DataFormat::String).await
+    }
+
+    async fn read_fellow_equip_itemres<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, ItemRes>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemres_fellowequip.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_res(&data, DataFormat::String).await
+    }
+
+    async fn read_recipe_itemres<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, ItemRes>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemres_recipe.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_res(&data, DataFormat::String).await
+    }
+
+    async fn read_boost_itemres<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, ItemRes>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemres_boost.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_res(&data, DataFormat::String).await
+    }
+
+    async fn read_consume_itemres<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, ItemRes>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemres_consume.bin")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_res(&data, DataFormat::String).await
+    }
+
     async fn read_weapon_itemres<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, ItemRes>> {
         let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemres_weapon.bin")?;
         let mut data = vec![];
@@ -1302,6 +1916,13 @@ impl GameData {
 
     async fn read_armor_locales<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, Locale>> {
         let mut file = gamedatas_zip.by_path(r"gamedata\localized\localstringdata_item_armor.sxb")?;
+        let mut data = vec![];
+        file.read_to_end(&mut data)?;
+        self.read_items_locale(&data, DataFormat::WideString).await
+    }
+
+    async fn read_fellow_equip_locales<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, Locale>> {
+        let mut file = gamedatas_zip.by_path(r"gamedata\localized\localstringdata_item_fellowequip.sxb")?;
         let mut data = vec![];
         file.read_to_end(&mut data)?;
         self.read_items_locale(&data, DataFormat::WideString).await
@@ -1329,7 +1950,6 @@ impl GameData {
         let mut reader = BufReader::new(cursor);
 
         let definitions = self.read_definitions(&mut reader).await?;
-        debug!(?definitions);
         let item_count = self.read_item_count(&mut reader).await?;
         let offsets = self.read_offsets(&mut reader, item_count, definitions.len()).await?;
 
@@ -1337,16 +1957,47 @@ impl GameData {
 
         for item_idx in 0..item_count {
             let mut item = T::default()
-                .read(&mut reader, &offsets, item_idx, definitions.len(), global_offset, format)
+                .read(&mut reader, &offsets, item_idx, &definitions, global_offset, format)
                 .await?;
+
             item.set_locale(locales, skill_locales);
             item.set_item_set(item_set);
+            item.set_product(&self.products_by_recipe_id, &self.products_by_result_id);
             item.set_icon(res, gamelibs_zip).await?;
             let c = constructor(item);
-            c.test();
+            c.validate_effects();
+            c.validate_grades();
             self.items.insert(c.get_id(), Rc::new(c));
         }
 
+        Ok(())
+    }
+
+    async fn read_product_material(&mut self, data: &[u8], format: DataFormat) -> Result<()> {
+        let cursor = Cursor::new(data);
+        let mut reader = BufReader::new(cursor);
+
+        let definitions = self.read_definitions(&mut reader).await?;
+        let item_count = self.read_item_count(&mut reader).await?;
+        let offsets = self.read_offsets(&mut reader, item_count, definitions.len()).await?;
+
+        let global_offset = reader.stream_position().await?;
+        let mut products_by_recipe_id = HashMap::with_capacity(item_count);
+        let mut products_by_result_id = HashMap::with_capacity(item_count);
+        for item_idx in 0..item_count {
+            let item = Product::default()
+                .read(&mut reader, &offsets, item_idx, &definitions, global_offset, format)
+                .await?;
+            let id = item.node.id.clone();
+
+            let productid = item.productid.clone();
+            let item = Rc::new(RefCell::new(item));
+            products_by_recipe_id.insert(productid, item.clone());
+            products_by_result_id.insert(id, item.clone());
+        }
+
+        self.products_by_recipe_id = products_by_recipe_id;
+        self.products_by_result_id = products_by_result_id;
         Ok(())
     }
 
@@ -1362,7 +2013,7 @@ impl GameData {
         let mut item_quality = HashMap::with_capacity(item_count);
         for item_idx in 0..item_count {
             let item = ItemQuality::default()
-                .read(&mut reader, &offsets, item_idx, definitions.len(), global_offset, format)
+                .read(&mut reader, &offsets, item_idx, &definitions, global_offset, format)
                 .await?;
             item_quality.insert(item.level, item);
         }
@@ -1388,7 +2039,7 @@ impl GameData {
         let mut item_set = Vec::with_capacity(item_count);
         for item_idx in 0..item_count {
             let mut item = ItemSet::default()
-                .read(&mut reader, &offsets, item_idx, definitions.len(), global_offset, format)
+                .read(&mut reader, &offsets, item_idx, &definitions, global_offset, format)
                 .await?;
             item.locale = locales.get(&item.setid).cloned();
             item.set_skill_effects_locale(skill_locales);
@@ -1410,7 +2061,7 @@ impl GameData {
         let mut locales = HashMap::with_capacity(item_count);
         for item_idx in 0..item_count {
             let item = Locale::default()
-                .read(&mut reader, &offsets, item_idx, definitions.len(), global_offset, format)
+                .read(&mut reader, &offsets, item_idx, &definitions, global_offset, format)
                 .await?;
             locales.insert(item.key.clone(), item);
         }
@@ -1423,7 +2074,6 @@ impl GameData {
         let mut reader = BufReader::new(cursor);
 
         let definitions = self.read_definitions(&mut reader).await?;
-        debug!(?definitions);
         let item_count = self.read_item_count(&mut reader).await?;
         let offsets = self.read_offsets(&mut reader, item_count, definitions.len()).await?;
 
@@ -1431,7 +2081,7 @@ impl GameData {
         let mut res = HashMap::with_capacity(item_count);
         for item_idx in 0..item_count {
             let item = ItemRes::default()
-                .read(&mut reader, &offsets, item_idx, definitions.len(), global_offset, format)
+                .read(&mut reader, &offsets, item_idx, &definitions, global_offset, format)
                 .await?;
             res.insert(item.id.clone(), item);
         }
@@ -1451,7 +2101,7 @@ impl GameData {
         let mut effects = HashMap::with_capacity(item_count);
         for item_idx in 0..item_count {
             let item = ItemOption::default()
-                .read(&mut reader, &offsets, item_idx, definitions.len(), global_offset, format)
+                .read(&mut reader, &offsets, item_idx, &definitions, global_offset, format)
                 .await?;
             effects.insert(item.level, item);
         }
@@ -1474,7 +2124,7 @@ impl GameData {
         let mut tempering = HashMap::with_capacity(item_count);
         for item_idx in 0..item_count {
             let item = Tempering::default()
-                .read(&mut reader, &offsets, item_idx, definitions.len(), global_offset, format)
+                .read(&mut reader, &offsets, item_idx, &definitions, global_offset, format)
                 .await?;
             tempering.insert(item.level, item);
         }
@@ -1499,7 +2149,7 @@ impl GameData {
             let (key, _, _) = EUC_KR.decode(&value);
             definitions.insert(key.to_string(), tag_type);
         }
-        //  debug!(?definitions);
+        //debug!(?definitions);
         Ok(definitions)
     }
 
@@ -1518,16 +2168,130 @@ impl GameData {
     }
 }
 
-#[derive(Debug, Default, Serialize, Clone)]
+#[derive(Default, Serialize, Clone)]
 pub struct ItemEffect {
     pub effect: SharedString,
     pub parsed: Option<(SharedString, f32)>,
 }
 
-#[derive(Debug, Default, Serialize, Clone)]
+#[derive(Default, Serialize, Clone)]
+pub struct ItemMinMaxStepEffect {
+    pub effect: SharedString,
+    pub parsed: Option<(SharedString, f32, f32, f32)>,
+}
+#[derive(Default, Serialize, Clone)]
+pub struct ItemMinMaxNoStepEffect {
+    pub effect: SharedString,
+    pub parsed: Option<(SharedString, f32, f32)>,
+}
+
+#[derive(Default, Serialize, Clone)]
 pub struct ItemMinMaxEffect {
     pub effect: SharedString,
     pub parsed: Option<(SharedString, f32, f32)>,
+}
+
+impl ItemMinMaxStepEffect {
+    pub fn new(effect: &str) -> Self {
+        let mut e = Self::default();
+        e.effect = SharedString::new(effect);
+        e.parse_effect();
+        e
+    }
+
+    pub fn get_locale(&self, maximized: bool, tempering_effect: f32) -> SharedString {
+        self.parsed
+            .as_ref()
+            .map(|(key, min, max, step)| {
+                let (min, max) = if maximized {
+                    (
+                        (min + step) * (1.0 + tempering_effect / 100.0),
+                        (max + step) * (1.0 + tempering_effect / 100.0),
+                    )
+                } else {
+                    (min * (1.0 + tempering_effect / 100.0), max * (1.0 + tempering_effect / 100.0))
+                };
+
+                if key.ends_with("-minus-percent") {
+                    t_v(key, vec![("value", format!("{:.2}% ~ -{:.2}", min, max))])
+                } else if key.ends_with("-percent") {
+                    t_v(key, vec![("value", format!("{:.2}% ~ {:.2}", min, max))])
+                } else {
+                    t_v(key, vec![("value", format!("{:.0} ~ {:.0}", min, max))])
+                }
+            })
+            .and_then(|s| if s.is_empty() { None } else { Some(s) })
+            .unwrap_or_else(|| self.effect.clone())
+    }
+    fn parse_key_min_max_step(input: &str) -> Option<(&str, f32, f32, f32)> {
+        let parts: Vec<&str> = input.split(',').collect();
+        if parts.len() != 4 {
+            return None;
+        }
+
+        let key = parts[0];
+        let min = parts[1].parse::<f32>().ok()?;
+        let max = parts[2].parse::<f32>().ok()?;
+        let step = parts[3].parse::<f32>().ok()?;
+
+        Some((key, min, max, step))
+    }
+
+    fn parse_effect(&mut self) {
+        if let Some((effect_key, min, max, step)) = Self::parse_key_min_max_step(&self.effect) {
+            if let Some(effect_key) = ItemEffect::matching(effect_key) {
+                self.parsed = Some((SharedString::new(effect_key), min, max, step));
+            }
+        }
+    }
+}
+
+impl ItemMinMaxNoStepEffect {
+    pub fn new(effect: &str) -> Self {
+        let mut e = Self::default();
+        e.effect = SharedString::new(effect);
+        e.parse_effect();
+        e
+    }
+
+    pub fn get_locale(&self, tempering_effect: f32) -> SharedString {
+        self.parsed
+            .as_ref()
+            .map(|(key, min, max)| {
+                let min = (min) * (1.0 + tempering_effect / 100.0);
+                let max = (max) * (1.0 + tempering_effect / 100.0);
+
+                if key.ends_with("-minus-percent") {
+                    t_v(key, vec![("value", format!("{:.2}% ~ -{:.2}", min, max))])
+                } else if key.ends_with("-percent") {
+                    t_v(key, vec![("value", format!("{:.2}% ~ {:.2}", min, max))])
+                } else {
+                    t_v(key, vec![("value", format!("{:.0} ~ {:.0}", min, max))])
+                }
+            })
+            .and_then(|s| if s.is_empty() { None } else { Some(s) })
+            .unwrap_or_else(|| self.effect.clone())
+    }
+    fn parse_key_min_max(input: &str) -> Option<(&str, f32, f32)> {
+        let parts: Vec<&str> = input.split(',').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+
+        let key = parts[0];
+        let min = parts[1].parse::<f32>().ok()?;
+        let max = parts[2].parse::<f32>().ok()?;
+
+        Some((key, min, max))
+    }
+
+    fn parse_effect(&mut self) {
+        if let Some((effect_key, min, max)) = Self::parse_key_min_max(&self.effect) {
+            if let Some(effect_key) = ItemEffect::matching(effect_key) {
+                self.parsed = Some((SharedString::new(effect_key), min, max));
+            }
+        }
+    }
 }
 
 impl ItemMinMaxEffect {
@@ -1571,8 +2335,6 @@ impl ItemMinMaxEffect {
             if let Some(effect_key) = ItemEffect::matching(effect_key) {
                 self.parsed = Some((SharedString::new(effect_key), min, max));
             }
-        } else {
-            warn!(?self.effect,  "Can not parse effect");
         }
     }
 }
@@ -1589,7 +2351,7 @@ impl ItemEffect {
             "창피격데미지%-" => Some("item-effect-lance-damage-minus-percent"),
             "배후공격극대화확률+" => Some("item-effect-backstab-damage"),
             "회피력+" => Some("item-effect-evasion-power"),
-            "회피율%" => Some("item-effect-evasion-percent"), // хз, уклонение, проверить на Capital Guard Veiled Gloves
+            "회피율%" | "회피율+" => Some("item-effect-evasion-percent"), // хз, уклонение, проверить на Capital Guard Veiled Gloves
             "최대MP+" => Some("item-effect-mana"),
             "최대HP+" | "최대hp+" => Some("item-effect-max-hp"),
             "최대HP%" => Some("item-effect-max-hp-percent"),
@@ -1608,18 +2370,28 @@ impl ItemEffect {
             "탈것속도%" => Some("item-effect-mount-speed-percent"),
             "치명타피해감소+" => Some("item-effect-crit-defense"),
             "마법방어력%" => Some("item-effect-magic-defense-percent"),
-            "INTDerest+" => Some("item-effect-intelligence-break-limit"),
-            "VTLDerest%" => Some("item-effect-vitality-break-limit-percent"),
-            "STRDerest+" => Some("item-effect-strength-break-limit"),
-            "INT%" => Some("item-effect-intelligence-percent"),
-            "STR%" => Some("item-effect-strength-percent"),
-            "VTL+" => Some("item-effect-vitality"),
-            "MTL+" => Some("item-effect-mentality"),
-            "INT+" | "int+" => Some("item-effect-intelligence"),
-            "STR+" | "str+" => Some("item-effect-strength"),
+            "INTDerest+" | "intderest+" => Some("item-effect-intelligence-break-limit"),
+            "INTDerest%" | "intderest%" | "intDerest%" => Some("item-effect-intelligence-break-limit-percent"),
+            "VTLDerest+" | "vtlderest+" => Some("item-effect-vitality-break-limit"),
+            "VTLDerest%" | "vtlderest%" => Some("item-effect-vitality-break-limit-percent"),
+            "STRDerest+" | "strderest+" => Some("item-effect-strength-break-limit"),
+            "STRDerest%" | "strderest%" | "strDerest%" => Some("item-effect-strength-break-limit-percent"),
+            "DEXDerest+" | "dexderest+" => Some("item-effect-dexterity-break-limit"),
+            "DEXDerest%" | "dexderest%" => Some("item-effect-dexterity-break-limit-percent"),
+            "MTLDerest+" | "mtlderest+" => Some("item-effect-mentality-break-limit"),
+            "MTLDerest%" | "mtlderest%" => Some("item-effect-mentality-break-limit-percent"),
+            "INT%" | "int%" => Some("item-effect-intelligence-percent"),
+            "STR%" | "str%" => Some("item-effect-strength-percent"),
+            "VTL%" | "vtl%" => Some("item-effect-vitality-percent"),
+            "MTL%" | "mtl%" => Some("item-effect-mentality-percent"),
+            "DEX%" | "dex%" => Some("item-effect-dexterity-percent"),
+            "VTL+" | "vtl+" => Some("item-effect-vitality"),
+            "MTL+" | "mtl+" => Some("item-effect-mentality"),
+            "INT+" | "int+" | "Int+" => Some("item-effect-intelligence"),
+            "STR+" | "str+" | "Str+" => Some("item-effect-strength"),
             "DEX+" | "dex+" => Some("item-effect-dexterity"),
 
-            "PK공격력%" => Some("item-effect-pvp-attack-percent"),
+            "PK공격력%" | "pk공격력%" => Some("item-effect-pvp-attack-percent"),
             "출혈관통률" => Some("item-effect-bleed-chance-percent"),
             "모든방어력%" => Some("item-effect-defense-percent"),
             "모든방어력+" => Some("item-effect-defense"),
@@ -1638,8 +2410,8 @@ impl ItemEffect {
             "무기극대화확률+" => Some("item-effect-physical-critical-damage-chance-percent"),
             "치명타피해관통율%" => Some("item-effect-critical-damage-penetration-percent"),
             "무기극대력+" => Some("item-effect-physical-critical-damage"),
-            "무기극대화데미지+" => Some("item-effect-physical-critical-damage-percent"),
-            "몬스터드랍율%" => Some("item-effect-drop-chance-percent"),
+            "무기극대화데미지+" | "무기극대력%" => Some("item-effect-physical-critical-damage-percent"),
+            "몬스터드랍율%" | "드랍율+" => Some("item-effect-drop-chance-percent"),
             "마법물리공격력%" => Some("item-effect-magic-attack-percent"),
             "무기물리공격력%" => Some("item-effect-physical-attack-percent"),
             "길들이기확률%" => Some("item-effect-taming-chance-percent"),
@@ -1648,12 +2420,13 @@ impl ItemEffect {
             "제작성공확률%" => Some("item-effect-crafting-chance-percent"),
             "제작대성공확률%" => Some("item-effect-great-craft-chance-percent"),
             "판매대행등록비감소%" => Some("item-effect-auction-fee-percent"),
-            "펠로우경험치%" => Some("item-effect-mount-exp-percent"),
+            "판매대행판매수수료감소%" => Some("item-effect-auction-sales-fee-percent"),
+            "펠로우경험치%" | "접속중펠로우위탁경험치%" => Some("item-effect-mount-exp-percent"),
             "도트데미지감소+" => Some("item-effect-bleed-damage-reduction"), //idk
             "도트데미지감소%" => Some("item-effect-bleed-damage-reduction-percent"), //idk
             "길들이기포인트감소%" => Some("item-effect-taming-points-percent"), // проверить потом на бафе зелек
-
-            "드랍Money변화율*" => Some("item-effect-money-drop-increase-percent"),
+            "고도+" => Some("item-effect-mount-altitude"),
+            "드랍Money변화율*" | "드랍money변화율*" => Some("item-effect-money-drop-increase-percent"),
             "Money추가획득율%" => Some("item-effect-money-drop-increase"),
             "공격자의치명타피해Plus효과감소%" => Some("item-effect-critical-defense-percent"),
             "최대MP%" => Some("item-effect-mana-percent"),
@@ -1662,10 +2435,14 @@ impl ItemEffect {
             "배후공격데미지%" => Some("item-effect-backstab-rate-percent"),
             "Hp힐량%" => Some("item-effect-health-regen-percent"),
             "어그로%" => Some("item-effect-threat-percent"),
-            "hp회복력%" => Some("item-effect-base-health-regen-percent"),
+            "hp회복력%" | "Hp회복력%" | "HP회복력%" => Some("item-effect-base-health-regen-percent"),
             "마법물리방어력+" => Some("item-effect-magic-and-physical-defense"),
+            "낚시시간감소" => Some("item-effect-fishing-time-sec"),
+            "펫포획확률%" => Some("item-effect-capturing-chance-percent"),
+            "월척확률증가%" => Some("item-effect-fishing-very-rare-drop-percent"),
+            "모든낚시확률증가%"=> Some("item-effect-fishing-drop-percent"),
+            "준척확률증가%"=> Some("item-effect-fishing-rare-drop-percent"),
             _ => {
-                warn!(key, "Can not detect effect");
                 return None;
             }
         }
@@ -1710,8 +2487,6 @@ impl ItemEffect {
             if let Some(effect_key) = Self::matching(effect_key) {
                 self.parsed = Some((SharedString::new(effect_key), value));
             }
-        } else {
-            warn!(?self.effect,  "Can not parse effect");
         }
     }
 }
@@ -1722,7 +2497,7 @@ pub trait AbstractItem: Sized + Default {
         reader: &mut R,
         offsets: &[u32],
         item_idx: usize,
-        tag_count: usize,
+        definitions: &IndexMap<String, TagType>,
         global_offset: u64,
         format: DataFormat,
     ) -> Result<Self>;
@@ -1789,6 +2564,12 @@ pub trait Item: Sized + Default {
     fn set_locale(&mut self, locales: &HashMap<SharedString, Locale>, skill_locales: &HashMap<SharedString, Locale>);
 
     fn set_item_set(&mut self, item_set: &Vec<ItemSet>);
+
+    fn set_product(
+        &mut self,
+        products_by_recipe_id: &HashMap<SharedString, Rc<RefCell<Product>>>,
+        products_by_result_id: &HashMap<SharedString, Rc<RefCell<Product>>>,
+    );
 
     fn get_full_type(&self) -> SharedString;
     fn get_type(&self) -> SharedString;

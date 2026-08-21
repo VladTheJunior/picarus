@@ -1,11 +1,12 @@
 use std::io::SeekFrom;
 
-use crate::game_data::{AbstractItem, DataFormat, ItemMinMaxEffect};
+use crate::game_data::{AbstractItem, DataFormat, ItemMinMaxEffect, TagType};
 use anyhow::Result;
 
+use indexmap::IndexMap;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct ItemOption {
     pub level: u16,
     pub effect1: Vec<ItemMinMaxEffect>,
@@ -33,10 +34,11 @@ impl AbstractItem for ItemOption {
         reader: &mut R,
         offsets: &[u32],
         item_idx: usize,
-        tag_count: usize,
+        definitions: &IndexMap<String, TagType>,
         global_offset: u64,
         format: DataFormat,
     ) -> Result<Self> {
+        let tag_count = definitions.len();
         // Read all fields sequentially
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;

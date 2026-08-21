@@ -1,9 +1,17 @@
 use std::{
-    cell::RefCell, collections::{BTreeSet, HashMap}, io::{Read, SeekFrom}, rc::Rc, sync::Arc,
+    cell::RefCell,
+    collections::{BTreeSet, HashMap},
+    io::{Read, SeekFrom},
+    rc::Rc,
+    sync::Arc,
 };
 
 use crate::{
-    game_data::{AbstractItem, Binding, DataFormat, Grade, Item, TagType, item_set::ItemSet, locale::Locale, product::Product, recipe::RecipeType}, language::t,
+    game_data::{
+        AbstractItem, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, TagType, item_set::ItemSet, locale::Locale, product::Product,
+        recipe::RecipeType,
+    },
+    language::{LanguageController, t},
 };
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -13,41 +21,37 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use gpui::{Image, SharedString};
 use tracing::warn;
 
-
 #[derive(Default, Serialize)]
-pub struct Material {
+pub struct SkillBook {
     pub linked_recipes: BTreeSet<SharedString>,
     pub locale: Option<Locale>,
-    pub description_locale: Option<Locale>,
-    pub recipe_type: Option<BTreeSet<RecipeType>>,
     #[serde(skip)]
     pub icon: Option<Arc<Image>>,
     pub id: SharedString,
     pub name: SharedString,
-    pub material_type: SharedString,
     pub grade: Option<Grade>,
     pub required_level: u8,
     pub item_level: u16,
-    pub purchase_price: f32,
-    pub disposal_price: f32,
-    pub creation_count: f32,
-    pub stack_size: u16,
-    pub non_tradeable: bool,
-    pub non_disposable: bool,
-    pub non_destroyable: bool,
+    pub cooldown: f32,
+    pub buy_price: f32,
+    pub sell_price: f32,
+    pub stack_size: f32,
+    pub learned_skill: SharedString,
+    pub learned_skill_level: f32,
+    pub no_trade: bool,
+    pub no_sell: bool,
+    pub no_destroy: bool,
     pub drop_level_check: SharedString,
     pub binding: Option<Binding>,
     pub usage_restriction: SharedString,
-    pub sales_agency_category: SharedString,
-    pub drop_level_check_ignore: f32,
-    pub currency_settings_id: SharedString,
-    pub purchase_limit: f32,
+    pub class: SharedString,
+    pub usable_class: BTreeSet<GameClass>,
+    pub sale_agency_category: SharedString,
     pub contents_level: f32,
-    pub integrated_channel_unavailable: f32,
-    pub plus_rate: f32,
+    pub unified_channel_disabled: f32,
 }
 
-impl AbstractItem for Material {
+impl AbstractItem for SkillBook {
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
         mut self,
         reader: &mut R,
@@ -73,30 +77,30 @@ impl AbstractItem for Material {
             match tag_idx {
                 0 => self.id = SharedString::new(Self::read_string(format, reader).await?.to_uppercase()),
                 1 => self.name = Self::read_string(format, reader).await?,
-                2 => self.material_type = Self::read_string(format, reader).await?,
-                3 => self.grade = Grade::from_repr(reader.read_f32_le().await? as u8),
-                4 => self.required_level = reader.read_f32_le().await? as u8,
-                5 => self.item_level = reader.read_f32_le().await? as u16,
-                6 => self.purchase_price = reader.read_f32_le().await?,
-                7 => self.disposal_price = reader.read_f32_le().await?,
+                2 => self.grade = Grade::from_repr(reader.read_f32_le().await? as u8),
+                3 => self.required_level = reader.read_f32_le().await? as u8,
+                4 => self.item_level = reader.read_f32_le().await? as u16,
+                  5 => self.cooldown = reader.read_f32_le().await?,
+   6 => self.buy_price = reader.read_f32_le().await?,
+    7 => self.sell_price = reader.read_f32_le().await?,
+    8 => self.stack_size = reader.read_f32_le().await?,
+    9 => self.learned_skill= Self::read_string(format, reader).await?,
+    10 => self.learned_skill_level = reader.read_f32_le().await?,
+    11 => self.no_trade = reader.read_f32_le().await? != 0.0,
+    12 => self.no_sell = reader.read_f32_le().await? != 0.0,
+    13 => self.no_destroy = reader.read_f32_le().await? != 0.0,
+    14 => self.drop_level_check= Self::read_string(format, reader).await?,
+    15 => self.binding = Binding::try_from(Self::read_string(format, reader).await?.as_str()).ok(),
+    16=> self.usage_restriction= Self::read_string(format, reader).await?,
+   17 => self.class= Self::read_string(format, reader).await?,
+    18 => {
+                    let value = Self::read_string(format, reader).await?;
 
-                8 => self.creation_count = reader.read_f32_le().await?,
-                9 => self.stack_size = reader.read_f32_le().await? as u16,
-                10 => self.non_tradeable = reader.read_f32_le().await? != 0.0,
-                11 => self.non_disposable = reader.read_f32_le().await? != 0.0,
-                12 => self.non_destroyable = reader.read_f32_le().await? != 0.0,
-                13 => self.drop_level_check = Self::read_string(format, reader).await?,
-
-                14 => self.binding = Binding::try_from(Self::read_string(format, reader).await?.as_str()).ok(),
-                15 => self.usage_restriction = Self::read_string(format, reader).await?,
-                16 => self.sales_agency_category = Self::read_string(format, reader).await?,
-                17 => self.drop_level_check_ignore = reader.read_f32_le().await?,
-                18 => self.currency_settings_id = Self::read_string(format, reader).await?,
-
-                19 => self.purchase_limit = reader.read_f32_le().await?,
-                20 => self.contents_level = reader.read_f32_le().await?,
-                21 => self.integrated_channel_unavailable = reader.read_f32_le().await?,
-                22 => self.plus_rate = reader.read_f32_le().await?,
+                    self.usable_class = value.split("_").filter_map(|c| GameClass::try_from(c).ok()).collect();
+                }
+    19 => self.sale_agency_category= Self::read_string(format, reader).await?,
+    20 => self.contents_level = reader.read_f32_le().await?,
+    21=> self.unified_channel_disabled = reader.read_f32_le().await?,
                 _ => {}
             }
         }
@@ -105,10 +109,9 @@ impl AbstractItem for Material {
     }
 }
 
-impl Item for Material {
-    fn set_locale(&mut self, locales: &HashMap<SharedString, Locale>, _skill_locales: &HashMap<SharedString, Locale>) {
+impl Item for SkillBook {
+    fn set_locale(&mut self, locales: &HashMap<SharedString, Locale>, skill_locales: &HashMap<SharedString, Locale>) {
         self.locale = locales.get(&self.id).cloned();
-        self.description_locale = locales.get(&SharedString::new(format!("{}_DESCRIPTION", self.id))).cloned();
     }
 
     async fn set_icon<R: std::io::Read + std::io::Seek>(
@@ -117,8 +120,6 @@ impl Item for Material {
         zip: &mut zip::ZipArchive<R>,
     ) -> Result<()> {
         if let Some(item_res) = res.get(&self.id) {
-            self.recipe_type = item_res.using_recipe_type.as_ref().map(|r| r.split("_").filter_map(|r| RecipeType::try_from(r).ok()).collect());
-
             if let Ok(mut file) = zip.by_path(&format!(r"libs\ui\resources\textures\slot_icons\{}.dds", item_res.icon.to_lowercase())) {
                 let mut buf = Vec::with_capacity(file.size() as usize);
                 file.read_to_end(&mut buf)?;
@@ -149,8 +150,11 @@ impl Item for Material {
     }
 
     fn set_item_set(&mut self, _item_set: &Vec<ItemSet>) {}
-    
-    fn set_product(&mut self, products_by_recipe_id: &HashMap<SharedString,  Rc<RefCell<Product>>>, products_by_result_id: &HashMap<SharedString,  Rc<RefCell<Product>>>) {
-        
+
+    fn set_product(
+        &mut self,
+        products_by_recipe_id: &HashMap<SharedString, Rc<RefCell<Product>>>,
+        products_by_result_id: &HashMap<SharedString, Rc<RefCell<Product>>>,
+    ) {
     }
 }
