@@ -58,13 +58,13 @@ item-type-accessory = Jewelry
 item-type-secondary-weapon = Secondary Weapon
 item-type-material = Material
 item-type-recipe = Recipe
-item-type-fellow-equip = Fellow Equips
-item-type-consume = Consumes
-item-type-boost = Boosts
-item-type-gem = Gems
-item-type-sealed-fellow = Sealed Familiars
-item-type-skill-book = Skill Books
-item-type-exchange = Exchanges
+item-type-fellow-equip = Familiar Equip
+item-type-consume = Consume
+item-type-boost = Boost
+item-type-gem = Gem
+item-type-sealed-fellow = Sealed Familiar
+item-type-skill-book = Skill Book
+item-type-exchange = Exchange
 
 item-linked-recipes = Linked Recipes
 

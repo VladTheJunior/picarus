@@ -7,13 +7,30 @@
 ## Description
 Interactive Item Viewer for Riders of Icarus is a desktop application that allows players to browse and search through game items by reading client files directly on the user's machine. The viewer provides fast access to item data with comprehensive filtering capabilities and interactive simulation features.
 
-![Screenshot](screenshots/en.png)
+![Screenshot1](screenshots/en/1.png)
+
+![Screenshot2](screenshots/en/2.png)
+
+![Screenshot3](screenshots/en/3.png)
 
 ## Current Features
-- Item Categories: Weapons, Secondary Weapons, Armors, Jewelry, Materials
+- Item Categories: 
+  - Weapons
+  - Secondary Weapons
+  - Armors
+  - Jewelry
+  - Materials
+  - Recipes (with crafting chance in percents!!!)
+  - Sealed Familiars
+  - Gems
+  - Skill Books
+  - Consumes
+  - Boosts
+  - Familiar Equips
 - Detailed Information:
   - Basic stats (attack, defense, etc.)
   - Item grade and quality
+  - Linked recipes
 - Icons
 - Effects (random, fixed, and set bonuses)
 - Filter System:
@@ -29,5 +46,8 @@ Interactive Item Viewer for Riders of Icarus is a desktop application that allow
 
 ## Planned Features
 - Mounts support
-- Seal stones support
-- Additional item categories
+- Drop list support (with drop chance)
+
+## Known Limitations
+- Some character equipments stats (phys. defense, attack) may different from what game shows
+- Sealed stones stats may different from what game shows

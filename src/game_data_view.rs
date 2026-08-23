@@ -1860,77 +1860,83 @@ impl Render for GameDataView {
                                         v_flex()
                                             .min_w(px(300.))
                                             .size_full()
-                                            .when(self.game_data.items.len() > 1, |this| {
-                                                this.child(h_flex().id("outer-wrapper").child(
-                                                    Button::new("tabs-menu").icon(IconName::EllipsisVertical).ghost().dropdown_menu({
-                                                        let entity = cx.entity();
-                                                        move |mut menu, window, cx| {
-                                                            for item_id in &entity.read(cx).tabs {
-                                                                let item = entity.read(cx).game_data.items.get(item_id);
+                                            .child(
+                                                h_flex()
+                                                    .id("outer-wrapper")
+                                                    .when(self.game_data.items.len() > 1, |this| {
+                                                        this.child(Button::new("tabs-menu").icon(IconName::EllipsisVertical).ghost().dropdown_menu({
+                                                            let entity = cx.entity();
+                                                            move |mut menu, window, cx| {
+                                                                for item_id in &entity.read(cx).tabs {
+                                                                    let item = entity.read(cx).game_data.items.get(item_id);
 
-                                                                menu = menu.when_some(item, |this, item| {
-                                                                    this.item(
-                                                                        PopupMenuItem::new(item.get_locale_name())
-                                                                            .checked(
-                                                                                entity.read(cx).selected_item.as_ref().is_some_and(|f| f == item_id),
-                                                                            )
+                                                                    menu = menu.when_some(item, |this, item| {
+                                                                        this.item(
+                                                                            PopupMenuItem::new(item.get_locale_name())
+                                                                                .checked(
+                                                                                    entity
+                                                                                        .read(cx)
+                                                                                        .selected_item
+                                                                                        .as_ref()
+                                                                                        .is_some_and(|f| f == item_id),
+                                                                                )
+                                                                                .on_click({
+                                                                                    let item_id = item_id.clone();
+
+                                                                                    window.listener_for(&entity, move |this, _, window, cx| {
+                                                                                        this.set_selected_item(Some(item_id.clone()), window, cx);
+                                                                                        cx.notify();
+                                                                                    })
+                                                                                }),
+                                                                        )
+                                                                    });
+                                                                }
+                                                                menu
+                                                            }
+                                                        }))
+                                                    })
+                                                    .child(
+                                                        TabBar::new("tabs")
+                                                            .track_scroll(&self.tabs_scroll_handle)
+                                                            .when_some(
+                                                                self.selected_item.as_ref().and_then(|f| self.tabs.get_index_of(f)),
+                                                                |this, index| this.selected_index(index),
+                                                            )
+                                                            .children(self.tabs.iter().map(|item_id| {
+                                                                let item = self.game_data.items.get(item_id);
+
+                                                                Tab::new()
+                                                                    .child(div().px_1().w_full().when_some(item, |this, item| {
+                                                                        let grade = item.get_grade();
+                                                                        this.child(item.get_locale_name())
+                                                                            .when_some(grade.and_then(|g| g.color()), |this, color| {
+                                                                                this.text_color(color)
+                                                                            })
+                                                                    }))
+                                                                    .on_click({
+                                                                        let item_id = item_id.clone();
+                                                                        cx.listener(move |this, _, window, cx| {
+                                                                            this.set_selected_item(Some(item_id.clone()), window, cx);
+                                                                            cx.notify();
+                                                                        })
+                                                                    })
+                                                                    .suffix(
+                                                                        Button::new(format!("close-{}", item_id))
+                                                                            .icon(IconName::Close)
+                                                                            .ghost()
+                                                                            .xsmall()
                                                                             .on_click({
                                                                                 let item_id = item_id.clone();
-
-                                                                                window.listener_for(&entity, move |this, _, window, cx| {
-                                                                                    this.set_selected_item(Some(item_id.clone()), window, cx);
+                                                                                cx.listener(move |view, _, window, cx| {
+                                                                                    cx.stop_propagation();
+                                                                                    view.close_tab(&item_id, window, cx);
                                                                                     cx.notify();
                                                                                 })
                                                                             }),
                                                                     )
-                                                                });
-                                                            }
-                                                            menu
-                                                        }
-                                                    }),
-                                                ))
-                                                .child(
-                                                    TabBar::new("tabs")
-                                                        .track_scroll(&self.tabs_scroll_handle)
-                                                        .when_some(
-                                                            self.selected_item.as_ref().and_then(|f| self.tabs.get_index_of(f)),
-                                                            |this, index| this.selected_index(index),
-                                                        )
-                                                        .children(self.tabs.iter().map(|item_id| {
-                                                            let item = self.game_data.items.get(item_id);
-
-                                                            Tab::new()
-                                                                .child(div().px_1().w_full().when_some(item, |this, item| {
-                                                                    let grade = item.get_grade();
-                                                                    this.child(item.get_locale_name())
-                                                                        .when_some(grade.and_then(|g| g.color()), |this, color| {
-                                                                            this.text_color(color)
-                                                                        })
-                                                                }))
-                                                                .on_click({
-                                                                    let item_id = item_id.clone();
-                                                                    cx.listener(move |this, _, window, cx| {
-                                                                        this.set_selected_item(Some(item_id.clone()), window, cx);
-                                                                        cx.notify();
-                                                                    })
-                                                                })
-                                                                .suffix(
-                                                                    Button::new(format!("close-{}", item_id))
-                                                                        .icon(IconName::Close)
-                                                                        .ghost()
-                                                                        .xsmall()
-                                                                        .on_click({
-                                                                            let item_id = item_id.clone();
-                                                                            cx.listener(move |view, _, window, cx| {
-                                                                                cx.stop_propagation();
-                                                                                view.close_tab(&item_id, window, cx);
-                                                                                cx.notify();
-                                                                            })
-                                                                        }),
-                                                                )
-                                                        })),
-                                                )
-                                            })
+                                                            })),
+                                                    ),
+                                            )
                                             .when_some(
                                                 self.selected_item
                                                     .as_ref()
