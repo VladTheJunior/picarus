@@ -6,13 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{
-    game_data::{
-        AbstractItem, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, TagType, item_set::ItemSet, locale::Locale, product::Product,
-        recipe::RecipeType,
-    },
-    language::{LanguageController, t},
-};
+use crate::game_data::{AbstractItem, Binding, DataFormat, GameClass, Grade, Item, TagType, item_set::ItemSet, locale::Locale, product::Product};
 use anyhow::Result;
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -80,27 +74,27 @@ impl AbstractItem for SkillBook {
                 2 => self.grade = Grade::from_repr(reader.read_f32_le().await? as u8),
                 3 => self.required_level = reader.read_f32_le().await? as u8,
                 4 => self.item_level = reader.read_f32_le().await? as u16,
-                  5 => self.cooldown = reader.read_f32_le().await?,
-   6 => self.buy_price = reader.read_f32_le().await?,
-    7 => self.sell_price = reader.read_f32_le().await?,
-    8 => self.stack_size = reader.read_f32_le().await?,
-    9 => self.learned_skill= Self::read_string(format, reader).await?,
-    10 => self.learned_skill_level = reader.read_f32_le().await?,
-    11 => self.no_trade = reader.read_f32_le().await? != 0.0,
-    12 => self.no_sell = reader.read_f32_le().await? != 0.0,
-    13 => self.no_destroy = reader.read_f32_le().await? != 0.0,
-    14 => self.drop_level_check= Self::read_string(format, reader).await?,
-    15 => self.binding = Binding::try_from(Self::read_string(format, reader).await?.as_str()).ok(),
-    16=> self.usage_restriction= Self::read_string(format, reader).await?,
-   17 => self.class= Self::read_string(format, reader).await?,
-    18 => {
+                5 => self.cooldown = reader.read_f32_le().await?,
+                6 => self.buy_price = reader.read_f32_le().await?,
+                7 => self.sell_price = reader.read_f32_le().await?,
+                8 => self.stack_size = reader.read_f32_le().await?,
+                9 => self.learned_skill = Self::read_string(format, reader).await?,
+                10 => self.learned_skill_level = reader.read_f32_le().await?,
+                11 => self.no_trade = reader.read_f32_le().await? != 0.0,
+                12 => self.no_sell = reader.read_f32_le().await? != 0.0,
+                13 => self.no_destroy = reader.read_f32_le().await? != 0.0,
+                14 => self.drop_level_check = Self::read_string(format, reader).await?,
+                15 => self.binding = Binding::try_from(Self::read_string(format, reader).await?.as_str()).ok(),
+                16 => self.usage_restriction = Self::read_string(format, reader).await?,
+                17 => self.class = Self::read_string(format, reader).await?,
+                18 => {
                     let value = Self::read_string(format, reader).await?;
 
                     self.usable_class = value.split("_").filter_map(|c| GameClass::try_from(c).ok()).collect();
                 }
-    19 => self.sale_agency_category= Self::read_string(format, reader).await?,
-    20 => self.contents_level = reader.read_f32_le().await?,
-    21=> self.unified_channel_disabled = reader.read_f32_le().await?,
+                19 => self.sale_agency_category = Self::read_string(format, reader).await?,
+                20 => self.contents_level = reader.read_f32_le().await?,
+                21 => self.unified_channel_disabled = reader.read_f32_le().await?,
                 _ => {}
             }
         }
@@ -110,7 +104,7 @@ impl AbstractItem for SkillBook {
 }
 
 impl Item for SkillBook {
-    fn set_locale(&mut self, locales: &HashMap<SharedString, Locale>, skill_locales: &HashMap<SharedString, Locale>) {
+    fn set_locale(&mut self, locales: &HashMap<SharedString, Locale>, _skill_locales: &HashMap<SharedString, Locale>) {
         self.locale = locales.get(&self.id).cloned();
     }
 
@@ -151,10 +145,28 @@ impl Item for SkillBook {
 
     fn set_item_set(&mut self, _item_set: &Vec<ItemSet>) {}
 
-    fn set_product(
-        &mut self,
-        products_by_recipe_id: &HashMap<SharedString, Rc<RefCell<Product>>>,
-        products_by_result_id: &HashMap<SharedString, Rc<RefCell<Product>>>,
-    ) {
+    fn set_product(&mut self, products_by_recipe_id: &HashMap<SharedString, Rc<RefCell<Product>>>, _: &HashMap<SharedString, Rc<RefCell<Product>>>) {
+        self.linked_recipes = products_by_recipe_id
+            .iter()
+            .filter_map(|(_, product)| {
+                let p = product.borrow();
+                if p.node.id == self.id
+                    || p.material1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material1_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material2.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material2_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material3.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material3_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material4.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material4_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material5.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material5_1.as_ref().is_some_and(|f| f.id == self.id)
+                {
+                    Some(p.productid.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
     }
 }

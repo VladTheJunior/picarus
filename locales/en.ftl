@@ -64,6 +64,9 @@ item-type-boost = Boosts
 item-type-gem = Gems
 item-type-sealed-fellow = Sealed Familiars
 item-type-skill-book = Skill Books
+item-type-exchange = Exchanges
+
+item-linked-recipes = Linked Recipes
 
 item-tag-no-trade = Untradable
 item-tag-no-sell = Unsellable
@@ -105,6 +108,7 @@ game-data-loading-boost = Loading boosts data...
 game-data-loading-gem = Loading gems data...
 game-data-loading-sealed-fellow = Loading sealed familiars data...
 game-data-loading-skill-book = Loading skill books data...
+game-data-loading-exchange = Loading exchanges data...
 
 label-select-random-equipped-effect = Select effect
 button-load-game-data = Load

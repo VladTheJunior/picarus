@@ -2,6 +2,7 @@ pub mod accessory;
 pub mod armor;
 pub mod boost;
 pub mod consume;
+pub mod exchange;
 mod fellow_equip;
 pub mod filters;
 pub mod gem;
@@ -15,10 +16,9 @@ pub mod product;
 pub mod recipe;
 pub mod sealed_fellow;
 pub mod secondary_weapon;
+pub mod skill_book;
 pub mod tempering;
 pub mod weapon;
-pub mod skill_book;
-pub mod exchange;
 
 use anyhow::Result;
 
@@ -46,8 +46,13 @@ use zip::ZipArchive;
 
 use crate::{
     game_data::{
-        accessory::Accessory, armor::Armor, boost::Boost, consume::Consume, exchange::Exchange, fellow_equip::FellowEquip, gem::Gem, item_option::ItemOption, item_quality::ItemQuality, item_res::ItemRes, item_set::ItemSet, locale::Locale, material::Material, product::Product, recipe::Recipe, sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon, skill_book::SkillBook, tempering::Tempering, weapon::Weapon,
-    }, game_data_view::GameDataLoadingStatus, language::{LanguageController, t, t_v},
+        accessory::Accessory, armor::Armor, boost::Boost, consume::Consume, exchange::Exchange, fellow_equip::FellowEquip, gem::Gem,
+        item_option::ItemOption, item_quality::ItemQuality, item_res::ItemRes, item_set::ItemSet, locale::Locale, material::Material,
+        product::Product, recipe::Recipe, sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon, skill_book::SkillBook,
+        tempering::Tempering, weapon::Weapon,
+    },
+    game_data_view::GameDataLoadingStatus,
+    language::{LanguageController, t, t_v},
 };
 
 #[derive(EnumIter, Eq, PartialEq, Hash, Clone, Copy)]
@@ -64,7 +69,7 @@ pub enum ItemType {
     Gem,
     SealedFellow,
     SkillBook,
-    Exchange
+    Exchange,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -168,7 +173,7 @@ pub enum DataType {
     Gem(Gem),
     SealedFellow(SealedFellow),
     SkillBook(SkillBook),
-    Exchange(Exchange)
+    Exchange(Exchange),
 }
 #[derive(Debug, EnumIter, Copy, Clone, PartialEq, Eq, Hash, FromRepr, Serialize)]
 #[repr(u8)]
@@ -683,8 +688,8 @@ impl DataType {
             DataType::Material(_) => {}
             DataType::Recipe(_) => {}
             DataType::Consume(_) => {}
-DataType::SkillBook(_) => {}
-DataType::Exchange(_) => {}
+            DataType::SkillBook(_) => {}
+            DataType::Exchange(_) => {}
             DataType::SealedFellow(sealed_fellow) => {
                 [
                     &sealed_fellow.sealed_fellow_effect_1,
@@ -1031,7 +1036,7 @@ DataType::Exchange(_) => {}
             DataType::Gem(gem) => gem.grade,
             DataType::SealedFellow(sealed_fellow) => sealed_fellow.grade,
             DataType::SkillBook(skill_book) => skill_book.grade,
-             DataType::Exchange(exchange) => exchange.grade,
+            DataType::Exchange(exchange) => exchange.grade,
         }
     }
 
@@ -1049,7 +1054,7 @@ DataType::Exchange(_) => {}
             DataType::Gem(gem) => gem.locale.clone(),
             DataType::SealedFellow(sealed_fellow) => sealed_fellow.locale.clone(),
             DataType::SkillBook(skill_book) => skill_book.locale.clone(),
-              DataType::Exchange(exchange) => exchange.locale.clone(),
+            DataType::Exchange(exchange) => exchange.locale.clone(),
         }
     }
 
@@ -1089,7 +1094,7 @@ impl GameData {
         }
     }
 
-    pub fn get_all_effects(&self) -> HashSet<SharedString> {
+    pub fn get_all_effects(&self) -> BTreeSet<SharedString> {
         self.items.iter().map(|(_, value)| value.get_effects()).flatten().collect()
     }
 
@@ -1102,9 +1107,7 @@ impl GameData {
 
         let item_set = data.read_itemset(&mut gamedatas_zip, on_load, cx).await?;
 
-        
-        
-       data.read_product_materials(&mut gamedatas_zip, on_load, cx).await?;
+        data.read_product_materials(&mut gamedatas_zip, on_load, cx).await?;
 
         data.read_item_boost(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx)
             .await?;
@@ -1117,7 +1120,8 @@ impl GameData {
             .await?;
         data.read_exchange(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
         data.read_gems(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
-        data.read_skill_books(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
+        data.read_skill_books(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx)
+            .await?;
         data.read_sealed_fellows(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx)
             .await?;
         data.read_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &item_set, on_load, cx).await?;
@@ -1145,7 +1149,7 @@ impl GameData {
         )
         .await?;
 
-        for (id, item) in &data.products_by_recipe_id {
+        for (_, item) in &data.products_by_recipe_id {
             item.borrow_mut().validate(&data.items);
         }
 
@@ -1768,7 +1772,7 @@ impl GameData {
         file.read_to_end(&mut data)?;
         self.read_items_locale(&data, DataFormat::WideString).await
     }
-    
+
     async fn read_skill_book_locales<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, Locale>> {
         let mut file = gamedatas_zip.by_path(r"gamedata\localized\localstringdata_item_skillbook.sxb")?;
         let mut data = vec![];
@@ -1858,7 +1862,7 @@ impl GameData {
         self.read_items_res(&data, DataFormat::String).await
     }
 
-        async fn read_skill_book_itemres<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, ItemRes>> {
+    async fn read_skill_book_itemres<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, ItemRes>> {
         let mut file = gamedatas_zip.by_path(r"gamedata\adatabin\itemres_skillbook.bin")?;
         let mut data = vec![];
         file.read_to_end(&mut data)?;
@@ -2440,8 +2444,8 @@ impl ItemEffect {
             "낚시시간감소" => Some("item-effect-fishing-time-sec"),
             "펫포획확률%" => Some("item-effect-capturing-chance-percent"),
             "월척확률증가%" => Some("item-effect-fishing-very-rare-drop-percent"),
-            "모든낚시확률증가%"=> Some("item-effect-fishing-drop-percent"),
-            "준척확률증가%"=> Some("item-effect-fishing-rare-drop-percent"),
+            "모든낚시확률증가%" => Some("item-effect-fishing-drop-percent"),
+            "준척확률증가%" => Some("item-effect-fishing-rare-drop-percent"),
             _ => {
                 return None;
             }

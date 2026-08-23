@@ -1,11 +1,11 @@
 use gpui::{
-    Action, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable, Image, ImageSource, InteractiveElement, IntoElement,
-    KeyBinding, ListSizingBehavior, ObjectFit, ParentElement, PathPromptOptions, ReadGlobal, Render, ScrollHandle, ScrollStrategy, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, UniformListScrollHandle, UpdateGlobal, Window, actions, div, img, prelude::FluentBuilder, px,
-    rgb, uniform_list,
+    Action, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight, Image, ImageSource, InteractiveElement,
+    IntoElement, KeyBinding, ListSizingBehavior, ObjectFit, ParentElement, PathPromptOptions, ReadGlobal, Render, ScrollHandle, ScrollStrategy,
+    SharedString, StatefulInteractiveElement, Styled, StyledImage, UniformListScrollHandle, UpdateGlobal, Window, actions, div, img,
+    prelude::FluentBuilder, px, rgb, uniform_list,
 };
 use gpui_component::{
-    ActiveTheme, Icon, IconName, InteractiveElementExt, Root, Sizable, StyledExt, TitleBar, WindowExt,
+    ActiveTheme, Icon, IconName, Root, Sizable, StyledExt, TitleBar, WindowExt,
     button::{Button, ButtonVariants},
     combobox::Combobox,
     h_flex,
@@ -92,6 +92,7 @@ struct PreviewValues {
     transcendence: u8,
     random_effects: HashMap<u8, ItemMinMaxEffect>,
     materials: HashMap<u8, bool>,
+    linked_recipes_expanded: bool,
 }
 
 impl PreviewValues {
@@ -318,6 +319,7 @@ impl GameDataView {
         copy_item_name_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
         viewer_entity: Entity<GameDataView>,
         max_ep: Option<f32>,
+        linked_recipes: Option<BTreeSet<SharedString>>,
         cx: &App,
     ) -> gpui::Div {
         v_flex()
@@ -1425,6 +1427,61 @@ impl GameDataView {
                     )
                 }
             })
+            .when_some(linked_recipes, |this, linked_recipes| {
+                this.child(
+                    v_flex().child(
+                        Button::new("button-linked-recipes")
+                            .my_2()
+                            .small()
+                            .font_weight(FontWeight::BOLD)
+                            .on_click({
+                                let viewer_entity = viewer_entity.clone();
+                                let id = id.clone();
+                                move |_, _, cx| {
+                                    cx.update_entity(&viewer_entity, |this, cx| {
+                                        this.preview.entry(id.clone()).and_modify(|v| {
+                                            v.linked_recipes_expanded = !v.linked_recipes_expanded;
+                                        });
+                                        cx.notify();
+                                    })
+                                }
+                            })
+                            .text()
+                            .icon(if preview.linked_recipes_expanded {
+                                IconName::Minus
+                            } else {
+                                IconName::Plus
+                            })
+                            .label(t("item-linked-recipes")),
+                    ),
+                )
+                .when(preview.linked_recipes_expanded, |this| {
+                    this.children(linked_recipes.iter().filter_map(|id| items.get(id)).map(|item| {
+                        let id = item.get_id();
+                        let grade = item.get_grade();
+
+                        v_flex().items_start().child(
+                            Button::new(format!("button-recipe-{}", id))
+                                .label(item.get_locale_name())
+                                .link()
+                                .small()
+                                .mb_2()
+                                .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
+                                .on_click({
+                                    let viewer_entity = viewer_entity.clone();
+                                    let id = id.clone();
+                                    move |_, window, cx| {
+                                        cx.update_entity(&viewer_entity, |this, cx| {
+                                            this.tabs.insert(id.clone());
+                                            this.set_selected_item(Some(id.clone()), window, cx);
+                                            cx.notify();
+                                        })
+                                    }
+                                }),
+                        )
+                    }))
+                })
+            })
         // .child(Self::render_item_set(items, item_set, cx))
     }
 
@@ -1538,6 +1595,8 @@ impl Render for GameDataView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let focus_handle = self.focus_handle(cx);
         let language = LanguageController::get_current_language();
+        let game_path = self.game_path.clone();
+
         v_flex()
             .size_full()
             .child(
@@ -1581,7 +1640,7 @@ impl Render for GameDataView {
                                     .justify_center()
                                     .gap_3()
                                     .items_center()
-                                    .child(Input::new(&self.game_path).readonly(true).w(px(300.)).suffix(
+                                    .child(Input::new(&game_path).readonly(true).w(px(300.)).suffix(
                                         Button::new("select-game-path").ghost().icon(IconName::FolderOpen).on_click(cx.listener(
                                             |_, _, window, cx| {
                                                 let receiver = cx.prompt_for_paths(PathPromptOptions {
@@ -1735,13 +1794,6 @@ impl Render for GameDataView {
                                                                                     .on_click(cx.listener({
                                                                                         let id = id.clone();
                                                                                         move |this, _, window, cx| {
-                                                                                            this.set_selected_item(Some(id.clone()), window, cx);
-                                                                                            cx.notify();
-                                                                                        }
-                                                                                    }))
-                                                                                    .on_double_click(cx.listener({
-                                                                                        let id = id.clone();
-                                                                                        move |this, _, window, cx| {
                                                                                             this.tabs.insert(id.clone());
                                                                                             this.set_selected_item(Some(id.clone()), window, cx);
                                                                                             cx.notify();
@@ -1808,54 +1860,77 @@ impl Render for GameDataView {
                                         v_flex()
                                             .min_w(px(300.))
                                             .size_full()
-                                            .child(
-                                                v_flex()
-                                                    .id("outer-wrapper")
-                                                    .flex_1()
-                                                    // .min_h_0()
-                                                    .horizontal_scrollbar(&self.tabs_scroll_handle)
-                                                    .child(
-                                                        TabBar::new("tabs")
-                                                            .track_scroll(&self.tabs_scroll_handle)
-                                                            .when_some(
-                                                                self.selected_item.as_ref().and_then(|f| self.tabs.get_index_of(f)),
-                                                                |this, index| this.selected_index(index),
-                                                            )
-                                                            .children(self.tabs.iter().map(|item_id| {
-                                                                let item = self.game_data.items.get(item_id);
+                                            .when(self.game_data.items.len() > 1, |this| {
+                                                this.child(h_flex().id("outer-wrapper").child(
+                                                    Button::new("tabs-menu").icon(IconName::EllipsisVertical).ghost().dropdown_menu({
+                                                        let entity = cx.entity();
+                                                        move |mut menu, window, cx| {
+                                                            for item_id in &entity.read(cx).tabs {
+                                                                let item = entity.read(cx).game_data.items.get(item_id);
 
-                                                                Tab::new()
-                                                                    .child(div().px_1().w_full().when_some(item, |this, item| {
-                                                                        let grade = item.get_grade();
-                                                                        this.child(item.get_locale_name())
-                                                                            .when_some(grade.and_then(|g| g.color()), |this, color| {
-                                                                                this.text_color(color)
-                                                                            })
-                                                                    }))
-                                                                    .on_click({
-                                                                        let item_id = item_id.clone();
-                                                                        cx.listener(move |this, _, window, cx| {
-                                                                            this.set_selected_item(Some(item_id.clone()), window, cx);
-                                                                            cx.notify();
-                                                                        })
-                                                                    })
-                                                                    .suffix(
-                                                                        Button::new(format!("close-{}", item_id))
-                                                                            .icon(IconName::Close)
-                                                                            .ghost()
-                                                                            .xsmall()
+                                                                menu = menu.when_some(item, |this, item| {
+                                                                    this.item(
+                                                                        PopupMenuItem::new(item.get_locale_name())
+                                                                            .checked(
+                                                                                entity.read(cx).selected_item.as_ref().is_some_and(|f| f == item_id),
+                                                                            )
                                                                             .on_click({
                                                                                 let item_id = item_id.clone();
-                                                                                cx.listener(move |view, _, window, cx| {
-                                                                                    cx.stop_propagation();
-                                                                                    view.close_tab(&item_id, window, cx);
+
+                                                                                window.listener_for(&entity, move |this, _, window, cx| {
+                                                                                    this.set_selected_item(Some(item_id.clone()), window, cx);
                                                                                     cx.notify();
                                                                                 })
                                                                             }),
                                                                     )
-                                                            })),
-                                                    ),
-                                            )
+                                                                });
+                                                            }
+                                                            menu
+                                                        }
+                                                    }),
+                                                ))
+                                                .child(
+                                                    TabBar::new("tabs")
+                                                        .track_scroll(&self.tabs_scroll_handle)
+                                                        .when_some(
+                                                            self.selected_item.as_ref().and_then(|f| self.tabs.get_index_of(f)),
+                                                            |this, index| this.selected_index(index),
+                                                        )
+                                                        .children(self.tabs.iter().map(|item_id| {
+                                                            let item = self.game_data.items.get(item_id);
+
+                                                            Tab::new()
+                                                                .child(div().px_1().w_full().when_some(item, |this, item| {
+                                                                    let grade = item.get_grade();
+                                                                    this.child(item.get_locale_name())
+                                                                        .when_some(grade.and_then(|g| g.color()), |this, color| {
+                                                                            this.text_color(color)
+                                                                        })
+                                                                }))
+                                                                .on_click({
+                                                                    let item_id = item_id.clone();
+                                                                    cx.listener(move |this, _, window, cx| {
+                                                                        this.set_selected_item(Some(item_id.clone()), window, cx);
+                                                                        cx.notify();
+                                                                    })
+                                                                })
+                                                                .suffix(
+                                                                    Button::new(format!("close-{}", item_id))
+                                                                        .icon(IconName::Close)
+                                                                        .ghost()
+                                                                        .xsmall()
+                                                                        .on_click({
+                                                                            let item_id = item_id.clone();
+                                                                            cx.listener(move |view, _, window, cx| {
+                                                                                cx.stop_propagation();
+                                                                                view.close_tab(&item_id, window, cx);
+                                                                                cx.notify();
+                                                                            })
+                                                                        }),
+                                                                )
+                                                        })),
+                                                )
+                                            })
                                             .when_some(
                                                 self.selected_item
                                                     .as_ref()
@@ -1904,6 +1979,7 @@ impl Render for GameDataView {
                                                         equip_effect_4,
                                                         fellow_stone_effects,
                                                         max_ep,
+                                                        linked_recipes,
                                                     ) = match selected_item.as_ref() {
                                                         crate::game_data::DataType::SecondaryWeapon(secondary_weapon) => {
                                                             let transcendence_limit = secondary_weapon.overrise_max;
@@ -1995,6 +2071,8 @@ impl Render for GameDataView {
                                                                 secondary_weapon.equip_effect_4.clone(),
                                                                 None,
                                                                 None,
+                                                                (!secondary_weapon.linked_recipes.is_empty())
+                                                                    .then_some(secondary_weapon.linked_recipes.clone()),
                                                             )
                                                         }
 
@@ -2118,6 +2196,7 @@ impl Render for GameDataView {
                                                                 weapon.equip_effect_4.clone(),
                                                                 None,
                                                                 None,
+                                                                (!weapon.linked_recipes.is_empty()).then_some(weapon.linked_recipes.clone()),
                                                             )
                                                         }
 
@@ -2205,6 +2284,7 @@ impl Render for GameDataView {
                                                                 armor.equip_effect_4.clone(),
                                                                 None,
                                                                 None,
+                                                                (!armor.linked_recipes.is_empty()).then_some(armor.linked_recipes.clone()),
                                                             )
                                                         }
                                                         crate::game_data::DataType::Material(material) => (
@@ -2245,6 +2325,7 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             None,
+                                                            (!material.linked_recipes.is_empty()).then_some(material.linked_recipes.clone()),
                                                         ),
                                                         crate::game_data::DataType::Recipe(recipe) => (
                                                             None,
@@ -2276,6 +2357,7 @@ impl Render for GameDataView {
                                                             0,
                                                             0,
                                                             0,
+                                                            None,
                                                             None,
                                                             None,
                                                             None,
@@ -2318,6 +2400,7 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             None,
+                                                            (!consume.linked_recipes.is_empty()).then_some(consume.linked_recipes.clone()),
                                                         ),
                                                         crate::game_data::DataType::SkillBook(skill_book) => (
                                                             None,
@@ -2352,6 +2435,7 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             None,
+                                                            (!skill_book.linked_recipes.is_empty()).then_some(skill_book.linked_recipes.clone()),
                                                         ),
                                                         crate::game_data::DataType::SealedFellow(sealed_fellow) => (
                                                             None,
@@ -2398,6 +2482,8 @@ impl Render for GameDataView {
                                                                 sealed_fellow.rf_effect,
                                                             )),
                                                             None,
+                                                            (!sealed_fellow.linked_recipes.is_empty())
+                                                                .then_some(sealed_fellow.linked_recipes.clone()),
                                                         ),
                                                         crate::game_data::DataType::Boost(boost) => (
                                                             None,
@@ -2432,6 +2518,7 @@ impl Render for GameDataView {
                                                             boost.equip_effect_4.clone(),
                                                             None,
                                                             None,
+                                                            (!boost.linked_recipes.is_empty()).then_some(boost.linked_recipes.clone()),
                                                         ),
                                                         crate::game_data::DataType::Exchange(exchange) => (
                                                             None,
@@ -2466,6 +2553,7 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             None,
+                                                            (!exchange.linked_recipes.is_empty()).then_some(exchange.linked_recipes.clone()),
                                                         ),
                                                         crate::game_data::DataType::Gem(gem) => (
                                                             None,
@@ -2500,6 +2588,7 @@ impl Render for GameDataView {
                                                             gem.equip_effect_4.clone(),
                                                             None,
                                                             None,
+                                                            (!gem.linked_recipes.is_empty()).then_some(gem.linked_recipes.clone()),
                                                         ),
                                                         crate::game_data::DataType::FellowEquip(fellow_equip) => (
                                                             None,
@@ -2539,6 +2628,7 @@ impl Render for GameDataView {
                                                             fellow_equip.equip_effect_4.clone(),
                                                             None,
                                                             fellow_equip.max_ep_plus,
+                                                            (!fellow_equip.linked_recipes.is_empty()).then_some(fellow_equip.linked_recipes.clone()),
                                                         ),
                                                         crate::game_data::DataType::Accessory(accessory) => {
                                                             let temper_limit = accessory.enhancement_limit;
@@ -2618,6 +2708,7 @@ impl Render for GameDataView {
                                                                 accessory.equip_effect_4.clone(),
                                                                 None,
                                                                 None,
+                                                                (!accessory.linked_recipes.is_empty()).then_some(accessory.linked_recipes.clone()),
                                                             )
                                                         }
                                                     };
@@ -2774,6 +2865,7 @@ impl Render for GameDataView {
                                                                                     }),
                                                                                     cx.entity(),
                                                                                     max_ep,
+                                                                                    linked_recipes,
                                                                                     cx,
                                                                                 ))
                                                                             }),

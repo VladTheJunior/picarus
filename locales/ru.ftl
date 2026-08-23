@@ -9,6 +9,8 @@ item-transcendence-limit = Просветление
 item-physical-defense = Физическая защита
 item-magic-defense = Магическая защита
 
+item-linked-recipes = Связанные рецепты
+
 item-no-transcendence = Нет просветления
 item-no-tempering = Нет закалки
 item-no-reverse-tempering = Нет реверса
@@ -74,6 +76,7 @@ item-type-boost = Усиления
 item-type-gem = Самоцветы
 item-type-sealed-fellow = Запечатанные спутники
 item-type-skill-book = Книги навыков
+item-type-exchange = Валюта
 
 item-tag-no-trade = Нельзя передать
 item-tag-no-sell = Нельзя продать
@@ -105,6 +108,7 @@ game-data-loading-boost = Загрузка данных усилений...
 game-data-loading-gem = Загрузка данных самоцветов...
 game-data-loading-sealed-fellow = Загрузка данных запечатанных спутников...
 game-data-loading-skill-book = Загрузка данных книг навыков...
+game-data-loading-exchange = Загрузка данных валют...
 
 label-select-random-equipped-effect = Выбрать эффект
 button-load-game-data = Загрузить

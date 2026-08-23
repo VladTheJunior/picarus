@@ -1,7 +1,8 @@
 use std::{collections::HashMap, io::SeekFrom};
 
 use crate::{
-    game_data::{AbstractItem, DataFormat, ItemEffect, TagType, locale::Locale}, language::LanguageController,
+    game_data::{AbstractItem, DataFormat, ItemEffect, TagType, locale::Locale},
+    language::LanguageController,
 };
 use anyhow::Result;
 use gpui::SharedString;

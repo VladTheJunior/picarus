@@ -1,20 +1,15 @@
 use std::{
-    collections::{BTreeSet, HashMap},
-    io::{Read, SeekFrom},
+    io::SeekFrom,
     rc::{Rc, Weak},
-    sync::Arc,
 };
 
-use crate::{
-    game_data::{AbstractItem, Binding, DataFormat, DataType, Grade, Item, TagType, item_set::ItemSet, locale::Locale, recipe::RecipeType},
-    language::t,
-};
+use crate::game_data::{AbstractItem, DataFormat, DataType, TagType};
 use anyhow::Result;
 use indexmap::IndexMap;
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use gpui::{Image, SharedString};
+use gpui::SharedString;
 use tracing::warn;
 
 #[derive(Default, Serialize, Clone)]

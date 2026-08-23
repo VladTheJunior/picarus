@@ -1,9 +1,14 @@
 use std::{
-    cell::RefCell, collections::{BTreeSet, HashMap}, io::{Read, SeekFrom}, rc::{Rc, Weak}, sync::Arc,
+    cell::RefCell,
+    collections::HashMap,
+    io::{Read, SeekFrom},
+    rc::{Rc, Weak},
+    sync::Arc,
 };
 
 use crate::{
-    game_data::{AbstractItem, Binding, DataFormat, Grade, Item, TagType, item_set::ItemSet, locale::Locale, product::Product}, language::t,
+    game_data::{AbstractItem, Binding, DataFormat, Grade, Item, TagType, item_set::ItemSet, locale::Locale, product::Product},
+    language::t,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -197,8 +202,15 @@ impl Item for Recipe {
     }
 
     fn set_item_set(&mut self, _item_set: &Vec<ItemSet>) {}
-    
-    fn set_product(&mut self, products_by_recipe_id: &HashMap<SharedString, Rc<RefCell<Product>>>, products_by_result_id: &HashMap<SharedString, Rc<RefCell<Product>>>) {
-        self.product = products_by_recipe_id.get(&self.id).or_else(|| products_by_result_id.get(&self.crafted_item_id)).map(|f| Rc::downgrade(f));
+
+    fn set_product(
+        &mut self,
+        products_by_recipe_id: &HashMap<SharedString, Rc<RefCell<Product>>>,
+        products_by_result_id: &HashMap<SharedString, Rc<RefCell<Product>>>,
+    ) {
+        self.product = products_by_recipe_id
+            .get(&self.id)
+            .or_else(|| products_by_result_id.get(&self.crafted_item_id))
+            .map(|f| Rc::downgrade(f));
     }
 }

@@ -1,12 +1,12 @@
 use anyhow::Result;
 use anyhow::anyhow;
 use gpui::App;
+use gpui::IntoElement;
 use gpui::RenderOnce;
 use gpui::Window;
 use gpui::{AssetSource, SharedString};
 use gpui_component::Icon;
 use gpui_component::IconNamed;
-use gpui::IntoElement;
 use gpui_component_macros::icon_named;
 use rust_embed::Embed;
 use rust_embed::RustEmbed;
@@ -33,14 +33,12 @@ impl AssetSource for Assets {
     }
 }
 
-
 icon_named!(AppIcon, "assets/icons");
 impl RenderOnce for AppIcon {
     fn render(self, _: &mut Window, _cx: &mut App) -> impl IntoElement {
         Icon::new(self)
     }
 }
-
 
 #[derive(Embed)]
 #[folder = "assets"]

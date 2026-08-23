@@ -1,7 +1,8 @@
 use std::io::SeekFrom;
 
 use crate::{
-    game_data::{AbstractItem, DataFormat, TagType}, language::LanguageController,
+    game_data::{AbstractItem, DataFormat, TagType},
+    language::LanguageController,
 };
 use anyhow::Result;
 use gpui::SharedString;

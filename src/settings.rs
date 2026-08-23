@@ -44,7 +44,7 @@ impl EnumNameExt for Language {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub language: Language,
-    pub game_path: String
+    pub game_path: String,
 }
 
 impl Default for Settings {

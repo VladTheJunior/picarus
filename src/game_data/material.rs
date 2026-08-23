@@ -1,9 +1,13 @@
 use std::{
-    cell::RefCell, collections::{BTreeSet, HashMap}, io::{Read, SeekFrom}, rc::Rc, sync::Arc,
+    cell::RefCell,
+    collections::{BTreeSet, HashMap},
+    io::{Read, SeekFrom},
+    rc::Rc,
+    sync::Arc,
 };
 
-use crate::{
-    game_data::{AbstractItem, Binding, DataFormat, Grade, Item, TagType, item_set::ItemSet, locale::Locale, product::Product, recipe::RecipeType}, language::t,
+use crate::game_data::{
+    AbstractItem, Binding, DataFormat, Grade, Item, TagType, item_set::ItemSet, locale::Locale, product::Product, recipe::RecipeType,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -12,7 +16,6 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui::{Image, SharedString};
 use tracing::warn;
-
 
 #[derive(Default, Serialize)]
 pub struct Material {
@@ -117,7 +120,10 @@ impl Item for Material {
         zip: &mut zip::ZipArchive<R>,
     ) -> Result<()> {
         if let Some(item_res) = res.get(&self.id) {
-            self.recipe_type = item_res.using_recipe_type.as_ref().map(|r| r.split("_").filter_map(|r| RecipeType::try_from(r).ok()).collect());
+            self.recipe_type = item_res
+                .using_recipe_type
+                .as_ref()
+                .map(|r| r.split("_").filter_map(|r| RecipeType::try_from(r).ok()).collect());
 
             if let Ok(mut file) = zip.by_path(&format!(r"libs\ui\resources\textures\slot_icons\{}.dds", item_res.icon.to_lowercase())) {
                 let mut buf = Vec::with_capacity(file.size() as usize);
@@ -149,8 +155,29 @@ impl Item for Material {
     }
 
     fn set_item_set(&mut self, _item_set: &Vec<ItemSet>) {}
-    
-    fn set_product(&mut self, products_by_recipe_id: &HashMap<SharedString,  Rc<RefCell<Product>>>, products_by_result_id: &HashMap<SharedString,  Rc<RefCell<Product>>>) {
-        
+
+    fn set_product(&mut self, products_by_recipe_id: &HashMap<SharedString, Rc<RefCell<Product>>>, _: &HashMap<SharedString, Rc<RefCell<Product>>>) {
+        self.linked_recipes = products_by_recipe_id
+            .iter()
+            .filter_map(|(_, product)| {
+                let p = product.borrow();
+                if p.node.id == self.id
+                    || p.material1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material1_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material2.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material2_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material3.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material3_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material4.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material4_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material5.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material5_1.as_ref().is_some_and(|f| f.id == self.id)
+                {
+                    Some(p.productid.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
     }
 }

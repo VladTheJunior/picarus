@@ -1,9 +1,16 @@
 use std::{
-    cell::RefCell, collections::{BTreeMap, BTreeSet, HashMap}, io::{Read, SeekFrom}, rc::{Rc, Weak}, sync::Arc,
+    cell::RefCell,
+    collections::{BTreeSet, HashMap},
+    io::{Read, SeekFrom},
+    rc::Rc,
+    sync::Arc,
 };
 
 use crate::{
-    game_data::{AbstractItem, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, TagType, item_set::ItemSet, locale::Locale, product::Product}, language::LanguageController,
+    game_data::{
+        AbstractItem, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, TagType, item_set::ItemSet, locale::Locale, product::Product,
+    },
+    language::LanguageController,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -15,7 +22,7 @@ use tracing::warn;
 
 #[derive(Default, Serialize)]
 pub struct Accessory {
-    pub linked_recipes: BTreeMap<SharedString, Weak<RefCell<Product>>>,
+    pub linked_recipes: BTreeSet<SharedString>,
     pub item_set: Option<ItemSet>,
     pub locale: Option<Locale>,
     pub skill_locale: Option<Locale>,
@@ -282,16 +289,29 @@ impl Item for Accessory {
     fn set_item_set(&mut self, item_set: &Vec<ItemSet>) {
         self.item_set = item_set.iter().find(|f| f.items.contains(&self.id)).cloned();
     }
-    
-    fn set_product(&mut self, products_by_recipe_id: &HashMap<SharedString, Rc<RefCell<Product>>>, products_by_result_id: &HashMap<SharedString,  Rc<RefCell<Product>>>) {
-       if let Some(p) = products_by_recipe_id.get(&self.id){
-            let id = p.borrow().node.id.clone();
-            self.linked_recipes.insert(id, Rc::downgrade(p));
-       }
 
-              if let Some(p) = products_by_result_id.get(&self.id){
-            let id = p.borrow().node.id.clone();
-            self.linked_recipes.insert(id, Rc::downgrade(p));
-       }
+    fn set_product(&mut self, products_by_recipe_id: &HashMap<SharedString, Rc<RefCell<Product>>>, _: &HashMap<SharedString, Rc<RefCell<Product>>>) {
+        self.linked_recipes = products_by_recipe_id
+            .iter()
+            .filter_map(|(_, product)| {
+                let p = product.borrow();
+                if p.node.id == self.id
+                    || p.material1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material1_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material2.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material2_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material3.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material3_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material4.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material4_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material5.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material5_1.as_ref().is_some_and(|f| f.id == self.id)
+                {
+                    Some(p.productid.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
     }
 }

@@ -46,7 +46,7 @@ impl AbstractItem for Tempering {
                     91..121 => self.spell_ratios[tag_idx - 91] = reader.read_f32_le().await?,
                     _ => {}
                 }
-            } else if tag_count == 106 || tag_count == 61 || tag_count == 101 || tag_count == 111  {
+            } else if tag_count == 106 || tag_count == 61 || tag_count == 101 || tag_count == 111 {
                 match tag_idx {
                     0 => self.level = reader.read_f32_le().await? as u16,
                     1..31 => self.defenses[tag_idx - 1] = reader.read_f32_le().await?,

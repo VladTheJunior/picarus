@@ -1,9 +1,16 @@
 use std::{
-    cell::RefCell, collections::{BTreeSet, HashMap}, io::{Read, SeekFrom}, rc::Rc, sync::Arc,
+    cell::RefCell,
+    collections::{BTreeSet, HashMap},
+    io::{Read, SeekFrom},
+    rc::Rc,
+    sync::Arc,
 };
 
 use crate::{
-    game_data::{AbstractItem, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, TagType, item_set::ItemSet, locale::Locale, product::Product}, language::LanguageController,
+    game_data::{
+        AbstractItem, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, TagType, item_set::ItemSet, locale::Locale, product::Product,
+    },
+    language::LanguageController,
 };
 use anyhow::Result;
 
@@ -206,7 +213,7 @@ impl AbstractItem for SecondaryWeapon {
                         31 => self.variable_option_max = value,
                         32 => self.enchant_limit = value as u8,
                         34 => self.no_drop = value,
-                        35 => self.no_trade = value  != 0.0,
+                        35 => self.no_trade = value != 0.0,
                         36 => self.no_disposal = value != 0.0,
                         37 => self.indestructible = value != 0.0,
                         41 => self.binding_release_count = value,
@@ -296,8 +303,29 @@ impl Item for SecondaryWeapon {
     fn set_item_set(&mut self, item_set: &Vec<super::item_set::ItemSet>) {
         self.item_set = item_set.iter().find(|f| f.items.contains(&self.id)).cloned();
     }
-    
-    fn set_product(&mut self, products_by_recipe_id: &HashMap<SharedString,  Rc<RefCell<Product>>>, products_by_result_id: &HashMap<SharedString,  Rc<RefCell<Product>>>) {
-   
+
+    fn set_product(&mut self, products_by_recipe_id: &HashMap<SharedString, Rc<RefCell<Product>>>, _: &HashMap<SharedString, Rc<RefCell<Product>>>) {
+        self.linked_recipes = products_by_recipe_id
+            .iter()
+            .filter_map(|(_, product)| {
+                let p = product.borrow();
+                if p.node.id == self.id
+                    || p.material1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material1_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material2.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material2_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material3.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material3_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material4.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material4_1.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material5.as_ref().is_some_and(|f| f.id == self.id)
+                    || p.material5_1.as_ref().is_some_and(|f| f.id == self.id)
+                {
+                    Some(p.productid.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
     }
 }
