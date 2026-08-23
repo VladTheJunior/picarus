@@ -1,3 +1,11 @@
+# 1.3.0 (2026-08-23)
+
+
+### Features
+
+* added fellow equip, boost, comsume, exchange, gem, recipe, sealed fellow, skill_book
+* added linked recipes
+
 # 1.2.0 (2026-08-16)
 
 
