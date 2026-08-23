@@ -1,3 +1,11 @@
+# 1.2.0 (2026-08-16)
+
+
+### Features
+
+* added material recipe type
+* Added materials, untradable, unsellable, indestructable tags
+
 # 1.1.0 (2026-08-15)
 
 
