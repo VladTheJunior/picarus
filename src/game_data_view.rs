@@ -11,9 +11,10 @@ use gpui_component::{
     h_flex,
     input::{Editor, EditorState, Input, InputState},
     menu::{DropdownMenu, PopupMenuItem},
-    notification::NotificationType,
+    notification::{Notification, NotificationType},
     scroll::ScrollableElement,
     select::SearchableVec,
+    separator::Separator,
     spinner::Spinner,
     status_bar::StatusBar,
     switch::Switch,
@@ -28,7 +29,8 @@ use serde::Deserialize;
 
 use std::{
     cell::RefCell,
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
+    f32::consts::E,
     ops::Range,
     path::Path,
     rc::{Rc, Weak},
@@ -36,16 +38,19 @@ use std::{
     time::Duration,
 };
 
-use tracing::error;
+use tracing::{debug, error, warn};
 
 use crate::{
     assets::AppIcon,
     extensions::EnumNameExt,
     game_data::{
-        Binding, DataType, GameClass, GameData, Grade, Item, ItemEffect, ItemMinMaxEffect, ItemMinMaxNoStepEffect, ItemMinMaxStepEffect, Quality,
+        Binding, Common, GameClass, GameData, Grade, Item, ItemEffect, ItemMinMaxEffect, ItemMinMaxNoStepEffect, ItemMinMaxStepEffect, ItemTrait,
+        Quality,
         filters::{GameDataFilters, ItemEffectFilter},
         item_set::ItemSet,
+        package::PackageItem,
         product::Product,
+        random_box_group::RandomBoxGroup,
         recipe::RecipeType,
     },
     language::{LanguageController, t, t_v},
@@ -75,7 +80,7 @@ pub fn init(cx: &mut App) {
 static TAGS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
 
 fn remove_html_tags_regex(text: &str) -> String {
-    TAGS_RE.replace_all(&text.replace("<br>", "\n"), "").to_string()
+    TAGS_RE.replace_all(&text.replace("<br>", "\n").replace("<br />", "\n"), "").to_string()
 }
 
 pub enum GameDataViewEvent {
@@ -165,6 +170,12 @@ pub enum GameDataLoadingStatus {
     SealedFellow,
     SkillBook,
     Exchange,
+    RandomBox,
+    RandomBoxGroup,
+    RandomBoxProbability,
+    Package,
+    Style,
+    Bag,
 }
 
 impl GameDataLoadingStatus {
@@ -188,6 +199,12 @@ impl GameDataLoadingStatus {
             GameDataLoadingStatus::SealedFellow => t("game-data-loading-sealed-fellow"),
             GameDataLoadingStatus::SkillBook => t("game-data-loading-skill-book"),
             GameDataLoadingStatus::Exchange => t("game-data-loading-exchange"),
+            GameDataLoadingStatus::RandomBox => t("game-data-loading-random-box"),
+            GameDataLoadingStatus::RandomBoxGroup => t("game-data-loading-random-box-group"),
+            GameDataLoadingStatus::RandomBoxProbability => t("game-data-loading-random-box-probability"),
+            GameDataLoadingStatus::Package => t("game-data-loading-package"),
+            GameDataLoadingStatus::Style => t("game-data-loading-style"),
+            GameDataLoadingStatus::Bag => t("game-data-loading-bag"),
         }
     }
 }
@@ -195,7 +212,7 @@ impl GameDataLoadingStatus {
 pub struct GameDataView {
     game_data: GameData,
     pub filters: GameDataFilters,
-    pub filtered: IndexMap<SharedString, Rc<DataType>>,
+    pub filtered: IndexMap<SharedString, Rc<Item>>,
     is_reading: bool,
     duration: usize,
     explorer_scroll_handle: UniformListScrollHandle,
@@ -230,7 +247,7 @@ impl GameDataView {
         })
         .detach();
         Self {
-            game_data: GameData::new(),
+            game_data: GameData::default(),
             tabs: IndexSet::new(),
             filtered: IndexMap::new(),
             selected_item: None,
@@ -252,6 +269,52 @@ impl GameDataView {
         }
     }
 
+    pub fn export_xlsx(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Ok(path) = cx.app_path() {
+            let result = cx.prompt_for_new_path(&path, Some("game_data.xlsx"));
+
+            cx.spawn_in(window, async move |this, cx| {
+                if let Some(mut path) = result.await.ok().into_iter().flatten().flatten().next() {
+                    if path.extension().is_none_or(|f| f != "xlsx") {
+                        path.set_extension("xlsx");
+                    }
+                    let export_result = this
+                        .read_with(cx, {
+                            let path = path.clone();
+
+                            move |this, _| this.game_data.export_xlsx(path)
+                        })
+                        .flatten();
+
+                    let _ = cx.update({
+                        move |window, cx| match export_result {
+                            Ok(_) => window.push_notification(
+                                Notification::new()
+                                    .message(t("message-export-completed"))
+                                    .with_type(NotificationType::Info)
+                                    .action(move |_, _, cx| {
+                                        Button::new("notification-open-export").label(t("dialog-button-open")).on_click({
+                                            let path = path.clone();
+                                            cx.listener(move |this, _, window, cx| {
+                                                cx.open_with_system(&path);
+                                                this.dismiss(window, cx);
+                                            })
+                                        })
+                                    }),
+                                cx,
+                            ),
+                            Err(e) => {
+                                warn!(?e, "Error while export");
+                                window.push_notification((NotificationType::Error, t("message-export-error")), cx);
+                            }
+                        }
+                    });
+                };
+            })
+            .detach();
+        }
+    }
+
     pub fn apply_filter_and_resort(&mut self) {
         self.filtered = self
             .game_data
@@ -260,22 +323,18 @@ impl GameDataView {
             .filter(|(_, item)| self.filters.check_item(item))
             .map(|(id, item)| (id.clone(), Rc::clone(item)))
             .collect();
-        self.sort_by();
     }
 
     fn render_preview(
-        id: SharedString,
+        common: &Common,
         quality: Option<Quality>,
         temper_limit: Option<u8>,
         reverse_limit: Option<u8>,
         transcendence_limit: Option<u8>,
         transcendence_effect: Option<f32>,
-        icon: Option<Arc<Image>>,
-        grade: Option<Grade>,
-        item_locale: SharedString,
         skill_locale: Option<SharedString>,
         description_locale: Option<SharedString>,
-        usable_class: Option<BTreeSet<GameClass>>,
+
         attack: Option<(f32, f32, f32)>,
         attack_tempering_effect: Option<(f32, f32)>,
         physic_defense: Option<f32>,
@@ -284,32 +343,20 @@ impl GameDataView {
         magic_defense_tempering_effect: Option<f32>,
         attack_speed: Option<f32>,
         talent_power: Option<u16>,
-        // no trade, no sell, no destroy
-        tags: (Option<Binding>, bool, bool, bool),
+
         recipe_types: Option<BTreeSet<RecipeType>>,
         recipe_stage: Option<u8>,
         product: Option<Weak<RefCell<Product>>>,
-        required_level: Option<u8>,
+
         min_sealed_slots: u8,
         max_sealed_slots: u8,
         min_random_effects: u8,
         max_random_effects: u8,
         random_effects: Option<Vec<ItemMinMaxEffect>>,
-        item_set: Option<&ItemSet>,
-        equip_effect_1: Option<ItemEffect>,
-        equip_effect_2: Option<ItemEffect>,
-        equip_effect_3: Option<ItemEffect>,
-        equip_effect_4: Option<ItemEffect>,
-        fellow_stone_effects: Option<(
-            Option<ItemMinMaxStepEffect>,
-            Option<ItemMinMaxStepEffect>,
-            Option<ItemMinMaxStepEffect>,
-            Option<ItemMinMaxNoStepEffect>,
-            u8,
-            f32,
-        )>,
+
+        fellow_stone_effects: Option<(Vec<ItemMinMaxStepEffect>, Option<ItemMinMaxNoStepEffect>, u8, f32)>,
         preview: &PreviewValues,
-        items: &IndexMap<SharedString, Rc<DataType>>,
+        items: &IndexMap<SharedString, Rc<Item>>,
         decrease_transcendence_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
         increase_transcendence_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
         decrease_tempering_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -319,7 +366,9 @@ impl GameDataView {
         copy_item_name_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
         viewer_entity: Entity<GameDataView>,
         max_ep: Option<f32>,
-        linked_recipes: Option<BTreeSet<SharedString>>,
+
+        random_box_group: Option<Weak<RefCell<RandomBoxGroup>>>,
+        package_contents: Option<IndexMap<usize, PackageItem>>,
         cx: &App,
     ) -> gpui::Div {
         v_flex()
@@ -332,21 +381,21 @@ impl GameDataView {
                     .items_start()
                     .child(
                         h_flex()
-                            .when_none(&icon, |this| {
+                            .when_none(&common.icon, |this| {
                                 this.child(
                                     div()
                                         .size(px(128.))
-                                        .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color))
+                                        .when_some(common.grade.color(), |this, color| this.border_color(color))
                                         .border_2(),
                                 )
                             })
-                            .when_some(icon, |this, icon| {
+                            .when_some(common.icon.as_ref(), |this, icon| {
                                 this.child(
-                                    img(ImageSource::Image(icon))
+                                    img(ImageSource::Image(icon.clone()))
                                         .object_fit(ObjectFit::Cover)
                                         .size(px(128.))
                                         .border_2()
-                                        .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
+                                        .when_some(common.grade.color(), |this, color| this.border_color(color)),
                                 )
                             }),
                     )
@@ -357,9 +406,9 @@ impl GameDataView {
                                     .gap_1()
                                     .child(
                                         div()
-                                            .child(item_locale)
+                                            .child(common.get_localized_name())
                                             .text_lg()
-                                            .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color)),
+                                            .when_some(common.grade.color(), |this, color| this.text_color(color)),
                                     )
                                     .child(
                                         Button::new("copy-item-name")
@@ -372,18 +421,18 @@ impl GameDataView {
                             .child(
                                 h_flex()
                                     .gap_1()
-                                    .child(grade.map(|g| g.locale()).unwrap_or_else(|| t("item-unknown-grade")))
-                                    .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
+                                    .child(common.grade.locale())
+                                    .when_some(common.grade.color(), |this, color| this.text_color(color))
                                     .when_some(quality, |this, quality| {
                                         this.child(
                                             Button::new("button-quality")
                                                 .small()
                                                 .link()
-                                                .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
+                                                .when_some(common.grade.color(), |this, color| this.text_color(color))
                                                 .label(quality.locale())
                                                 .on_click({
                                                     let viewer_entity: Entity<GameDataView> = viewer_entity.clone();
-                                                    let id = id.clone();
+                                                    let id = common.id.clone();
                                                     move |_, _, cx| {
                                                         viewer_entity.update(cx, {
                                                             let id = id.clone();
@@ -572,24 +621,24 @@ impl GameDataView {
                             }),
                     ),
             )
-            .when_some(required_level, |this, required_level| {
-                this.child(format!("{}: {}", t("item-required-level"), required_level))
+            .when(common.required_level != 0, |this| {
+                this.child(format!("{}: {}", t("item-required-level"), common.required_level))
             })
             .when(max_sealed_slots > 0, |this| {
                 this.child(format!("{}: {} - {}", t("item-sealed-stones-slots"), min_sealed_slots, max_sealed_slots))
             })
-            .when_some(usable_class, |this, usable_class| {
-                this.child(h_flex().gap_1().children(usable_class.iter().map(|c| c.locale())))
+            .when(!common.usable_class.is_empty(), |this| {
+                this.child(h_flex().gap_1().children(common.usable_class.iter().map(|c| c.locale())))
             })
             .child(
                 h_flex()
                     .gap_1()
-                    .when_some(tags.0.and_then(|t| t.locale()), |this, locale| {
+                    .when_some(common.binding.and_then(|t| t.locale()), |this, locale| {
                         this.child(div().text_color(cx.theme().yellow).child(locale))
                     })
-                    .when(tags.1, |this| this.child(t("item-tag-no-trade")))
-                    .when(tags.2, |this| this.child(t("item-tag-no-sell")))
-                    .when(tags.3, |this| this.child(t("item-tag-no-destroy"))),
+                    .when(common.no_trade, |this| this.child(t("item-tag-no-trade")))
+                    .when(common.no_sell, |this| this.child(t("item-tag-no-sell")))
+                    .when(common.no_destroy, |this| this.child(t("item-tag-no-destroy"))),
             )
             .when_some(recipe_types, |this, recipe_types| {
                 this.child(
@@ -607,7 +656,7 @@ impl GameDataView {
             })
             .when(max_random_effects > 0, {
                 let viewer_entity = viewer_entity.clone();
-                let id = id.clone();
+                let id = common.id.clone();
                 move |this| {
                     this.child(div().mt_2().text_color(cx.theme().yellow).child(format!(
                         "{} - {} {}",
@@ -676,15 +725,18 @@ impl GameDataView {
                     })
                 }
             })
-            .when_some(equip_effect_1, |this, equip_effect| {
+            .when(!common.effects.is_empty(), |this| {
                 this.child(div().mt_2().text_color(cx.theme().yellow).child(t("item-equipped-effects")))
-                    .child(
+                    .children(common.effects.iter().map(|equip_effect| {
                         h_flex()
                             .gap_1()
                             .child(div().text_color(cx.theme().success).child(equip_effect.get_locale()))
                             .when_some(
                                 transcendence_effect.and_then(|transcendence_effect| {
-                                    equip_effect.parsed.map(|(key, effect_value)| (key, effect_value * transcendence_effect))
+                                    equip_effect
+                                        .parsed
+                                        .as_ref()
+                                        .map(|(key, effect_value)| (key, effect_value * transcendence_effect))
                                 }),
                                 |this, (key, transcendence_effect)| {
                                     this.child(div().text_color(cx.theme().yellow).child(if key.ends_with("-minus-percent") {
@@ -695,74 +747,11 @@ impl GameDataView {
                                         format!("({:+.0})", transcendence_effect)
                                     }))
                                 },
-                            ),
-                    )
+                            )
+                    }))
             })
-            .when_some(equip_effect_2, |this, equip_effect| {
-                this.child(
-                    h_flex()
-                        .gap_1()
-                        .child(div().text_color(cx.theme().success).child(equip_effect.get_locale()))
-                        .when_some(
-                            transcendence_effect.and_then(|transcendence_effect| {
-                                equip_effect.parsed.map(|(key, effect_value)| (key, effect_value * transcendence_effect))
-                            }),
-                            |this, (key, transcendence_effect)| {
-                                this.child(div().text_color(cx.theme().yellow).child(if key.ends_with("-minus-percent") {
-                                    format!("({:-.2}%)", transcendence_effect)
-                                } else if key.ends_with("-percent") {
-                                    format!("({:+.2}%)", transcendence_effect)
-                                } else {
-                                    format!("({:+.0})", transcendence_effect)
-                                }))
-                            },
-                        ),
-                )
-            })
-            .when_some(equip_effect_3, |this, equip_effect| {
-                this.child(
-                    h_flex()
-                        .gap_1()
-                        .child(div().text_color(cx.theme().success).child(equip_effect.get_locale()))
-                        .when_some(
-                            transcendence_effect.and_then(|transcendence_effect| {
-                                equip_effect.parsed.map(|(key, effect_value)| (key, effect_value * transcendence_effect))
-                            }),
-                            |this, (key, transcendence_effect)| {
-                                this.child(div().text_color(cx.theme().yellow).child(if key.ends_with("-minus-percent") {
-                                    format!("({:-.2}%)", transcendence_effect)
-                                } else if key.ends_with("-percent") {
-                                    format!("({:+.2}%)", transcendence_effect)
-                                } else {
-                                    format!("({:+.0})", transcendence_effect)
-                                }))
-                            },
-                        ),
-                )
-            })
-            .when_some(equip_effect_4, |this, equip_effect| {
-                this.child(
-                    h_flex()
-                        .gap_1()
-                        .child(div().text_color(cx.theme().success).child(equip_effect.get_locale()))
-                        .when_some(
-                            transcendence_effect.and_then(|transcendence_effect| {
-                                equip_effect.parsed.map(|(key, effect_value)| (key, effect_value * transcendence_effect))
-                            }),
-                            |this, (key, transcendence_effect)| {
-                                this.child(div().text_color(cx.theme().yellow).child(if key.ends_with("-minus-percent") {
-                                    format!("({:-.2}%)", transcendence_effect)
-                                } else if key.ends_with("-percent") {
-                                    format!("({:+.2}%)", transcendence_effect)
-                                } else {
-                                    format!("({:+.0})", transcendence_effect)
-                                }))
-                            },
-                        ),
-                )
-            })
-            .when_some(item_set, |this, item_set| {
-                this.child(v_flex().child(div().mt_2().text_color(cx.theme().yellow).child(item_set.get_locale())))
+            .when_some(common.item_set.as_ref(), |this, item_set| {
+                this.child(v_flex().child(div().mt_2().text_color(cx.theme().yellow).child(item_set.get_localized_name())))
                     .children(item_set.items.iter().map(|item| items.get(item)).map(|item| {
                         v_flex().items_start().when_some(item, {
                             let viewer_entity = viewer_entity.clone();
@@ -771,11 +760,11 @@ impl GameDataView {
                                 let grade = item.get_grade();
                                 this.child(
                                     Button::new(format!("button-{}", id))
-                                        .label(item.get_locale_name())
+                                        .label(item.get_localized_name())
                                         .link()
                                         .small()
                                         .mb_2()
-                                        .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
+                                        .when_some(grade.color(), |this, color| this.text_color(color))
                                         .on_click(move |_, window, cx| {
                                             cx.update_entity(&viewer_entity, |this, cx| {
                                                 this.tabs.insert(id.clone());
@@ -803,11 +792,11 @@ impl GameDataView {
                                         .gap_x_2()
                                         .children(set_effect.seteffect_effects.iter().map(|effect| div().child(effect.get_locale()))),
                                 )
-                                .when_some(set_effect.get_locale(), |this, skill| this.child(remove_html_tags_regex(&skill)))
+                                .when_some(set_effect.get_localized_name(), |this, skill| this.child(remove_html_tags_regex(&skill)))
                         })))
                     })
             })
-            .when_some(fellow_stone_effects, |this, (e1, e2, e3, plus, tempered, tempered_effect)| {
+            .when_some(fellow_stone_effects, |this, (effects, plus, tempered, tempered_effect)| {
                 this.child(
                     h_flex()
                         .mt_2()
@@ -817,30 +806,12 @@ impl GameDataView {
                         .child(
                             v_flex()
                                 .child(div().text_color(cx.theme().yellow).child(t("item-equipped-effects")))
-                                .when_some(e1.as_ref(), |this, e| {
-                                    this.child(
-                                        e.parsed
-                                            .as_ref()
-                                            .map(|f| SharedString::new(t_v(&f.0, vec![("value", "")]).trim_end_matches(&['-']).trim_end()))
-                                            .unwrap_or_else(|| e.effect.clone()),
-                                    )
-                                })
-                                .when_some(e2.as_ref(), |this, e| {
-                                    this.child(
-                                        e.parsed
-                                            .as_ref()
-                                            .map(|f| SharedString::new(t_v(&f.0, vec![("value", "")]).trim_end_matches(&['-']).trim_end()))
-                                            .unwrap_or_else(|| e.effect.clone()),
-                                    )
-                                })
-                                .when_some(e3.as_ref(), |this, e| {
-                                    this.child(
-                                        e.parsed
-                                            .as_ref()
-                                            .map(|f| SharedString::new(t_v(&f.0, vec![("value", "")]).trim_end_matches(&['-']).trim_end()))
-                                            .unwrap_or_else(|| e.effect.clone()),
-                                    )
-                                })
+                                .children(effects.iter().map(|e| {
+                                    e.parsed
+                                        .as_ref()
+                                        .map(|f| SharedString::new(t_v(&f.0, vec![("value", "")]).trim_end_matches(&['-']).trim_end()))
+                                        .unwrap_or_else(|| e.effect.clone())
+                                }))
                                 .when_some(plus.as_ref(), |this, e| {
                                     this.child(
                                         div().text_color(cx.theme().cyan).child(
@@ -855,159 +826,57 @@ impl GameDataView {
                         .child(
                             v_flex()
                                 .child(div().text_color(cx.theme().yellow).child(t("sealed-fellow-min-level")))
-                                .when_some(e1.as_ref(), |this, e| {
-                                    this.child(
-                                        e.parsed
-                                            .as_ref()
-                                            .map(|(key, min, max, _)| {
-                                                if key.ends_with("-minus-percent") {
-                                                    format!("{:-.2}% ~ -{:.2}%", min, max)
-                                                } else if key.ends_with("-percent") {
-                                                    format!("{:+.2}% ~ {:+.2}%", min, max)
-                                                } else {
-                                                    format!("{:+.0} ~ {:+.0}", min, max)
-                                                }
-                                            })
-                                            .unwrap_or_default(),
-                                    )
-                                })
-                                .when_some(e2.as_ref(), |this, e| {
-                                    this.child(
-                                        e.parsed
-                                            .as_ref()
-                                            .map(|(key, min, max, _)| {
-                                                if key.ends_with("-minus-percent") {
-                                                    format!("{:-.2}% ~ -{:.2}%", min, max)
-                                                } else if key.ends_with("-percent") {
-                                                    format!("{:+.2}% ~ {:+.2}%", min, max)
-                                                } else {
-                                                    format!("{:+.0} ~ {:+.0}", min, max)
-                                                }
-                                            })
-                                            .unwrap_or_default(),
-                                    )
-                                })
-                                .when_some(e3.as_ref(), |this, e| {
-                                    this.child(
-                                        e.parsed
-                                            .as_ref()
-                                            .map(|(key, min, max, _)| {
-                                                if key.ends_with("-minus-percent") {
-                                                    format!("{:-.2}% ~ -{:.2}%", min, max)
-                                                } else if key.ends_with("-percent") {
-                                                    format!("{:+.2}% ~ {:+.2}%", min, max)
-                                                } else {
-                                                    format!("{:+.0} ~ {:+.0}", min, max)
-                                                }
-                                            })
-                                            .unwrap_or_default(),
-                                    )
-                                }),
+                                .children(effects.iter().map(|e| {
+                                    e.parsed
+                                        .as_ref()
+                                        .map(|(key, min, max, _)| {
+                                            if key.ends_with("-minus-percent") {
+                                                format!("{:-.2}% ~ -{:.2}%", min, max)
+                                            } else if key.ends_with("-percent") {
+                                                format!("{:+.2}% ~ {:+.2}%", min, max)
+                                            } else {
+                                                format!("{:+.0} ~ {:+.0}", min, max)
+                                            }
+                                        })
+                                        .unwrap_or_default()
+                                })),
                         )
                         .child(
                             v_flex()
                                 .child(div().text_color(cx.theme().yellow).child(t("sealed-fellow-max-level")))
-                                .when_some(e1.as_ref(), |this, e| {
-                                    this.child(
-                                        e.parsed
-                                            .as_ref()
-                                            .map(|(key, min, max, step)| {
-                                                if key.ends_with("-minus-percent") {
-                                                    format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
-                                                } else if key.ends_with("-percent") {
-                                                    format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
-                                                } else {
-                                                    format!("{:+.0} ~ {:+.0}", min + step, max + step)
-                                                }
-                                            })
-                                            .unwrap_or_default(),
-                                    )
-                                })
-                                .when_some(e2.as_ref(), |this, e| {
-                                    this.child(
-                                        e.parsed
-                                            .as_ref()
-                                            .map(|(key, min, max, step)| {
-                                                if key.ends_with("-minus-percent") {
-                                                    format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
-                                                } else if key.ends_with("-percent") {
-                                                    format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
-                                                } else {
-                                                    format!("{:+.0} ~ {:+.0}", min + step, max + step)
-                                                }
-                                            })
-                                            .unwrap_or_default(),
-                                    )
-                                })
-                                .when_some(e3.as_ref(), |this, e| {
-                                    this.child(
-                                        e.parsed
-                                            .as_ref()
-                                            .map(|(key, min, max, step)| {
-                                                if key.ends_with("-minus-percent") {
-                                                    format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
-                                                } else if key.ends_with("-percent") {
-                                                    format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
-                                                } else {
-                                                    format!("{:+.0} ~ {:+.0}", min + step, max + step)
-                                                }
-                                            })
-                                            .unwrap_or_default(),
-                                    )
-                                }),
+                                .children(effects.iter().map(|e| {
+                                    e.parsed
+                                        .as_ref()
+                                        .map(|(key, min, max, step)| {
+                                            if key.ends_with("-minus-percent") {
+                                                format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
+                                            } else if key.ends_with("-percent") {
+                                                format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
+                                            } else {
+                                                format!("{:+.0} ~ {:+.0}", min + step, max + step)
+                                            }
+                                        })
+                                        .unwrap_or_default()
+                                })),
                         )
                         .when(plus.is_some(), |this| {
                             this.child(
                                 v_flex()
                                     .child(div().text_color(cx.theme().yellow).child(t("sealed-fellow-plus-level")))
-                                    .when_some(e1.as_ref(), |this, e| {
-                                        this.child(
-                                            e.parsed
-                                                .as_ref()
-                                                .map(|(key, min, max, step)| {
-                                                    if key.ends_with("-minus-percent") {
-                                                        format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
-                                                    } else if key.ends_with("-percent") {
-                                                        format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
-                                                    } else {
-                                                        format!("{:+.0} ~ {:+.0}", min + step, max + step)
-                                                    }
-                                                })
-                                                .unwrap_or_default(),
-                                        )
-                                    })
-                                    .when_some(e2.as_ref(), |this, e| {
-                                        this.child(
-                                            e.parsed
-                                                .as_ref()
-                                                .map(|(key, min, max, step)| {
-                                                    if key.ends_with("-minus-percent") {
-                                                        format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
-                                                    } else if key.ends_with("-percent") {
-                                                        format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
-                                                    } else {
-                                                        format!("{:+.0} ~ {:+.0}", min + step, max + step)
-                                                    }
-                                                })
-                                                .unwrap_or_default(),
-                                        )
-                                    })
-                                    .when_some(e3.as_ref(), |this, e| {
-                                        this.child(
-                                            e.parsed
-                                                .as_ref()
-                                                .map(|(key, min, max, step)| {
-                                                    if key.ends_with("-minus-percent") {
-                                                        format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
-                                                    } else if key.ends_with("-percent") {
-                                                        format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
-                                                    } else {
-                                                        format!("{:+.0} ~ {:+.0}", min + step, max + step)
-                                                    }
-                                                })
-                                                .unwrap_or_default(),
-                                        )
-                                    })
+                                    .children(effects.iter().map(|e| {
+                                        e.parsed
+                                            .as_ref()
+                                            .map(|(key, min, max, step)| {
+                                                if key.ends_with("-minus-percent") {
+                                                    format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
+                                                } else if key.ends_with("-percent") {
+                                                    format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
+                                                } else {
+                                                    format!("{:+.0} ~ {:+.0}", min + step, max + step)
+                                                }
+                                            })
+                                            .unwrap_or_default()
+                                    }))
                                     .when_some(plus.as_ref(), |this, e| {
                                         this.child(
                                             div().text_color(cx.theme().cyan).child(
@@ -1036,111 +905,39 @@ impl GameDataView {
                                             .text_color(cx.theme().yellow)
                                             .child(t_v("sealed-fellow-tempered-level", vec![("level", tempered)])),
                                     )
-                                    .when_some(e1.as_ref(), |this, e| {
-                                        this.child(
-                                            h_flex()
-                                                .gap_1()
-                                                .child(
-                                                    e.parsed
-                                                        .as_ref()
-                                                        .map(|(key, min, max, step)| {
-                                                            if key.ends_with("-minus-percent") {
-                                                                format!(
-                                                                    "{:-.2}% ~ -{:.2}%",
-                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
-                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
-                                                                )
-                                                            } else if key.ends_with("-percent") {
-                                                                format!(
-                                                                    "{:+.2}% ~ {:+.2}%",
-                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
-                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
-                                                                )
-                                                            } else {
-                                                                format!(
-                                                                    "{:+.0} ~ {:+.0}",
-                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
-                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
-                                                                )
-                                                            }
-                                                        })
-                                                        .unwrap_or_default(),
-                                                )
-                                                .when(e.parsed.is_some(), |this| {
-                                                    this.child(div().text_color(cx.theme().yellow).child(format!("({:+.0}%)", tempered_effect)))
-                                                }),
-                                        )
-                                    })
-                                    .when_some(e2.as_ref(), |this, e| {
-                                        this.child(
-                                            h_flex()
-                                                .gap_1()
-                                                .child(
-                                                    e.parsed
-                                                        .as_ref()
-                                                        .map(|(key, min, max, step)| {
-                                                            if key.ends_with("-minus-percent") {
-                                                                format!(
-                                                                    "{:-.2}% ~ -{:.2}%",
-                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
-                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
-                                                                )
-                                                            } else if key.ends_with("-percent") {
-                                                                format!(
-                                                                    "{:+.2}% ~ {:+.2}%",
-                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
-                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
-                                                                )
-                                                            } else {
-                                                                format!(
-                                                                    "{:+.0} ~ {:+.0}",
-                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
-                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
-                                                                )
-                                                            }
-                                                        })
-                                                        .unwrap_or_default(),
-                                                )
-                                                .when(e.parsed.is_some(), |this| {
-                                                    this.child(div().text_color(cx.theme().yellow).child(format!("({:+.0}%)", tempered_effect)))
-                                                }),
-                                        )
-                                    })
-                                    .when_some(e3.as_ref(), |this, e| {
-                                        this.child(
-                                            h_flex()
-                                                .gap_1()
-                                                .child(
-                                                    e.parsed
-                                                        .as_ref()
-                                                        .map(|(key, min, max, step)| {
-                                                            if key.ends_with("-minus-percent") {
-                                                                format!(
-                                                                    "{:-.2}% ~ -{:.2}%",
-                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
-                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
-                                                                )
-                                                            } else if key.ends_with("-percent") {
-                                                                format!(
-                                                                    "{:+.2}% ~ {:+.2}%",
-                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
-                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
-                                                                )
-                                                            } else {
-                                                                format!(
-                                                                    "{:+.0} ~ {:+.0}",
-                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
-                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
-                                                                )
-                                                            }
-                                                        })
-                                                        .unwrap_or_default(),
-                                                )
-                                                .when(e.parsed.is_some(), |this| {
-                                                    this.child(div().text_color(cx.theme().yellow).child(format!("({:+.0}%)", tempered_effect)))
-                                                }),
-                                        )
-                                    })
+                                    .children(effects.iter().map(|e| {
+                                        h_flex()
+                                            .gap_1()
+                                            .child(
+                                                e.parsed
+                                                    .as_ref()
+                                                    .map(|(key, min, max, step)| {
+                                                        if key.ends_with("-minus-percent") {
+                                                            format!(
+                                                                "{:-.2}% ~ -{:.2}%",
+                                                                (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                (max + step) * (1.0 + tempered_effect / 100.0)
+                                                            )
+                                                        } else if key.ends_with("-percent") {
+                                                            format!(
+                                                                "{:+.2}% ~ {:+.2}%",
+                                                                (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                (max + step) * (1.0 + tempered_effect / 100.0)
+                                                            )
+                                                        } else {
+                                                            format!(
+                                                                "{:+.0} ~ {:+.0}",
+                                                                (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                (max + step) * (1.0 + tempered_effect / 100.0)
+                                                            )
+                                                        }
+                                                    })
+                                                    .unwrap_or_default(),
+                                            )
+                                            .when(e.parsed.is_some(), |this| {
+                                                this.child(div().text_color(cx.theme().yellow).child(format!("({:+.0}%)", tempered_effect)))
+                                            })
+                                    }))
                                     .when_some(plus.as_ref(), |this, e| {
                                         this.child(
                                             h_flex()
@@ -1191,37 +988,15 @@ impl GameDataView {
             })
             .when_some(product.and_then(|f| f.upgrade()).map(|f| f.borrow().clone()), {
                 let viewer_entity = viewer_entity.clone();
-                let id = id.clone();
+                let id = common.id.clone();
                 move |this, product| {
-                    let item = product.node.data_type.clone();
+                    let item = product.node.item.clone();
 
                     let icon = item.as_ref().and_then(|f| f.upgrade()).and_then(|i| i.get_icon());
-                    let grade = item.as_ref().and_then(|f| f.upgrade()).and_then(|i| i.get_grade());
+                    let grade = item.as_ref().and_then(|f| f.upgrade()).map(|i| i.get_grade());
                     let chance = product.success_probability;
                     let inheritance_enhancement_condition = product.inheritance_enhancement_condition;
                     let inheritance_transcendence_condition = product.inheritance_transcendence_condition;
-                    let materials = vec![
-                        product
-                            .material1
-                            .clone()
-                            .map(|m| (m, product.count1, product.material1_1.clone(), product.count1_1)),
-                        product
-                            .material2
-                            .clone()
-                            .map(|m| (m, product.count2, product.material2_1.clone(), product.count2_1)),
-                        product
-                            .material3
-                            .clone()
-                            .map(|m| (m, product.count3, product.material3_1.clone(), product.count3_1)),
-                        product
-                            .material4
-                            .clone()
-                            .map(|m| (m, product.count4, product.material4_1.clone(), product.count4_1)),
-                        product
-                            .material5
-                            .clone()
-                            .map(|m| (m, product.count5, product.material5_1.clone(), product.count5_1)),
-                    ];
 
                     this.child(
                         v_flex()
@@ -1258,7 +1033,7 @@ impl GameDataView {
                                                     .label(
                                                         item.as_ref()
                                                             .and_then(|f| f.upgrade())
-                                                            .map(|i| i.get_locale_name())
+                                                            .map(|i| i.get_localized_name())
                                                             .unwrap_or_else(|| product.node.id.clone()),
                                                     )
                                                     .link()
@@ -1305,45 +1080,50 @@ impl GameDataView {
                         v_flex()
                             .gap_1()
                             .child(div().mt_2().text_color(cx.theme().success).child(t("item-product-materials")))
-                            .children(materials.into_iter().enumerate().filter_map(|(idx, opt)| opt.map(|val| (idx, val))).map({
+                            .children(product.materials.into_iter().map({
                                 let viewer_entity = viewer_entity.clone();
 
-                                move |(index, (node, count, additional_node, additional_count))| {
+                                move |(index, material)| {
                                     let use_additional = preview.materials.get(&(index as u8)).cloned().unwrap_or_default();
                                     let (is_present, node_id, count, grade, icon, name) = if !use_additional {
                                         (
-                                            node.data_type.is_some(),
-                                            node.id.clone(),
-                                            count,
-                                            node.data_type.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.get_grade()),
-                                            node.data_type.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.get_icon()),
-                                            node.data_type
+                                            material.node.item.is_some(),
+                                            material.node.id.clone(),
+                                            material.count,
+                                            material.node.item.as_ref().and_then(|f| f.upgrade()).map(|m| m.get_grade()),
+                                            material.node.item.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.get_icon()),
+                                            material
+                                                .node
+                                                .item
                                                 .as_ref()
                                                 .and_then(|f| f.upgrade())
-                                                .map(|m| m.get_locale_name())
-                                                .unwrap_or_else(|| node.id.clone()),
+                                                .map(|m| m.get_localized_name())
+                                                .unwrap_or_else(|| material.node.id.clone()),
                                         )
                                     } else {
                                         (
-                                            additional_node.as_ref().and_then(|f| f.data_type.as_ref()).is_some(),
-                                            additional_node.as_ref().unwrap().id.clone(),
-                                            additional_count,
-                                            additional_node
+                                            material.additional_node.as_ref().and_then(|f| f.item.as_ref()).is_some(),
+                                            material.additional_node.as_ref().unwrap().id.clone(),
+                                            material.additional_count,
+                                            material
+                                                .additional_node
                                                 .as_ref()
-                                                .and_then(|f| f.data_type.as_ref())
+                                                .and_then(|f| f.item.as_ref())
                                                 .and_then(|f| f.upgrade())
-                                                .and_then(|m| m.get_grade()),
-                                            additional_node
+                                                .map(|m| m.get_grade()),
+                                            material
+                                                .additional_node
                                                 .as_ref()
-                                                .and_then(|f| f.data_type.as_ref())
+                                                .and_then(|f| f.item.as_ref())
                                                 .and_then(|f| f.upgrade())
                                                 .and_then(|m| m.get_icon()),
-                                            additional_node
+                                            material
+                                                .additional_node
                                                 .as_ref()
-                                                .and_then(|f| f.data_type.as_ref())
+                                                .and_then(|f| f.item.as_ref())
                                                 .and_then(|f| f.upgrade())
-                                                .map(|m| m.get_locale_name())
-                                                .unwrap_or_else(|| additional_node.as_ref().unwrap().id.clone()),
+                                                .map(|m| m.get_localized_name())
+                                                .unwrap_or_else(|| material.additional_node.as_ref().unwrap().id.clone()),
                                         )
                                     };
 
@@ -1370,7 +1150,7 @@ impl GameDataView {
                                                             .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
                                                     )
                                                 })
-                                                .when(additional_node.is_some(), {
+                                                .when(material.additional_node.is_some(), {
                                                     let viewer_entity = viewer_entity.clone();
                                                     let id = id.clone();
                                                     move |this| {
@@ -1427,7 +1207,173 @@ impl GameDataView {
                     )
                 }
             })
-            .when_some(linked_recipes, |this, linked_recipes| {
+            .when_some(random_box_group.and_then(|f| f.upgrade()).map(|f| f.borrow().clone()), {
+                let viewer_entity = viewer_entity.clone();
+
+                move |this, random_box_group| {
+                    let contents = random_box_group.items;
+
+                    this.child(
+                        v_flex()
+                            .gap_1()
+                            .child(div().mt_2().text_color(cx.theme().success).child(t("item-random-box-contents")))
+                            .children(contents.into_iter().map({
+                                let viewer_entity = viewer_entity.clone();
+
+                                move |(index, node)| {
+                                    let (is_present, node_id, grade, icon, name) = {
+                                        (
+                                            node.item.is_some(),
+                                            node.id.clone(),
+                                            node.item.as_ref().and_then(|f| f.upgrade()).map(|m| m.get_grade()),
+                                            node.item.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.get_icon()),
+                                            node.item
+                                                .as_ref()
+                                                .and_then(|f| f.upgrade())
+                                                .map(|m| m.get_localized_name())
+                                                .unwrap_or_else(|| node.id.clone()),
+                                        )
+                                    };
+                                    let probability = random_box_group.probabilities.get(&index);
+                                    h_flex()
+                                        .gap_2()
+                                        .child(
+                                            h_flex()
+                                                .relative()
+                                                .id(format!("icon-additional-{index}"))
+                                                .when_none(&icon, |this| {
+                                                    this.child(
+                                                        div()
+                                                            .size(px(40.))
+                                                            .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color))
+                                                            .border_2(),
+                                                    )
+                                                })
+                                                .when_some(icon, |this, icon| {
+                                                    this.child(
+                                                        img(ImageSource::Image(icon))
+                                                            .object_fit(ObjectFit::Cover)
+                                                            .size(px(40.))
+                                                            .border_2()
+                                                            .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
+                                                    )
+                                                }),
+                                        )
+                                        .child(
+                                            v_flex()
+                                                .items_start()
+                                                .child(
+                                                    Button::new(format!("button-{}", node_id))
+                                                        .label(name)
+                                                        .link()
+                                                        .small()
+                                                        .mb_2()
+                                                        .text_color(cx.theme().foreground)
+                                                        .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
+                                                        .when(is_present, |this| {
+                                                            this.on_click({
+                                                                let viewer_entity = viewer_entity.clone();
+                                                                move |_, window, cx| {
+                                                                    cx.update_entity(&viewer_entity, |this, cx| {
+                                                                        this.tabs.insert(node_id.clone());
+                                                                        this.set_selected_item(Some(node_id.clone()), window, cx);
+                                                                        cx.notify();
+                                                                    })
+                                                                }
+                                                            })
+                                                        }),
+                                                )
+                                                .when_some(probability, |this, probability| {
+                                                    this.child(t_v(
+                                                        "item-random-box-probability-percent",
+                                                        vec![("value", format!("{:.2}", probability))],
+                                                    ))
+                                                }),
+                                        )
+                                }
+                            })),
+                    )
+                }
+            })
+            .when_some(package_contents, {
+                let viewer_entity = viewer_entity.clone();
+
+                move |this, contents| {
+                    this.child(
+                        v_flex()
+                            .gap_1()
+                            .child(div().mt_2().text_color(cx.theme().success).child(t("item-package-contents")))
+                            .children(contents.into_iter().map({
+                                let viewer_entity = viewer_entity.clone();
+
+                                move |(index, item)| {
+                                    let (is_present, count, node_id, grade, icon, name) = {
+                                        (
+                                            item.node.item.is_some(),
+                                            item.count,
+                                            item.node.id.clone(),
+                                            item.node.item.as_ref().and_then(|f| f.upgrade()).map(|m| m.get_grade()),
+                                            item.node.item.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.get_icon()),
+                                            item.node
+                                                .item
+                                                .as_ref()
+                                                .and_then(|f| f.upgrade())
+                                                .map(|m| m.get_localized_name())
+                                                .unwrap_or_else(|| item.node.id.clone()),
+                                        )
+                                    };
+
+                                    h_flex()
+                                        .gap_2()
+                                        .child(
+                                            h_flex()
+                                                .relative()
+                                                .id(format!("icon-additional-{index}"))
+                                                .when_none(&icon, |this| {
+                                                    this.child(
+                                                        div()
+                                                            .size(px(40.))
+                                                            .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color))
+                                                            .border_2(),
+                                                    )
+                                                })
+                                                .when_some(icon, |this, icon| {
+                                                    this.child(
+                                                        img(ImageSource::Image(icon))
+                                                            .object_fit(ObjectFit::Cover)
+                                                            .size(px(40.))
+                                                            .border_2()
+                                                            .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
+                                                    )
+                                                }),
+                                        )
+                                        .child(
+                                            Button::new(format!("button-{}", node_id))
+                                                .label(format!("x{count} {}", name))
+                                                .link()
+                                                .small()
+                                                .mb_2()
+                                                .text_color(cx.theme().foreground)
+                                                .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
+                                                .when(is_present, |this| {
+                                                    this.on_click({
+                                                        let viewer_entity = viewer_entity.clone();
+                                                        move |_, window, cx| {
+                                                            cx.update_entity(&viewer_entity, |this, cx| {
+                                                                this.tabs.insert(node_id.clone());
+                                                                this.set_selected_item(Some(node_id.clone()), window, cx);
+                                                                cx.notify();
+                                                            })
+                                                        }
+                                                    })
+                                                }),
+                                        )
+                                }
+                            })),
+                    )
+                }
+            })
+            .when(!common.linked_recipes.is_empty(), move |this| {
                 this.child(
                     v_flex().child(
                         Button::new("button-linked-recipes")
@@ -1436,7 +1382,7 @@ impl GameDataView {
                             .font_weight(FontWeight::BOLD)
                             .on_click({
                                 let viewer_entity = viewer_entity.clone();
-                                let id = id.clone();
+                                let id = common.id.clone();
                                 move |_, _, cx| {
                                     cx.update_entity(&viewer_entity, |this, cx| {
                                         this.preview.entry(id.clone()).and_modify(|v| {
@@ -1456,17 +1402,17 @@ impl GameDataView {
                     ),
                 )
                 .when(preview.linked_recipes_expanded, |this| {
-                    this.children(linked_recipes.iter().filter_map(|id| items.get(id)).map(|item| {
+                    this.children(common.linked_recipes.iter().filter_map(|id| items.get(id)).map(|item| {
                         let id = item.get_id();
                         let grade = item.get_grade();
 
                         v_flex().items_start().child(
                             Button::new(format!("button-recipe-{}", id))
-                                .label(item.get_locale_name())
+                                .label(item.get_localized_name())
                                 .link()
                                 .small()
                                 .mb_2()
-                                .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
+                                .when_some(grade.color(), |this, color| this.text_color(color))
                                 .on_click({
                                     let viewer_entity = viewer_entity.clone();
                                     let id = id.clone();
@@ -1482,23 +1428,6 @@ impl GameDataView {
                     }))
                 })
             })
-        // .child(Self::render_item_set(items, item_set, cx))
-    }
-
-    fn sort_by(&mut self) {
-        /*//let start = Instant::now();
-
-        if self.sort_by_columns.is_empty() {
-            self.filtered
-                .par_sort_unstable_by(|_, a, _, b| a.debug.initial_position.cmp(&b.debug.initial_position));
-            //debug!(elapsed=?start.elapsed(), count = self.filtered.len(), by_columns=?self.sort_by_columns, "Sort measure:");
-            return;
-        }
-
-        self.filtered
-            .par_sort_unstable_by(|_, a, _, b| Self::get_sort_ordering(a, b, &self.sort_by_columns));
-
-        //debug!(elapsed=?start.elapsed(), count = self.filtered.len(), by_columns=?self.sort_by_columns, "Sort measure:");*/
     }
 }
 
@@ -1512,7 +1441,7 @@ impl GameDataView {
             return;
         };
         if let Some(item) = self.filtered.get(selected_item) {
-            cx.write_to_clipboard(ClipboardItem::new_string(item.get_locale_name().to_string()));
+            cx.write_to_clipboard(ClipboardItem::new_string(item.get_localized_name().to_string()));
             window.push_notification((NotificationType::Info, t("message-copy-item-name")), cx);
         }
     }
@@ -1527,7 +1456,7 @@ impl GameDataView {
         if let Some(item) = self.game_data.items.get(item) {
             self.selected_item = Some(item.get_id());
             self.debug_preview.update(cx, |state, cx| {
-                state.set_value(serde_json::to_string_pretty(item.as_ref()).unwrap_or_default(), window, cx);
+                state.set_value(&item.common().get_debug().unwrap_or_default(), window, cx);
             });
 
             cx.notify();
@@ -1608,6 +1537,7 @@ impl Render for GameDataView {
                             this.child("-").child(
                                 Button::new("button-github")
                                     .occlude()
+                                    .icon(IconName::Github)
                                     .text_color(cx.theme().foreground)
                                     .link()
                                     .small()
@@ -1812,10 +1742,9 @@ impl Render for GameDataView {
                                                                                                 this.child(
                                                                                                     div()
                                                                                                         .size(px(40.))
-                                                                                                        .when_some(
-                                                                                                            grade.and_then(|g| g.color()),
-                                                                                                            |this, color| this.border_color(color),
-                                                                                                        )
+                                                                                                        .when_some(grade.color(), |this, color| {
+                                                                                                            this.border_color(color)
+                                                                                                        })
                                                                                                         .border_2(),
                                                                                                 )
                                                                                             })
@@ -1825,10 +1754,9 @@ impl Render for GameDataView {
                                                                                                         .object_fit(ObjectFit::Cover)
                                                                                                         .size(px(40.))
                                                                                                         .border_2()
-                                                                                                        .when_some(
-                                                                                                            grade.and_then(|g| g.color()),
-                                                                                                            |this, color| this.border_color(color),
-                                                                                                        ),
+                                                                                                        .when_some(grade.color(), |this, color| {
+                                                                                                            this.border_color(color)
+                                                                                                        }),
                                                                                                 )
                                                                                             }),
                                                                                     )
@@ -1837,11 +1765,10 @@ impl Render for GameDataView {
                                                                                             .truncate()
                                                                                             .w_full()
                                                                                             .text_sm()
-                                                                                            .child(item.get_locale_name())
-                                                                                            .when_some(
-                                                                                                grade.and_then(|g| g.color()),
-                                                                                                |this, color| this.text_color(color),
-                                                                                            ),
+                                                                                            .child(item.get_localized_name())
+                                                                                            .when_some(grade.color(), |this, color| {
+                                                                                                this.text_color(color)
+                                                                                            }),
                                                                                     )
                                                                             })
                                                                         })
@@ -1863,16 +1790,16 @@ impl Render for GameDataView {
                                             .child(
                                                 h_flex()
                                                     .id("outer-wrapper")
-                                                    .when(self.game_data.items.len() > 1, |this| {
+                                                    .when(self.tabs.len() > 1, |this| {
                                                         this.child(Button::new("tabs-menu").icon(IconName::EllipsisVertical).ghost().dropdown_menu({
                                                             let entity = cx.entity();
                                                             move |mut menu, window, cx| {
                                                                 for item_id in &entity.read(cx).tabs {
                                                                     let item = entity.read(cx).game_data.items.get(item_id);
 
-                                                                    menu = menu.when_some(item, |this, item| {
+                                                                    menu = menu.scrollable(true).max_h(px(300.)).when_some(item, |this, item| {
                                                                         this.item(
-                                                                            PopupMenuItem::new(item.get_locale_name())
+                                                                            PopupMenuItem::new(item.get_localized_name())
                                                                                 .checked(
                                                                                     entity
                                                                                         .read(cx)
@@ -1908,10 +1835,8 @@ impl Render for GameDataView {
                                                                 Tab::new()
                                                                     .child(div().px_1().w_full().when_some(item, |this, item| {
                                                                         let grade = item.get_grade();
-                                                                        this.child(item.get_locale_name())
-                                                                            .when_some(grade.and_then(|g| g.color()), |this, color| {
-                                                                                this.text_color(color)
-                                                                            })
+                                                                        this.child(item.get_localized_name())
+                                                                            .when_some(grade.color(), |this, color| this.text_color(color))
                                                                     }))
                                                                     .on_click({
                                                                         let item_id = item_id.clone();
@@ -1942,13 +1867,14 @@ impl Render for GameDataView {
                                                     .as_ref()
                                                     .and_then(|selected_item_id| self.game_data.items.get(selected_item_id)),
                                                 |this, selected_item| {
-                                                    let icon = selected_item.get_icon();
-                                                    let item_locale = selected_item.get_locale_name();
+                                                    let item_locale = selected_item.get_localized_name();
 
                                                     let grade = selected_item.get_grade();
 
-                                                    let preview =
-                                                        self.preview.entry(selected_item.get_id()).or_insert_with(|| PreviewValues::default());
+                                                    let preview = self
+                                                        .preview
+                                                        .entry(selected_item.get_id().clone())
+                                                        .or_insert_with(|| PreviewValues::default());
                                                     let transcendence_effect =
                                                         (preview.transcendence != 0).then(|| preview.transcendence as f32 * 0.05);
                                                     let id = selected_item.get_id();
@@ -1959,7 +1885,6 @@ impl Render for GameDataView {
                                                         transcendence_limit,
                                                         skill_locale,
                                                         description_locale,
-                                                        usable_class,
                                                         attack,
                                                         attack_tempering_effect,
                                                         physic_defense,
@@ -1967,9 +1892,7 @@ impl Render for GameDataView {
                                                         magic_defense,
                                                         magic_defense_tempering_effect,
                                                         attack_speed,
-                                                        required_level,
                                                         talent_power,
-                                                        tags,
                                                         recipe_types,
                                                         recipe_stage,
                                                         product,
@@ -1978,27 +1901,108 @@ impl Render for GameDataView {
                                                         min_random_effects,
                                                         max_random_effects,
                                                         random_effects,
-                                                        item_set,
-                                                        equip_effect_1,
-                                                        equip_effect_2,
-                                                        equip_effect_3,
-                                                        equip_effect_4,
                                                         fellow_stone_effects,
                                                         max_ep,
-                                                        linked_recipes,
+                                                        random_box_group,
+                                                        package_contents,
                                                     ) = match selected_item.as_ref() {
-                                                        crate::game_data::DataType::SecondaryWeapon(secondary_weapon) => {
+                                                        crate::game_data::Item::Armor(armor) => {
+                                                            let temper_limit = armor.enhancement_limit;
+                                                            let reverse_limit = armor.reverse_enhancement_limit;
+                                                            let transcendence_limit = armor.overrise_max;
+                                                            let random_effects = self
+                                                                .game_data
+                                                                .effects_by_grade
+                                                                .get(&grade)
+                                                                .and_then(|effects| effects.get(&armor.common.item_level))
+                                                                .and_then(|e| {
+                                                                    GameClass::check_item_option(
+                                                                        e,
+                                                                        &armor.common.usable_class,
+                                                                        &format!("{}_{}", armor.armor_type, armor.equip_slot),
+                                                                    )
+                                                                });
+
+                                                            let quality_effect = self
+                                                                .game_data
+                                                                .quality_by_types
+                                                                .get(&armor.get_type())
+                                                                .and_then(|quality| quality.get(&armor.common.item_level))
+                                                                .and_then(|f| match preview.quality {
+                                                                    Quality::Simple => None,
+                                                                    Quality::Good => f
+                                                                        .intermediate_fixed_effect
+                                                                        .as_ref()
+                                                                        .and_then(|f| f.parsed.as_ref())
+                                                                        .map(|f| f.1),
+                                                                    Quality::Perfect => {
+                                                                        f.advanced_fixed_effect.as_ref().and_then(|f| f.parsed.as_ref()).map(|f| f.1)
+                                                                    }
+                                                                });
+
+                                                            let (magic_tempering_effect, physical_tempering_effect) = self
+                                                                .game_data
+                                                                .tempering_by_types
+                                                                .get(&armor.get_full_type())
+                                                                .and_then(|tempering| tempering.get(&armor.common.item_level))
+                                                                .and_then(|f| {
+                                                                    preview.total_tempering.checked_sub(1).and_then(|index| {
+                                                                        f.defense_ratios.get(index as usize).map(|f| {
+                                                                            (
+                                                                                f / 100.0
+                                                                                    * (armor.magical_defense + quality_effect.unwrap_or_default()),
+                                                                                f / 100.0
+                                                                                    * (armor.physical_defense + quality_effect.unwrap_or_default()),
+                                                                            )
+                                                                        })
+                                                                    })
+                                                                })
+                                                                .map_or((None, None), |(x, y)| (Some(x), Some(y)));
+
+                                                            (
+                                                                Some(preview.quality),
+                                                                Some(temper_limit),
+                                                                Some(reverse_limit),
+                                                                Some(transcendence_limit),
+                                                                armor.get_localized_skill(),
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                Some(armor.physical_defense + quality_effect.unwrap_or_default()),
+                                                                physical_tempering_effect,
+                                                                Some(armor.magical_defense + quality_effect.unwrap_or_default()),
+                                                                magic_tempering_effect,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                armor.sealed_fellow_slots_min,
+                                                                armor.sealed_fellow_slots_max,
+                                                                armor.random_effects_count_min,
+                                                                armor.random_effects_count_max,
+                                                                random_effects,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                            )
+                                                        }
+
+                                                        crate::game_data::Item::SecondaryWeapon(secondary_weapon) => {
                                                             let transcendence_limit = secondary_weapon.overrise_max;
                                                             let temper_limit = secondary_weapon.enchant_limit;
                                                             let reverse_limit = secondary_weapon.reverse_enchant_limit;
 
-                                                            let random_effects = grade
-                                                                .and_then(|g| self.game_data.effects_by_grade.get(&g))
-                                                                .and_then(|effects| effects.get(&secondary_weapon.item_level))
+                                                            let random_effects = self
+                                                                .game_data
+                                                                .effects_by_grade
+                                                                .get(&grade)
+                                                                .and_then(|effects| effects.get(&secondary_weapon.common.item_level))
                                                                 .and_then(|e| {
                                                                     GameClass::check_item_option(
                                                                         e,
-                                                                        &secondary_weapon.usable_class,
+                                                                        &secondary_weapon.common.usable_class,
                                                                         &secondary_weapon.weapon_type,
                                                                     )
                                                                 });
@@ -2007,7 +2011,7 @@ impl Render for GameDataView {
                                                                 .game_data
                                                                 .quality_by_types
                                                                 .get(&secondary_weapon.get_type())
-                                                                .and_then(|quality| quality.get(&secondary_weapon.item_level))
+                                                                .and_then(|quality| quality.get(&secondary_weapon.common.item_level))
                                                                 .and_then(|f| match preview.quality {
                                                                     Quality::Simple => None,
                                                                     Quality::Good => f
@@ -2024,7 +2028,7 @@ impl Render for GameDataView {
                                                                 .game_data
                                                                 .tempering_by_types
                                                                 .get(&secondary_weapon.get_full_type())
-                                                                .and_then(|tempering| tempering.get(&secondary_weapon.item_level))
+                                                                .and_then(|tempering| tempering.get(&secondary_weapon.common.item_level))
                                                                 .and_then(|f| {
                                                                     preview.total_tempering.checked_sub(1).and_then(|index| {
                                                                         f.defense_ratios.get(index as usize).map(|f| {
@@ -2044,9 +2048,8 @@ impl Render for GameDataView {
                                                                 Some(temper_limit),
                                                                 Some(reverse_limit),
                                                                 Some(transcendence_limit),
-                                                                secondary_weapon.get_skill_locale(),
+                                                                secondary_weapon.get_localized_skill(),
                                                                 None,
-                                                                Some(secondary_weapon.usable_class.clone()),
                                                                 None,
                                                                 None,
                                                                 Some(secondary_weapon.physical_defense + quality_effect.unwrap_or_default()),
@@ -2054,14 +2057,7 @@ impl Render for GameDataView {
                                                                 Some(secondary_weapon.magical_defense),
                                                                 magic_tempering_effect,
                                                                 None,
-                                                                Some(secondary_weapon.required_level),
                                                                 None,
-                                                                (
-                                                                    secondary_weapon.binding,
-                                                                    secondary_weapon.no_trade,
-                                                                    secondary_weapon.no_disposal,
-                                                                    secondary_weapon.indestructible,
-                                                                ),
                                                                 None,
                                                                 None,
                                                                 None,
@@ -2070,34 +2066,31 @@ impl Render for GameDataView {
                                                                 secondary_weapon.random_option_count_min,
                                                                 secondary_weapon.random_option_count_max,
                                                                 random_effects,
-                                                                secondary_weapon.item_set.as_ref(),
-                                                                secondary_weapon.equip_effect_1.clone(),
-                                                                secondary_weapon.equip_effect_2.clone(),
-                                                                secondary_weapon.equip_effect_3.clone(),
-                                                                secondary_weapon.equip_effect_4.clone(),
                                                                 None,
                                                                 None,
-                                                                (!secondary_weapon.linked_recipes.is_empty())
-                                                                    .then_some(secondary_weapon.linked_recipes.clone()),
+                                                                None,
+                                                                None,
                                                             )
                                                         }
 
-                                                        crate::game_data::DataType::Weapon(weapon) => {
+                                                        crate::game_data::Item::Weapon(weapon) => {
                                                             let transcendence_limit = weapon.overrise_max;
                                                             let temper_limit = weapon.enhancement_limit;
                                                             let reverse_limit = weapon.reverse_enhancement_limit;
-                                                            let random_effects = grade
-                                                                .and_then(|g| self.game_data.effects_by_grade.get(&g))
-                                                                .and_then(|effects| effects.get(&weapon.item_level))
+                                                            let random_effects = self
+                                                                .game_data
+                                                                .effects_by_grade
+                                                                .get(&grade)
+                                                                .and_then(|effects| effects.get(&weapon.common.item_level))
                                                                 .and_then(|e| {
-                                                                    GameClass::check_item_option(e, &weapon.usable_class, &weapon.weapon_type)
+                                                                    GameClass::check_item_option(e, &weapon.common.usable_class, &weapon.weapon_type)
                                                                 });
 
                                                             let quality_effect = self
                                                                 .game_data
                                                                 .quality_by_types
                                                                 .get(&weapon.get_type())
-                                                                .and_then(|quality| quality.get(&weapon.item_level))
+                                                                .and_then(|quality| quality.get(&weapon.common.item_level))
                                                                 .and_then(|f| match preview.quality {
                                                                     Quality::Simple => None,
                                                                     Quality::Good => f
@@ -2114,7 +2107,7 @@ impl Render for GameDataView {
                                                                 .game_data
                                                                 .tempering_by_types
                                                                 .get(&weapon.get_full_type())
-                                                                .and_then(|tempering| tempering.get(&weapon.item_level))
+                                                                .and_then(|tempering| tempering.get(&weapon.common.item_level))
                                                                 .and_then(|f| {
                                                                     if weapon.attack_range_type == "me" {
                                                                         preview.total_tempering.checked_sub(1).and_then(|index| {
@@ -2165,9 +2158,8 @@ impl Render for GameDataView {
                                                                 Some(temper_limit),
                                                                 Some(reverse_limit),
                                                                 Some(transcendence_limit),
-                                                                weapon.get_skill_locale(),
+                                                                weapon.get_localized_skill(),
                                                                 None,
-                                                                Some(weapon.usable_class.clone()),
                                                                 Some((
                                                                     (weapon.max_attack
                                                                         + quality_effect.unwrap_or_default()
@@ -2184,9 +2176,7 @@ impl Render for GameDataView {
                                                                 None,
                                                                 None,
                                                                 Some(weapon.attack_speed),
-                                                                Some(weapon.required_level),
                                                                 None,
-                                                                (weapon.binding, weapon.cannot_trade, weapon.cannot_sell, weapon.indestructible),
                                                                 None,
                                                                 None,
                                                                 None,
@@ -2195,105 +2185,14 @@ impl Render for GameDataView {
                                                                 weapon.min_random_options,
                                                                 weapon.max_random_options,
                                                                 random_effects,
-                                                                weapon.item_set.as_ref(),
-                                                                weapon.equip_effect_1.clone(),
-                                                                weapon.equip_effect_2.clone(),
-                                                                weapon.equip_effect_3.clone(),
-                                                                weapon.equip_effect_4.clone(),
                                                                 None,
                                                                 None,
-                                                                (!weapon.linked_recipes.is_empty()).then_some(weapon.linked_recipes.clone()),
+                                                                None,
+                                                                None,
                                                             )
                                                         }
 
-                                                        crate::game_data::DataType::Armor(armor) => {
-                                                            let temper_limit = armor.enhancement_limit;
-                                                            let reverse_limit = armor.reverse_enhancement_limit;
-                                                            let transcendence_limit = armor.overrise_max;
-                                                            let random_effects = grade
-                                                                .and_then(|g| self.game_data.effects_by_grade.get(&g))
-                                                                .and_then(|effects| effects.get(&armor.item_level))
-                                                                .and_then(|e| {
-                                                                    GameClass::check_item_option(
-                                                                        e,
-                                                                        &armor.usable_class,
-                                                                        &format!("{}_{}", armor.armor_type, armor.equip_slot),
-                                                                    )
-                                                                });
-
-                                                            let quality_effect = self
-                                                                .game_data
-                                                                .quality_by_types
-                                                                .get(&armor.get_type())
-                                                                .and_then(|quality| quality.get(&armor.item_level))
-                                                                .and_then(|f| match preview.quality {
-                                                                    Quality::Simple => None,
-                                                                    Quality::Good => f
-                                                                        .intermediate_fixed_effect
-                                                                        .as_ref()
-                                                                        .and_then(|f| f.parsed.as_ref())
-                                                                        .map(|f| f.1),
-                                                                    Quality::Perfect => {
-                                                                        f.advanced_fixed_effect.as_ref().and_then(|f| f.parsed.as_ref()).map(|f| f.1)
-                                                                    }
-                                                                });
-
-                                                            let (magic_tempering_effect, physical_tempering_effect) = self
-                                                                .game_data
-                                                                .tempering_by_types
-                                                                .get(&armor.get_full_type())
-                                                                .and_then(|tempering| tempering.get(&armor.item_level))
-                                                                .and_then(|f| {
-                                                                    preview.total_tempering.checked_sub(1).and_then(|index| {
-                                                                        f.defense_ratios.get(index as usize).map(|f| {
-                                                                            (
-                                                                                f / 100.0
-                                                                                    * (armor.magical_defense + quality_effect.unwrap_or_default()),
-                                                                                f / 100.0
-                                                                                    * (armor.physical_defense + quality_effect.unwrap_or_default()),
-                                                                            )
-                                                                        })
-                                                                    })
-                                                                })
-                                                                .map_or((None, None), |(x, y)| (Some(x), Some(y)));
-
-                                                            (
-                                                                Some(preview.quality),
-                                                                Some(temper_limit),
-                                                                Some(reverse_limit),
-                                                                Some(transcendence_limit),
-                                                                armor.get_skill_locale(),
-                                                                None,
-                                                                Some(armor.usable_class.clone()),
-                                                                None,
-                                                                None,
-                                                                Some(armor.physical_defense + quality_effect.unwrap_or_default()),
-                                                                physical_tempering_effect,
-                                                                Some(armor.magical_defense + quality_effect.unwrap_or_default()),
-                                                                magic_tempering_effect,
-                                                                None,
-                                                                Some(armor.required_level),
-                                                                None,
-                                                                (armor.binding, armor.no_trade, armor.no_sell, armor.no_destroy),
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                armor.sealed_fellow_slots_min,
-                                                                armor.sealed_fellow_slots_max,
-                                                                armor.random_option_count_min,
-                                                                armor.random_option_count_max,
-                                                                random_effects,
-                                                                armor.item_set.as_ref(),
-                                                                armor.equip_effect_1.clone(),
-                                                                armor.equip_effect_2.clone(),
-                                                                armor.equip_effect_3.clone(),
-                                                                armor.equip_effect_4.clone(),
-                                                                None,
-                                                                None,
-                                                                (!armor.linked_recipes.is_empty()).then_some(armor.linked_recipes.clone()),
-                                                            )
-                                                        }
-                                                        crate::game_data::DataType::Material(material) => (
+                                                        crate::game_data::Item::Material(material) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2308,14 +2207,6 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             None,
-                                                            Some(material.required_level),
-                                                            None,
-                                                            (
-                                                                material.binding,
-                                                                material.non_tradeable,
-                                                                material.non_disposable,
-                                                                material.non_destroyable,
-                                                            ),
                                                             material.recipe_type.clone(),
                                                             None,
                                                             None,
@@ -2328,59 +2219,51 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            (!material.linked_recipes.is_empty()).then_some(material.linked_recipes.clone()),
                                                         ),
-                                                        crate::game_data::DataType::Recipe(recipe) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            Some(recipe.required_level),
-                                                            None,
-                                                            (recipe.binding, recipe.untradeable, recipe.unsellable, recipe.indestructible),
-                                                            recipe.recipe_type.as_ref().map(|f| BTreeSet::from([*f])).clone(),
-                                                            recipe
-                                                                .product
-                                                                .as_ref()
-                                                                .and_then(|f| f.upgrade())
-                                                                .map(|p| p.borrow().technology_grade)
-                                                                .or_else(|| Some(recipe.required_stage)),
-                                                            recipe.product.clone(),
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                        ),
-                                                        crate::game_data::DataType::Consume(consume) => (
+                                                        crate::game_data::Item::Recipe(recipe) => {
+                                                            debug!(?recipe.product);
+
+                                                            (
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                recipe.recipe_type.as_ref().map(|f| BTreeSet::from([*f])).clone(),
+                                                                recipe
+                                                                    .product
+                                                                    .as_ref()
+                                                                    .and_then(|f| f.upgrade())
+                                                                    .map(|p| p.borrow().technology_grade)
+                                                                    .or_else(|| Some(recipe.required_stage)),
+                                                                recipe.product.clone(),
+                                                                0,
+                                                                0,
+                                                                0,
+                                                                0,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                                None,
+                                                            )
+                                                        }
+                                                        crate::game_data::Item::Consume(consume) => (
                                                             None,
                                                             None,
                                                             None,
                                                             None,
                                                             None,
                                                             consume.description_locale.as_ref().and_then(|f| f.locale()),
-                                                            Some(consume.usable_class.clone()),
                                                             None,
                                                             None,
                                                             None,
@@ -2388,9 +2271,7 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             None,
-                                                            Some(consume.required_level),
                                                             None,
-                                                            (consume.binding, consume.untradeable, consume.unsellable, consume.indestructible),
                                                             None,
                                                             None,
                                                             None,
@@ -2403,49 +2284,12 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            (!consume.linked_recipes.is_empty()).then_some(consume.linked_recipes.clone()),
                                                         ),
-                                                        crate::game_data::DataType::SkillBook(skill_book) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            Some(skill_book.usable_class.clone()),
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            Some(skill_book.required_level),
-                                                            None,
-                                                            (skill_book.binding, skill_book.no_trade, skill_book.no_sell, skill_book.no_destroy),
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            (!skill_book.linked_recipes.is_empty()).then_some(skill_book.linked_recipes.clone()),
+                                                        crate::game_data::Item::SkillBook(skill_book) => (
+                                                            None, None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+                                                            None, None, 0, 0, 0, 0, None, None, None, None, None,
                                                         ),
-                                                        crate::game_data::DataType::SealedFellow(sealed_fellow) => (
-                                                            None,
-                                                            None,
+                                                        crate::game_data::Item::SealedFellow(sealed_fellow) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2460,12 +2304,6 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             Some(sealed_fellow.characteristic_power),
-                                                            (
-                                                                sealed_fellow.binding,
-                                                                sealed_fellow.no_trade,
-                                                                sealed_fellow.no_sell,
-                                                                sealed_fellow.no_destroy,
-                                                            ),
                                                             None,
                                                             None,
                                                             None,
@@ -2473,25 +2311,18 @@ impl Render for GameDataView {
                                                             0,
                                                             0,
                                                             0,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
                                                             None,
                                                             Some((
-                                                                sealed_fellow.sealed_fellow_effect_1.clone(),
-                                                                sealed_fellow.sealed_fellow_effect_2.clone(),
-                                                                sealed_fellow.sealed_fellow_effect_3.clone(),
+                                                                sealed_fellow.effects.clone(),
                                                                 sealed_fellow.max_enhancement_sealed_fellow_effect.clone(),
-                                                                sealed_fellow.rf_grade,
-                                                                sealed_fellow.rf_effect,
+                                                                sealed_fellow.tempering,
+                                                                sealed_fellow.tempering_effect,
                                                             )),
                                                             None,
-                                                            (!sealed_fellow.linked_recipes.is_empty())
-                                                                .then_some(sealed_fellow.linked_recipes.clone()),
+                                                            None,
+                                                            None,
                                                         ),
-                                                        crate::game_data::DataType::Boost(boost) => (
+                                                        crate::game_data::Item::Boost(boost) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2506,9 +2337,6 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             None,
-                                                            Some(boost.required_level),
-                                                            None,
-                                                            (boost.binding, boost.no_trade, boost.no_sell, boost.no_destroy),
                                                             None,
                                                             None,
                                                             None,
@@ -2518,15 +2346,123 @@ impl Render for GameDataView {
                                                             0,
                                                             None,
                                                             None,
-                                                            boost.equip_effect_1.clone(),
-                                                            boost.equip_effect_2.clone(),
-                                                            boost.equip_effect_3.clone(),
-                                                            boost.equip_effect_4.clone(),
                                                             None,
                                                             None,
-                                                            (!boost.linked_recipes.is_empty()).then_some(boost.linked_recipes.clone()),
+                                                            None,
                                                         ),
-                                                        crate::game_data::DataType::Exchange(exchange) => (
+                                                        crate::game_data::Item::Bag(bag) => (
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            bag.description_locale.as_ref().and_then(|f| f.locale()),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                        ),
+                                                        crate::game_data::Item::Style(style) => (
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            style.get_localized_skill(),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                        ),
+                                                        crate::game_data::Item::RandomBox(random_box) => (
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            random_box.content.clone(),
+                                                            None,
+                                                        ),
+                                                        crate::game_data::Item::Package(package) => (
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            Some(package.package_items.clone()),
+                                                        ),
+                                                        crate::game_data::Item::Exchange(exchange) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2543,9 +2479,6 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             None,
-                                                            (exchange.binding, exchange.untradeable, exchange.unsellable, exchange.indestructible),
-                                                            None,
-                                                            None,
                                                             None,
                                                             0,
                                                             0,
@@ -2556,54 +2489,12 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            (!exchange.linked_recipes.is_empty()).then_some(exchange.linked_recipes.clone()),
                                                         ),
-                                                        crate::game_data::DataType::Gem(gem) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            Some(gem.required_level),
-                                                            None,
-                                                            (gem.binding, gem.no_trade, gem.no_sell, gem.no_destroy),
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            None,
-                                                            None,
-                                                            gem.equip_effect_1.clone(),
-                                                            gem.equip_effect_2.clone(),
-                                                            gem.equip_effect_3.clone(),
-                                                            gem.equip_effect_4.clone(),
-                                                            None,
-                                                            None,
-                                                            (!gem.linked_recipes.is_empty()).then_some(gem.linked_recipes.clone()),
+                                                        crate::game_data::Item::Gem(gem) => (
+                                                            None, None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+                                                            None, None, 0, 0, 0, 0, None, None, None, None, None,
                                                         ),
-                                                        crate::game_data::DataType::FellowEquip(fellow_equip) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            Some(fellow_equip.usable_class.clone()),
+                                                        crate::game_data::Item::FellowEquip(fellow_equip) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2611,14 +2502,13 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                             None,
-                                                            Some(fellow_equip.required_level),
                                                             None,
-                                                            (
-                                                                fellow_equip.binding,
-                                                                fellow_equip.untradeable,
-                                                                fellow_equip.unsellable,
-                                                                fellow_equip.indestructible,
-                                                            ),
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
                                                             None,
                                                             None,
                                                             None,
@@ -2627,26 +2517,24 @@ impl Render for GameDataView {
                                                             0,
                                                             0,
                                                             None,
-                                                            fellow_equip.item_set.as_ref(),
-                                                            fellow_equip.equip_effect_1.clone(),
-                                                            fellow_equip.equip_effect_2.clone(),
-                                                            fellow_equip.equip_effect_3.clone(),
-                                                            fellow_equip.equip_effect_4.clone(),
                                                             None,
                                                             fellow_equip.max_ep_plus,
-                                                            (!fellow_equip.linked_recipes.is_empty()).then_some(fellow_equip.linked_recipes.clone()),
+                                                            None,
+                                                            None,
                                                         ),
-                                                        crate::game_data::DataType::Accessory(accessory) => {
+                                                        crate::game_data::Item::Accessory(accessory) => {
                                                             let temper_limit = accessory.enhancement_limit;
                                                             let reverse_limit = accessory.reverse_enhancement_limit;
                                                             let transcendence_limit = accessory.overrise_max;
-                                                            let random_effects = grade
-                                                                .and_then(|g| self.game_data.effects_by_grade.get(&g))
-                                                                .and_then(|effects| effects.get(&accessory.item_level))
+                                                            let random_effects = self
+                                                                .game_data
+                                                                .effects_by_grade
+                                                                .get(&grade)
+                                                                .and_then(|effects| effects.get(&accessory.common.item_level))
                                                                 .and_then(|e| {
                                                                     GameClass::check_item_option(
                                                                         e,
-                                                                        &accessory.usable_class,
+                                                                        &accessory.common.usable_class,
                                                                         &accessory.accessory_type,
                                                                     )
                                                                 });
@@ -2655,7 +2543,7 @@ impl Render for GameDataView {
                                                                 .game_data
                                                                 .quality_by_types
                                                                 .get(&accessory.get_type())
-                                                                .and_then(|quality| quality.get(&accessory.item_level))
+                                                                .and_then(|quality| quality.get(&accessory.common.item_level))
                                                                 .and_then(|f| match preview.quality {
                                                                     Quality::Simple => None,
                                                                     Quality::Good => f
@@ -2672,7 +2560,7 @@ impl Render for GameDataView {
                                                                 .game_data
                                                                 .tempering_by_types
                                                                 .get(&accessory.get_full_type())
-                                                                .and_then(|tempering| tempering.get(&accessory.item_level))
+                                                                .and_then(|tempering| tempering.get(&accessory.common.item_level))
                                                                 .and_then(|f| {
                                                                     preview.total_tempering.checked_sub(1).and_then(|index| {
                                                                         f.defense_ratios.get(index as usize).map(|f| {
@@ -2686,9 +2574,8 @@ impl Render for GameDataView {
                                                                 Some(temper_limit),
                                                                 Some(reverse_limit),
                                                                 Some(transcendence_limit),
-                                                                accessory.get_skill_locale(),
+                                                                accessory.get_localized_skill(),
                                                                 None,
-                                                                Some(accessory.usable_class.clone()),
                                                                 None,
                                                                 None,
                                                                 None,
@@ -2696,25 +2583,19 @@ impl Render for GameDataView {
                                                                 Some(accessory.magic_defense + quality_effect.unwrap_or_default()),
                                                                 tempering_effect,
                                                                 None,
-                                                                Some(accessory.required_level),
                                                                 None,
-                                                                (accessory.binding, accessory.no_trade, accessory.no_disposal, accessory.no_destroy),
                                                                 None,
                                                                 None,
                                                                 None,
                                                                 0,
                                                                 0,
-                                                                accessory.random_option_count_min,
-                                                                accessory.random_option_count_max,
+                                                                accessory.random_effects_count_min,
+                                                                accessory.random_effects_count_max,
                                                                 random_effects,
-                                                                accessory.item_set.as_ref(),
-                                                                accessory.equip_effect_1.clone(),
-                                                                accessory.equip_effect_2.clone(),
-                                                                accessory.equip_effect_3.clone(),
-                                                                accessory.equip_effect_4.clone(),
                                                                 None,
                                                                 None,
-                                                                (!accessory.linked_recipes.is_empty()).then_some(accessory.linked_recipes.clone()),
+                                                                None,
+                                                                None,
                                                             )
                                                         }
                                                     };
@@ -2747,18 +2628,14 @@ impl Render for GameDataView {
                                                                             .overflow_y_scrollbar()
                                                                             .map(|this| {
                                                                                 this.child(Self::render_preview(
-                                                                                    id.clone(),
+                                                                                    selected_item.common(),
                                                                                     quality,
                                                                                     temper_limit,
                                                                                     reverse_limit,
                                                                                     transcendence_limit,
                                                                                     transcendence_effect,
-                                                                                    icon,
-                                                                                    grade,
-                                                                                    item_locale.clone(),
                                                                                     skill_locale,
                                                                                     description_locale,
-                                                                                    usable_class,
                                                                                     attack,
                                                                                     attack_tempering_effect,
                                                                                     physic_defense,
@@ -2767,21 +2644,14 @@ impl Render for GameDataView {
                                                                                     magic_defense_tempering_effect,
                                                                                     attack_speed,
                                                                                     talent_power,
-                                                                                    tags,
                                                                                     recipe_types,
                                                                                     recipe_stage,
                                                                                     product,
-                                                                                    required_level,
                                                                                     min_sealed_slots,
                                                                                     max_sealed_slots,
                                                                                     min_random_effects,
                                                                                     max_random_effects,
                                                                                     random_effects,
-                                                                                    item_set,
-                                                                                    equip_effect_1,
-                                                                                    equip_effect_2,
-                                                                                    equip_effect_3,
-                                                                                    equip_effect_4,
                                                                                     fellow_stone_effects,
                                                                                     preview,
                                                                                     &self.game_data.items,
@@ -2871,7 +2741,8 @@ impl Render for GameDataView {
                                                                                     }),
                                                                                     cx.entity(),
                                                                                     max_ep,
-                                                                                    linked_recipes,
+                                                                                    random_box_group,
+                                                                                    package_contents,
                                                                                     cx,
                                                                                 ))
                                                                             }),
@@ -2935,6 +2806,17 @@ impl Render for GameDataView {
                             .cleanable(true)
                             .placeholder(t("item-effects")),
                     )
+                    .right(
+                        Button::new("export-button")
+                            .ghost()
+                            .xsmall()
+                            .cursor_pointer()
+                            .label(t("export-button"))
+                            .on_click(cx.listener(|this, state, window, cx| {
+                                this.export_xlsx(window, cx);
+                            })),
+                    )
+                    .right(Separator::vertical())
                     .right(
                         Button::new("lang-switcher")
                             .icon(AppIcon::Languages)

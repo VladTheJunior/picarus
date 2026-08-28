@@ -7,8 +7,7 @@ use std::{
 };
 
 use crate::{
-    game_data::{AbstractItem, Binding, DataFormat, Grade, Item, TagType, item_set::ItemSet, locale::Locale, product::Product},
-    language::t,
+    game_data::{AsyncBufReadExtReadString, Binding, Common, DataFormat, Grade, Item, ItemTrait, ReadableItem, TagType, item_set::ItemSet, locale::Locale, product::Product}, language::t,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -57,60 +56,37 @@ impl RecipeType {
     }
 }
 
-#[derive(Default, Serialize)]
+#[derive(Default)]
 pub struct Recipe {
-    pub locale: Option<Locale>,
     pub product: Option<Weak<RefCell<Product>>>,
-    #[serde(skip)]
-    pub icon: Option<Arc<Image>>,
-    pub id: SharedString,
+    pub common: Common,
 
-    pub name: SharedString,
-    pub grade: Option<Grade>,
-    pub recipe_category: SharedString,
     pub recipe_type: Option<RecipeType>,
-    pub item_level: f32,
     pub required_stage: u8,
-    pub required_proficiency: f32,
-    pub required_level: u8,
     pub crafted_item_id: SharedString,
-    pub crafted_item_name: SharedString,
-    pub cooldown: f32,
-    pub buy_price: f32,
-    pub sell_price: f32,
-    pub stack_size: f32,
-    pub learned_skill: SharedString,
-    pub skill_level_required: f32,
-    pub untradeable: bool,
-    pub unsellable: bool,
-    pub indestructible: bool,
-    pub drop_level_check: SharedString,
-    pub binding: Option<Binding>,
-    pub usage_restriction: SharedString,
-    pub market_category: SharedString,
-    pub ignore_drop_level_check: f32,
-    pub contents_level: f32,
-    pub disable_unified_channel: f32,
-    pub inheritance_enhance_condition: f32,
-    pub inheritance_transcend_condition: f32,
-    pub currency_settings_id: SharedString,
 }
 
-impl AbstractItem for Recipe {
+impl ReadableItem for Recipe {
+    const FORMAT: DataFormat = DataFormat::String;
+    type Key = SharedString;
+
+    fn key(item: &Self) -> Self::Key {
+        item.common.id.clone()
+    }
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
         item_idx: usize,
-        definitions: &IndexMap<String, TagType>,
+        definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
-        format: DataFormat,
     ) -> Result<Self> {
+        self.common.debug = Self::parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
-            match format {
+            match Self::FORMAT {
                 DataFormat::String => {
                     reader.seek(SeekFrom::Start(global_offset + offset)).await?;
                 }
@@ -120,39 +96,26 @@ impl AbstractItem for Recipe {
             };
 
             match tag_idx {
-                0 => self.id = SharedString::new(Self::read_string(format, reader).await?.to_uppercase()),
-                1 => self.name = Self::read_string(format, reader).await?,
-                2 => self.grade = Grade::from_repr(reader.read_f32_le().await? as u8),
-                3 => self.recipe_category = Self::read_string(format, reader).await?,
+                0 => self.common.parse_id(reader, Self::FORMAT).await?,
+
+                2 => self.common.parse_grade(reader).await?,
+
                 4 => {
-                    let m = Self::read_string(format, reader).await?;
+                    let m = reader.read_string(Self::FORMAT).await?;
                     self.recipe_type = RecipeType::try_from(m.as_str()).ok()
                 }
-                5 => self.item_level = reader.read_f32_le().await?,
+                5 => self.common.parse_item_level(reader).await?,
                 6 => self.required_stage = reader.read_f32_le().await? as u8,
-                7 => self.required_proficiency = reader.read_f32_le().await?,
-                8 => self.required_level = reader.read_f32_le().await? as u8,
-                9 => self.crafted_item_id = SharedString::new(Self::read_string(format, reader).await?.to_uppercase()),
-                10 => self.crafted_item_name = Self::read_string(format, reader).await?,
-                11 => self.cooldown = reader.read_f32_le().await?,
-                12 => self.buy_price = reader.read_f32_le().await?,
-                13 => self.sell_price = reader.read_f32_le().await?,
-                14 => self.stack_size = reader.read_f32_le().await?,
-                15 => self.learned_skill = Self::read_string(format, reader).await?,
-                16 => self.skill_level_required = reader.read_f32_le().await?,
-                17 => self.untradeable = reader.read_f32_le().await? != 0.0,
-                18 => self.unsellable = reader.read_f32_le().await? != 0.0,
-                19 => self.indestructible = reader.read_f32_le().await? != 0.0,
-                20 => self.drop_level_check = Self::read_string(format, reader).await?,
-                21 => self.binding = Binding::try_from(Self::read_string(format, reader).await?.as_str()).ok(),
-                22 => self.usage_restriction = Self::read_string(format, reader).await?,
-                23 => self.market_category = Self::read_string(format, reader).await?,
-                24 => self.ignore_drop_level_check = reader.read_f32_le().await?,
-                25 => self.contents_level = reader.read_f32_le().await?,
-                26 => self.disable_unified_channel = reader.read_f32_le().await?,
-                27 => self.inheritance_enhance_condition = reader.read_f32_le().await?,
-                28 => self.inheritance_transcend_condition = reader.read_f32_le().await?,
-                29 => self.currency_settings_id = Self::read_string(format, reader).await?,
+
+                8 => self.common.parse_required_level(reader).await?,
+                9 => self.crafted_item_id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
+
+                17 => self.common.parse_no_trade(reader).await?,
+                18 => self.common.parse_no_sell(reader).await?,
+                19 => self.common.parse_no_destroy(reader).await?,
+
+                21 => self.common.parse_binding(reader, Self::FORMAT).await?,
+
                 _ => {}
             }
         }
@@ -161,56 +124,22 @@ impl AbstractItem for Recipe {
     }
 }
 
-impl Item for Recipe {
-    fn set_locale(&mut self, locales: &HashMap<SharedString, Locale>, _skill_locales: &HashMap<SharedString, Locale>) {
-        self.locale = locales.get(&self.id).cloned();
-    }
-
-    async fn set_icon<R: std::io::Read + std::io::Seek>(
-        &mut self,
-        res: &HashMap<SharedString, super::item_res::ItemRes>,
-        zip: &mut zip::ZipArchive<R>,
-    ) -> Result<()> {
-        if let Some(item_res) = res.get(&self.id) {
-            if let Ok(mut file) = zip.by_path(&format!(r"libs\ui\resources\textures\slot_icons\{}.dds", item_res.icon.to_lowercase())) {
-                let mut buf = Vec::with_capacity(file.size() as usize);
-                file.read_to_end(&mut buf)?;
-
-                match Self::dds_to_jpeg(buf).await {
-                    Ok(icon) => self.icon = Some(icon),
-                    Err(e) => warn!(?e, ?item_res, "Failed to load icon"),
-                }
-            } else if let Ok(mut file) = zip.by_path(&format!(r"libs\ui\resources\textures\slot_icons\{}.dds", item_res.icon)) {
-                let mut buf = Vec::with_capacity(file.size() as usize);
-                file.read_to_end(&mut buf)?;
-
-                match Self::dds_to_jpeg(buf).await {
-                    Ok(icon) => self.icon = Some(icon),
-                    Err(e) => warn!(?e, ?item_res, "Failed to load icon"),
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn get_full_type(&self) -> SharedString {
-        unimplemented!()
-    }
-
-    fn get_type(&self) -> SharedString {
-        unimplemented!()
-    }
-
-    fn set_item_set(&mut self, _item_set: &Vec<ItemSet>) {}
-
-    fn set_product(
+impl Recipe {
+    pub fn set_product(
         &mut self,
         products_by_recipe_id: &HashMap<SharedString, Rc<RefCell<Product>>>,
         products_by_result_id: &HashMap<SharedString, Rc<RefCell<Product>>>,
     ) {
         self.product = products_by_recipe_id
-            .get(&self.id)
+            .get(&self.common.id)
             .or_else(|| products_by_result_id.get(&self.crafted_item_id))
             .map(|f| Rc::downgrade(f));
     }
+}
+
+
+impl ItemTrait for Recipe {
+   fn common(&self) ->  &Common {
+       &self.common
+   }
 }

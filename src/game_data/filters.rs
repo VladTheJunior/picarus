@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::{
-    game_data::{DataType, Grade, ItemType},
+    game_data::{Item, Grade, ItemType},
     game_data_view::GameDataView,
     language::t_v,
 };
@@ -161,7 +161,7 @@ impl GameDataFilters {
         }
     }
 
-    pub fn check_item(&self, item: &DataType) -> bool {
+    pub fn check_item(&self, item: &Item) -> bool {
         item.matches(&self.input, &self.item_type, &self.grade, &self.effects)
     }
 }

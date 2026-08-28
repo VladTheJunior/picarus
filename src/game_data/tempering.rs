@@ -1,7 +1,8 @@
 use std::io::SeekFrom;
 
-use crate::game_data::{AbstractItem, DataFormat, TagType};
+use crate::game_data::{DataFormat, ReadableItem, TagType};
 use anyhow::Result;
+use gpui::SharedString;
 use indexmap::IndexMap;
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
@@ -15,21 +16,29 @@ pub struct Tempering {
     pub spell_ratios: [f32; 30],
 }
 
-impl AbstractItem for Tempering {
+impl ReadableItem for Tempering {
+
+    const FORMAT: DataFormat = DataFormat::String;
+    type Key = u16;
+
+    fn key(item: &Self) -> Self::Key {
+        item.level
+    }
+
+
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
         item_idx: usize,
-        definitions: &IndexMap<String, TagType>,
+        definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
-        format: DataFormat,
     ) -> Result<Self> {
         let tag_count = definitions.len();
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
-            match format {
+            match Self::FORMAT {
                 DataFormat::String => {
                     reader.seek(SeekFrom::Start(global_offset + offset)).await?;
                 }

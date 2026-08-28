@@ -1,6 +1,11 @@
 theme-dark = Dark
 theme-light = Light
 
+dialog-button-open = Открыть
+button-export = Экспорт
+message-export-error = Ошибка при экспорте!
+message-export-completed = Экспортирование успешно завершено!
+
 item-required-level = Треб. уровень
 item-attack-dps = ДПС
 item-attack = Атака
@@ -77,6 +82,8 @@ item-type-gem = Самоцветы
 item-type-sealed-fellow = Запечатанные спутники
 item-type-skill-book = Книги навыков
 item-type-exchange = Валюта
+item-type-random-box = Случайный сундук
+item-type-package = Запечатанный предмет
 
 item-tag-no-trade = Нельзя передать
 item-tag-no-sell = Нельзя продать
@@ -109,6 +116,10 @@ game-data-loading-gem = Загрузка данных самоцветов...
 game-data-loading-sealed-fellow = Загрузка данных запечатанных спутников...
 game-data-loading-skill-book = Загрузка данных книг навыков...
 game-data-loading-exchange = Загрузка данных валют...
+game-data-loading-random-box = Загрузка данных случайных сундуков...
+game-data-loading-random-box-group = Загрузка данных содержимого случайных сундуков...
+game-data-loading-random-box-probabilities = Загрузка данных шанса содержимого случайных сундуков...
+game-data-loading-package = Загрузка данных запечатанных предметов...
 
 label-select-random-equipped-effect = Выбрать эффект
 button-load-game-data = Загрузить
@@ -119,6 +130,9 @@ $seconds ->
 [few] секунды
 *[other] секунд
 }
+
+item-random-box-contents = Содержимое сундука:
+item-package-contents = Запечатанное содержимое:
 
 button-select-game-folder = Выбрать папку с игрой
 
@@ -233,3 +247,7 @@ item-effect-capturing-chance-percent = Шанс захвата { $value }%
 item-effect-fishing-very-rare-drop-percent = Шанс очень редкого улова { $value }%
 item-effect-fishing-drop-percent = Шанс улова { $value }%
 item-effect-fishing-rare-drop-percent = Шанс редкого улова { $value }%
+
+item-random-box-probability-percent = Шанс { $value }%
+
+item-effect-guild-points-percent = Очки гильдии { $value }%

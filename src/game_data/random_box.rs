@@ -2,11 +2,13 @@ use std::{
     cell::RefCell,
     collections::{BTreeSet, HashMap},
     io::{Read, SeekFrom},
-    rc::Rc,
+    rc::{Rc, Weak},
     sync::Arc,
 };
 
-use crate::game_data::{Binding, Common, DataFormat, Grade, Item, ItemTrait, ReadableItem, TagType, item_set::ItemSet, locale::Locale, product::Product};
+use crate::game_data::{
+     Binding, Common, DataFormat, GameClass, Grade, Item, ItemEffect, ItemTrait, ReadableItem, TagType, item_set::ItemSet, locale::Locale, product::Product, random_box_group::RandomBoxGroup,
+};
 use anyhow::Result;
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -16,18 +18,20 @@ use gpui::{Image, SharedString};
 use tracing::warn;
 
 #[derive(Default)]
-pub struct Exchange {
-    pub description_locale: Option<Locale>,
+pub struct RandomBox {
+    pub content: Option<Weak<RefCell<RandomBoxGroup>>>,
+
     pub common: Common,
 }
 
-impl ReadableItem for Exchange {
+impl ReadableItem for RandomBox {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
     fn key(item: &Self) -> Self::Key {
         item.common.id.clone()
     }
+
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
         mut self,
         reader: &mut R,
@@ -51,15 +55,18 @@ impl ReadableItem for Exchange {
             };
 
             match tag_idx {
-                0 => self.common.parse_id(reader, Self::FORMAT).await?,
+                3 => self.common.parse_usable_class(reader, Self::FORMAT).await?,
+                4 => self.common.parse_grade(reader).await?,
+                5 => self.common.parse_required_level(reader).await?,
 
-                2 => self.common.parse_grade(reader).await?,
+                7 => self.common.parse_item_level(reader).await?,
 
-                6 => self.common.parse_no_trade(reader).await?,
-                7 => self.common.parse_no_sell(reader).await?,
-                8 => self.common.parse_no_destroy(reader).await?,
+                19 => self.common.parse_no_trade(reader).await?,
+                20 => self.common.parse_no_sell(reader).await?,
+                21 => self.common.parse_no_destroy(reader).await?,
+                22 => self.common.parse_binding(reader, Self::FORMAT).await?,
 
-                10 => self.common.parse_binding(reader, Self::FORMAT).await?,
+                24 => self.common.parse_id(reader, Self::FORMAT).await?,
 
                 _ => {}
             }
@@ -69,14 +76,14 @@ impl ReadableItem for Exchange {
     }
 }
 
-impl Exchange {
-    pub fn set_description_locale(&mut self, locales: &HashMap<SharedString, Locale>) {
-        self.description_locale = locales.get(&SharedString::new(format!("{}_DESCRIPTION", self.common.id))).cloned();
+impl RandomBox {
+    pub fn set_random_box_group(&mut self, random_box_groups: &HashMap<SharedString, Rc<RefCell<RandomBoxGroup>>>) {
+        self.content = random_box_groups.get(&self.common.id).map(|f| Rc::downgrade(f));
     }
 }
 
 
-impl ItemTrait for Exchange {
+impl ItemTrait for RandomBox {
    fn common(&self) ->  &Common {
        &self.common
    }

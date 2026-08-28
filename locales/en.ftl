@@ -1,6 +1,11 @@
 theme-dark = Dark
 theme-light = Light
 
+dialog-button-open = Open
+button-export = Export
+message-export-error = Error during export!
+message-export-completed = Export to file completed successfully!
+
 item-required-level = Required Level
 item-attack = Attack
 item-attack-dps = DPS
@@ -52,6 +57,9 @@ item-types = Item types
 item-grades = Item grades
 item-effects = Item effects
 
+item-random-box-contents = Random Box Contents:
+item-package-contents = Package Contents:
+
 item-type-weapon = Weapon
 item-type-armor = Armor
 item-type-accessory = Jewelry
@@ -65,6 +73,8 @@ item-type-gem = Gem
 item-type-sealed-fellow = Sealed Familiar
 item-type-skill-book = Skill Book
 item-type-exchange = Exchange
+item-type-random-box = Random Box
+item-type-package = Package
 
 item-linked-recipes = Linked Recipes
 
@@ -109,6 +119,10 @@ game-data-loading-gem = Loading gems data...
 game-data-loading-sealed-fellow = Loading sealed familiars data...
 game-data-loading-skill-book = Loading skill books data...
 game-data-loading-exchange = Loading exchanges data...
+game-data-loading-random-box = Loading random boxes data...
+game-data-loading-random-box-group = Loading random box contents data...
+game-data-loading-random-box-probabilities = Loading random box probabilities data...
+game-data-loading-package = Loading packages data...
 
 label-select-random-equipped-effect = Select effect
 button-load-game-data = Load
@@ -233,3 +247,7 @@ item-effect-capturing-chance-percent = Capturing Chance { $value }%
 item-effect-fishing-very-rare-drop-percent = Very Rare Catch Chance { $value }%
 item-effect-fishing-drop-percent = Catch Chance { $value }%
 item-effect-fishing-rare-drop-percent = Rare Catch Chance { $value }%
+
+item-random-box-probability-percent = Probability { $value }%
+
+item-effect-guild-points-percent = Guild Points Eearned { $value }%

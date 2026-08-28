@@ -6,7 +6,9 @@ use std::{
     sync::Arc,
 };
 
-use crate::game_data::{Binding, Common, DataFormat, Grade, Item, ItemTrait, ReadableItem, TagType, item_set::ItemSet, locale::Locale, product::Product};
+use crate::game_data::{
+    Binding, Common, DataFormat, Grade, Item, ItemEffect, ItemTrait, ReadableItem, TagType, item_set::ItemSet, locale::Locale, product::Product,
+};
 use anyhow::Result;
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -16,12 +18,12 @@ use gpui::{Image, SharedString};
 use tracing::warn;
 
 #[derive(Default)]
-pub struct Exchange {
-    pub description_locale: Option<Locale>,
+pub struct Bag {
     pub common: Common,
+    pub description_locale: Option<Locale>,
 }
 
-impl ReadableItem for Exchange {
+impl ReadableItem for Bag {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
@@ -53,13 +55,15 @@ impl ReadableItem for Exchange {
             match tag_idx {
                 0 => self.common.parse_id(reader, Self::FORMAT).await?,
 
-                2 => self.common.parse_grade(reader).await?,
+                3 => self.common.parse_grade(reader).await?,
+                4 => self.common.parse_required_level(reader).await?,
+                5 => self.common.parse_item_level(reader).await?,
 
-                6 => self.common.parse_no_trade(reader).await?,
-                7 => self.common.parse_no_sell(reader).await?,
-                8 => self.common.parse_no_destroy(reader).await?,
+                11 => self.common.parse_no_trade(reader).await?,
+                12 => self.common.parse_no_sell(reader).await?,
+                13 => self.common.parse_no_destroy(reader).await?,
 
-                10 => self.common.parse_binding(reader, Self::FORMAT).await?,
+                15 => self.common.parse_binding(reader, Self::FORMAT).await?,
 
                 _ => {}
             }
@@ -69,14 +73,14 @@ impl ReadableItem for Exchange {
     }
 }
 
-impl Exchange {
+impl Bag {
     pub fn set_description_locale(&mut self, locales: &HashMap<SharedString, Locale>) {
         self.description_locale = locales.get(&SharedString::new(format!("{}_DESCRIPTION", self.common.id))).cloned();
     }
 }
 
 
-impl ItemTrait for Exchange {
+impl ItemTrait for Bag {
    fn common(&self) ->  &Common {
        &self.common
    }

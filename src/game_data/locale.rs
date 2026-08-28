@@ -1,8 +1,7 @@
 use std::io::SeekFrom;
 
 use crate::{
-    game_data::{AbstractItem, DataFormat, TagType},
-    language::LanguageController,
+    game_data::{AsyncBufReadExtReadString, DataFormat, ReadableItem}, game_data::{TagType}, language::LanguageController,
 };
 use anyhow::Result;
 use gpui::SharedString;
@@ -12,12 +11,7 @@ use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 
 #[derive(Default, Clone, Serialize)]
 pub struct Locale {
-    //_type: SharedString,
-    //typename: SharedString,
     pub key: SharedString,
-    //korean: SharedString,
-    //jpn: SharedString,
-    //chinese: SharedString,
     pub eng: SharedString,
     pub rus: SharedString,
 }
@@ -38,21 +32,27 @@ impl Locale {
     }
 }
 
-impl AbstractItem for Locale {
+impl ReadableItem for Locale {
+    const FORMAT: DataFormat = DataFormat::WideString;
+    type Key = SharedString;
+    
+    fn key(item: &Self) -> Self::Key {
+        item.key.clone()
+    }
+
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
         item_idx: usize,
-        definitions: &IndexMap<String, TagType>,
+        definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
-        format: DataFormat,
     ) -> Result<Self> {
         let tag_count = definitions.len();
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
-            match format {
+            match Self::FORMAT {
                 DataFormat::String => {
                     reader.seek(SeekFrom::Start(global_offset + offset)).await?;
                 }
@@ -62,22 +62,19 @@ impl AbstractItem for Locale {
             };
 
             match tag_idx {
-                //0 => self._type = Self::read_string(format, reader)?,
-                //1 => self.typename = Self::read_string(format, reader)?,
                 2 => {
                     self.key = {
-                        let key = Self::read_string(format, reader).await?.to_uppercase();
+                        let key = reader.read_string(Self::FORMAT).await?.to_uppercase();
                         SharedString::new(key.strip_suffix("_NAME").unwrap_or(&key))
                     }
                 }
-                //3 => self.korean = Self::read_string(format, reader)?,
-                //4 => self.jpn = Self::read_string(format, reader)?,
-                //5 => self.chinese = Self::read_string(format, reader)?,
-                6 => self.eng = Self::read_string(format, reader).await?,
-                7 => self.rus = Self::read_string(format, reader).await?,
+                6 => self.eng = reader.read_string(Self::FORMAT).await?,
+                7 => self.rus = reader.read_string(Self::FORMAT).await?,
                 _ => {}
             }
         }
         Ok(self)
     }
+    
+
 }

@@ -12,34 +12,22 @@ use crate::{
     }, language::LanguageController,
 };
 use anyhow::Result;
-
-use gpui::{Image, SharedString};
 use indexmap::IndexMap;
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+
+use gpui::{Image, SharedString};
 use tracing::warn;
 
 #[derive(Default)]
-pub struct SecondaryWeapon {
+pub struct Style {
     pub skill_locale: Option<Locale>,
     pub common: Common,
-pub equipment_slot: SharedString,
-    pub weapon_type: SharedString,
-pub skill_effect: Option<SharedString>,
-    pub physical_defense: f32,
-    pub magical_defense: f32,
 
-    pub random_option_count_min: u8,
-    pub random_option_count_max: u8,
-
-    pub enchant_limit: u8,
-
-    pub overrise_max: u8,
-
-    pub reverse_enchant_limit: u8,
+    pub skill_effect: Option<SharedString>,
 }
 
-impl ReadableItem for SecondaryWeapon {
+impl ReadableItem for Style {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
@@ -72,24 +60,27 @@ impl ReadableItem for SecondaryWeapon {
             match tag_idx {
                 0 => self.common.parse_id(reader, Self::FORMAT).await?,
 
+                3 => self.common.parse_required_level(reader).await?,
+
+                5 => self.common.parse_item_level(reader).await?,
                 6 => self.common.parse_usable_class(reader, Self::FORMAT).await?,
 
-                10 => self.equipment_slot = reader.read_string(Self::FORMAT).await?,
-                11 => self.weapon_type = SharedString::new(reader.read_string(Self::FORMAT).await?.to_lowercase()),
+                8 => self.common.parse_grade(reader).await?,
 
-                21 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                22 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                23 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                24 => self.common.parse_effect(reader, Self::FORMAT).await?,
+                13 => self.common.parse_effect(reader, Self::FORMAT).await?,
+                14 => self.common.parse_effect(reader, Self::FORMAT).await?,
+                15 => self.common.parse_effect(reader, Self::FORMAT).await?,
+                16 => self.common.parse_effect(reader, Self::FORMAT).await?,
 
-                39 => self.common.parse_binding(reader, Self::FORMAT).await?,
+                26 => self.common.parse_no_trade(reader).await?,
+                27 => self.common.parse_no_sell(reader).await?,
+                28 => self.common.parse_no_destroy(reader).await?,
 
-                45 => {
+                30 => self.common.parse_binding(reader, Self::FORMAT).await?,
+
+                37 => {
                     self.skill_effect = {
-                        let effect_skill = reader.read_string(Self::FORMAT)
-                            .await?
-                            .to_uppercase()
-                            .replace(".", "_DESCRIPTION_");
+                        let effect_skill = reader.read_string(Self::FORMAT).await?.to_uppercase().replace(".", "_DESCRIPTION_");
                         if effect_skill != "*" {
                             Some(SharedString::new(effect_skill))
                         } else {
@@ -98,28 +89,7 @@ impl ReadableItem for SecondaryWeapon {
                     }
                 }
 
-                3 => self.common.parse_required_level(reader).await?,
-
-                5 => self.common.parse_item_level(reader).await?,
-                9 => self.common.parse_grade(reader).await?,
-
-                15 => self.physical_defense = reader.read_f32_le().await?,
-                16 => self.magical_defense = reader.read_f32_le().await?,
-
-                26 => self.random_option_count_min = reader.read_f32_le().await? as u8,
-                27 => self.random_option_count_max = reader.read_f32_le().await? as u8,
-
-                32 => self.enchant_limit = reader.read_f32_le().await? as u8,
-
-                35 => self.common.parse_no_trade(reader).await?,
-                36 => self.common.parse_no_sell(reader).await?,
-                37 => self.common.parse_no_destroy(reader).await?,
-
-                54 => self.overrise_max = reader.read_f32_le().await? as u8,
-
-                60 => self.reverse_enchant_limit = reader.read_f32_le().await? as u8,
-
-                _ => {} // Should not happen
+                _ => {}
             }
         }
 
@@ -127,7 +97,7 @@ impl ReadableItem for SecondaryWeapon {
     }
 }
 
-impl SecondaryWeapon {
+impl Style {
     pub fn set_skill_locale(&mut self, skill_locales: &HashMap<SharedString, Locale>) {
         if let Some(skill) = self.skill_effect.as_ref() {
             self.skill_locale = skill_locales.get(skill).cloned();
@@ -140,26 +110,12 @@ impl SecondaryWeapon {
         pub fn get_localized_skill(&self) -> Option<SharedString> {
         self.skill_locale.as_ref().and_then(|f| f.locale()).or_else(|| self.skill_effect.clone())
     }
-
-    pub fn get_full_type(&self) -> SharedString {
-        SharedString::new(format!("{}_01", self.weapon_type))
-    }
-
-    pub fn get_type(&self) -> SharedString {
-        self.weapon_type.clone()
-    }
+  
 }
 
-impl ItemTrait for SecondaryWeapon {
+
+impl ItemTrait for Style {
    fn common(&self) ->  &Common {
        &self.common
    }
-
-       fn get_full_type(&self) -> Option<SharedString> {
-        Some(self.get_full_type())
-    }
-    
-    fn get_type(&self) -> Option<SharedString> {
-        Some(self.get_type())
-    }
 }

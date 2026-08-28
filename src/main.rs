@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+//#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![deny(unused_crate_dependencies)]
 mod assets;
 
@@ -8,6 +8,7 @@ mod game_data;
 pub mod game_data_view;
 mod language;
 mod settings;
+//pub mod controller;
 
 use gpui::{AppContext, Bounds, Global, ReadGlobal, Size, TitlebarOptions, WindowBounds, WindowOptions, px};
 use gpui_component::{Root, Theme, ThemeConfig};

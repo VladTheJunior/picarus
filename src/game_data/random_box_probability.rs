@@ -6,7 +6,9 @@ use std::{
     sync::Arc,
 };
 
-use crate::game_data::{Binding, Common, DataFormat, Grade, Item, ItemTrait, ReadableItem, TagType, item_set::ItemSet, locale::Locale, product::Product};
+use crate::game_data::{
+    AsyncBufReadExtReadString, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, ReadableItem, TagType, item_set::ItemSet, locale::Locale, product::Product,
+};
 use anyhow::Result;
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -15,19 +17,24 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use gpui::{Image, SharedString};
 use tracing::warn;
 
-#[derive(Default)]
-pub struct Exchange {
-    pub description_locale: Option<Locale>,
-    pub common: Common,
+#[derive(Default, Serialize, Clone)]
+pub struct RandomBoxProbability {
+    pub randomboxgroupid: SharedString,
+
+    pub attributes: IndexMap<usize, f32>,
+    pub probabilities: IndexMap<usize, f32>,
 }
 
-impl ReadableItem for Exchange {
+impl ReadableItem for RandomBoxProbability {
+
+
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
     fn key(item: &Self) -> Self::Key {
-        item.common.id.clone()
+        item.randomboxgroupid.clone()
     }
+
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
         mut self,
         reader: &mut R,
@@ -35,8 +42,8 @@ impl ReadableItem for Exchange {
         item_idx: usize,
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
+
     ) -> Result<Self> {
-        self.common.debug = Self::parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;
@@ -51,33 +58,24 @@ impl ReadableItem for Exchange {
             };
 
             match tag_idx {
-                0 => self.common.parse_id(reader, Self::FORMAT).await?,
+                0 => self.randomboxgroupid = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
 
-                2 => self.common.parse_grade(reader).await?,
-
-                6 => self.common.parse_no_trade(reader).await?,
-                7 => self.common.parse_no_sell(reader).await?,
-                8 => self.common.parse_no_destroy(reader).await?,
-
-                10 => self.common.parse_binding(reader, Self::FORMAT).await?,
-
+                1..101 => {
+                    let v = reader.read_f32_le().await?;
+                    if v != 0.0 {
+                        self.attributes.insert(tag_idx - 1, v);
+                    }
+                }
+                101..201 => {
+                    let v = reader.read_f32_le().await?;
+                    if v != 0.0 {
+                        self.probabilities.insert(tag_idx - 101, v);
+                    }
+                }
                 _ => {}
             }
         }
 
         Ok(self)
     }
-}
-
-impl Exchange {
-    pub fn set_description_locale(&mut self, locales: &HashMap<SharedString, Locale>) {
-        self.description_locale = locales.get(&SharedString::new(format!("{}_DESCRIPTION", self.common.id))).cloned();
-    }
-}
-
-
-impl ItemTrait for Exchange {
-   fn common(&self) ->  &Common {
-       &self.common
-   }
 }
