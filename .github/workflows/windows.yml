@@ -35,7 +35,7 @@ jobs:
       - name: Prepare release
         run: |
           toml set Cargo.toml package.version ${{ github.event.inputs.tag }} > temp.toml
-          move /y temp.toml Cargo.toml
+          Move-Item -Path temp.toml -Destination Cargo.toml -Force
       - name: Build
         run: cargo build --release
       - name: Create archives
