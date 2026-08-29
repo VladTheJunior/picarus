@@ -1,26 +1,48 @@
 name: Windows Release
 
 on:
-  push:
-    branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag'
+        required: true
 
 jobs:
   build:
     runs-on: windows-latest 
+    permissions:
+      contents: write
     steps:
       - name: Clone repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: cargo-bins/cargo-binstall@main
       - run: cargo binstall toml-cli
-      - name: Run semantic-release
-        uses: cycjimmy/semantic-release-action@v6
+      - name: Import GPG Key
+        uses: crazy-max/ghaction-import-gpg@v6
         with:
-          extra_plugins: |
-            @semantic-release/changelog
-            @semantic-release/exec
-            @semantic-release/git
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH_NAME: ${{ github.ref_name }}
-          NAME: ${{ github.event.repository.name }}
-          BUILD_NUMBER: ${{ github.run_number }}
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+          git_tag_gpgsign: true
+
+      - name: Create Signed Git Tag
+        run: |
+          git tag -s v${{ github.event.inputs.tag }} -m v${{ github.event.inputs.tag }}
+          git push origin v${{ github.event.inputs.tag }}
+      - name: Prepare release
+        run: |
+          toml set Cargo.toml package.version ${{ github.event.inputs.tag }} > temp.toml
+          mv temp.toml Cargo.toml
+      - name: Build
+        run: cargo build --release
+      - name: Create archives
+        run: 7z a -tzip dist/picarus.zip ./target/release/picarus.exe
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ github.event.inputs.tag }}
+          files: dist/picarus.zip
+          generate_release_notes: true

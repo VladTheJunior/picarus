@@ -1,15 +1,16 @@
 use gpui::{
-    Action, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight, Image, ImageSource, InteractiveElement,
+    Action, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight, ImageSource, InteractiveElement,
     IntoElement, KeyBinding, ListSizingBehavior, ObjectFit, ParentElement, PathPromptOptions, ReadGlobal, Render, ScrollHandle, ScrollStrategy,
     SharedString, StatefulInteractiveElement, Styled, StyledImage, UniformListScrollHandle, UpdateGlobal, Window, actions, div, img,
     prelude::FluentBuilder, px, rgb, uniform_list,
 };
 use gpui_component::{
-    ActiveTheme, Icon, IconName, Root, Sizable, StyledExt, TitleBar, WindowExt,
+    ActiveTheme, Disableable, Icon, IconName, IndexPath, Root, Sizable, StyledExt, TitleBar, WindowExt,
     button::{Button, ButtonVariants},
     combobox::Combobox,
     h_flex,
     input::{Editor, EditorState, Input, InputState},
+    label::Label,
     menu::{DropdownMenu, PopupMenuItem},
     notification::{Notification, NotificationType},
     scroll::ScrollableElement,
@@ -26,32 +27,38 @@ use gpui_component::{
 use indexmap::{IndexMap, IndexSet};
 use regex::Regex;
 use serde::Deserialize;
+use strum::IntoEnumIterator;
 
 use std::{
     cell::RefCell,
-    collections::{BTreeMap, BTreeSet, HashMap},
-    f32::consts::E,
+    collections::{BTreeSet, HashMap},
     ops::Range,
     path::Path,
     rc::{Rc, Weak},
-    sync::{Arc, LazyLock},
+    sync::LazyLock,
     time::Duration,
 };
 
-use tracing::{debug, error, warn};
+use tracing::{error, warn};
 
 use crate::{
     assets::AppIcon,
     extensions::EnumNameExt,
     game_data::{
-        Binding, Common, GameClass, GameData, Grade, Item, ItemEffect, ItemMinMaxEffect, ItemMinMaxNoStepEffect, ItemMinMaxStepEffect, ItemTrait,
-        Quality,
+        GameData,
+        common::Common,
+        effects::ItemMinMaxEffect,
+        effects::ItemMinMaxNoStepEffect,
+        effects::ItemMinMaxStepEffect,
         filters::{GameDataFilters, ItemEffectFilter},
-        item_set::ItemSet,
-        package::PackageItem,
+        grade::Grade,
+        item::Item,
+        item::ItemTrait,
+        item::ItemType,
+        items::{package::PackageItem, recipe::RecipeType},
         product::Product,
+        quality::Quality,
         random_box_group::RandomBoxGroup,
-        recipe::RecipeType,
     },
     language::{LanguageController, t, t_v},
     settings::Settings,
@@ -1456,7 +1463,7 @@ impl GameDataView {
         if let Some(item) = self.game_data.items.get(item) {
             self.selected_item = Some(item.get_id());
             self.debug_preview.update(cx, |state, cx| {
-                state.set_value(&item.common().get_debug().unwrap_or_default(), window, cx);
+                state.set_value(item.get_debug().unwrap_or_default(), window, cx);
             });
 
             cx.notify();
@@ -1531,20 +1538,26 @@ impl Render for GameDataView {
             .child(
                 TitleBar::new().child(
                     h_flex()
-                        .gap_1()
+                        .gap_2()
                         .child("PICARUS")
                         .when_some(option_env!("VERGEN_GIT_DESCRIBE"), |this, git_describe| {
-                            this.child("-").child(
+                            this.child(
                                 Button::new("button-github")
                                     .occlude()
                                     .icon(IconName::Github)
                                     .text_color(cx.theme().foreground)
                                     .link()
-                                    .small()
+                                    .xsmall()
                                     .label(git_describe)
                                     .on_click(|_, _, cx| cx.open_url("https://github.com/VladTheJunior/picarus")),
                             )
-                        }),
+                        })
+                        .when(!self.game_data.elapsed.is_zero(), |this|
+                        this.child(
+                            Label::new(t_v("game-data-elapsed", vec![("elapsed", format!("{:?}", self.game_data.elapsed))]))
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground),
+                        )),
                 ),
             )
             .when_else(
@@ -1906,45 +1919,26 @@ impl Render for GameDataView {
                                                         random_box_group,
                                                         package_contents,
                                                     ) = match selected_item.as_ref() {
-                                                        crate::game_data::Item::Armor(armor) => {
+                                                        crate::game_data::item::Item::Armor(armor) => {
                                                             let temper_limit = armor.enhancement_limit;
                                                             let reverse_limit = armor.reverse_enhancement_limit;
                                                             let transcendence_limit = armor.overrise_max;
-                                                            let random_effects = self
-                                                                .game_data
-                                                                .effects_by_grade
-                                                                .get(&grade)
-                                                                .and_then(|effects| effects.get(&armor.common.item_level))
-                                                                .and_then(|e| {
-                                                                    GameClass::check_item_option(
-                                                                        e,
-                                                                        &armor.common.usable_class,
-                                                                        &format!("{}_{}", armor.armor_type, armor.equip_slot),
-                                                                    )
-                                                                });
+                                                            let random_effects = self.game_data.get_random_effects(
+                                                                grade,
+                                                                armor.common.item_level,
+                                                                &armor.common.usable_class,
+                                                                &format!("{}_{}", armor.armor_type, armor.equip_slot),
+                                                            );
 
-                                                            let quality_effect = self
-                                                                .game_data
-                                                                .quality_by_types
-                                                                .get(&armor.get_type())
-                                                                .and_then(|quality| quality.get(&armor.common.item_level))
-                                                                .and_then(|f| match preview.quality {
-                                                                    Quality::Simple => None,
-                                                                    Quality::Good => f
-                                                                        .intermediate_fixed_effect
-                                                                        .as_ref()
-                                                                        .and_then(|f| f.parsed.as_ref())
-                                                                        .map(|f| f.1),
-                                                                    Quality::Perfect => {
-                                                                        f.advanced_fixed_effect.as_ref().and_then(|f| f.parsed.as_ref()).map(|f| f.1)
-                                                                    }
-                                                                });
+                                                            let quality_effect = self.game_data.get_quality_effect(
+                                                                armor.get_type(),
+                                                                armor.common.item_level,
+                                                                preview.quality,
+                                                            );
 
                                                             let (magic_tempering_effect, physical_tempering_effect) = self
                                                                 .game_data
-                                                                .tempering_by_types
-                                                                .get(&armor.get_full_type())
-                                                                .and_then(|tempering| tempering.get(&armor.common.item_level))
+                                                                .get_tempering_effect(armor.get_full_type(), armor.common.item_level)
                                                                 .and_then(|f| {
                                                                     preview.total_tempering.checked_sub(1).and_then(|index| {
                                                                         f.defense_ratios.get(index as usize).map(|f| {
@@ -1989,46 +1983,29 @@ impl Render for GameDataView {
                                                             )
                                                         }
 
-                                                        crate::game_data::Item::SecondaryWeapon(secondary_weapon) => {
+                                                        crate::game_data::item::Item::SecondaryWeapon(secondary_weapon) => {
                                                             let transcendence_limit = secondary_weapon.overrise_max;
                                                             let temper_limit = secondary_weapon.enchant_limit;
                                                             let reverse_limit = secondary_weapon.reverse_enchant_limit;
 
-                                                            let random_effects = self
-                                                                .game_data
-                                                                .effects_by_grade
-                                                                .get(&grade)
-                                                                .and_then(|effects| effects.get(&secondary_weapon.common.item_level))
-                                                                .and_then(|e| {
-                                                                    GameClass::check_item_option(
-                                                                        e,
-                                                                        &secondary_weapon.common.usable_class,
-                                                                        &secondary_weapon.weapon_type,
-                                                                    )
-                                                                });
-
-                                                            let quality_effect = self
-                                                                .game_data
-                                                                .quality_by_types
-                                                                .get(&secondary_weapon.get_type())
-                                                                .and_then(|quality| quality.get(&secondary_weapon.common.item_level))
-                                                                .and_then(|f| match preview.quality {
-                                                                    Quality::Simple => None,
-                                                                    Quality::Good => f
-                                                                        .intermediate_fixed_effect
-                                                                        .as_ref()
-                                                                        .and_then(|f| f.parsed.as_ref())
-                                                                        .map(|f| f.1),
-                                                                    Quality::Perfect => {
-                                                                        f.advanced_fixed_effect.as_ref().and_then(|f| f.parsed.as_ref()).map(|f| f.1)
-                                                                    }
-                                                                });
+                                                            let random_effects = self.game_data.get_random_effects(
+                                                                grade,
+                                                                secondary_weapon.common.item_level,
+                                                                &secondary_weapon.common.usable_class,
+                                                                &secondary_weapon.weapon_type,
+                                                            );
+                                                            let quality_effect = self.game_data.get_quality_effect(
+                                                                secondary_weapon.get_type(),
+                                                                secondary_weapon.common.item_level,
+                                                                preview.quality,
+                                                            );
 
                                                             let (magic_tempering_effect, physical_tempering_effect) = self
                                                                 .game_data
-                                                                .tempering_by_types
-                                                                .get(&secondary_weapon.get_full_type())
-                                                                .and_then(|tempering| tempering.get(&secondary_weapon.common.item_level))
+                                                                .get_tempering_effect(
+                                                                    secondary_weapon.get_full_type(),
+                                                                    secondary_weapon.common.item_level,
+                                                                )
                                                                 .and_then(|f| {
                                                                     preview.total_tempering.checked_sub(1).and_then(|index| {
                                                                         f.defense_ratios.get(index as usize).map(|f| {
@@ -2073,41 +2050,25 @@ impl Render for GameDataView {
                                                             )
                                                         }
 
-                                                        crate::game_data::Item::Weapon(weapon) => {
+                                                        crate::game_data::item::Item::Weapon(weapon) => {
                                                             let transcendence_limit = weapon.overrise_max;
                                                             let temper_limit = weapon.enhancement_limit;
                                                             let reverse_limit = weapon.reverse_enhancement_limit;
-                                                            let random_effects = self
-                                                                .game_data
-                                                                .effects_by_grade
-                                                                .get(&grade)
-                                                                .and_then(|effects| effects.get(&weapon.common.item_level))
-                                                                .and_then(|e| {
-                                                                    GameClass::check_item_option(e, &weapon.common.usable_class, &weapon.weapon_type)
-                                                                });
-
-                                                            let quality_effect = self
-                                                                .game_data
-                                                                .quality_by_types
-                                                                .get(&weapon.get_type())
-                                                                .and_then(|quality| quality.get(&weapon.common.item_level))
-                                                                .and_then(|f| match preview.quality {
-                                                                    Quality::Simple => None,
-                                                                    Quality::Good => f
-                                                                        .intermediate_fixed_effect
-                                                                        .as_ref()
-                                                                        .and_then(|f| f.parsed.as_ref())
-                                                                        .map(|f| f.1),
-                                                                    Quality::Perfect => {
-                                                                        f.advanced_fixed_effect.as_ref().and_then(|f| f.parsed.as_ref()).map(|f| f.1)
-                                                                    }
-                                                                });
+                                                            let random_effects = self.game_data.get_random_effects(
+                                                                grade,
+                                                                weapon.common.item_level,
+                                                                &weapon.common.usable_class,
+                                                                &weapon.weapon_type,
+                                                            );
+                                                            let quality_effect = self.game_data.get_quality_effect(
+                                                                weapon.get_type(),
+                                                                weapon.common.item_level,
+                                                                preview.quality,
+                                                            );
 
                                                             let tempering_effect = self
                                                                 .game_data
-                                                                .tempering_by_types
-                                                                .get(&weapon.get_full_type())
-                                                                .and_then(|tempering| tempering.get(&weapon.common.item_level))
+                                                                .get_tempering_effect(weapon.get_full_type(), weapon.common.item_level)
                                                                 .and_then(|f| {
                                                                     if weapon.attack_range_type == "me" {
                                                                         preview.total_tempering.checked_sub(1).and_then(|index| {
@@ -2192,7 +2153,7 @@ impl Render for GameDataView {
                                                             )
                                                         }
 
-                                                        crate::game_data::Item::Material(material) => (
+                                                        crate::game_data::item::Item::Material(material) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2220,44 +2181,40 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                         ),
-                                                        crate::game_data::Item::Recipe(recipe) => {
-                                                            debug!(?recipe.product);
-
-                                                            (
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                recipe.recipe_type.as_ref().map(|f| BTreeSet::from([*f])).clone(),
-                                                                recipe
-                                                                    .product
-                                                                    .as_ref()
-                                                                    .and_then(|f| f.upgrade())
-                                                                    .map(|p| p.borrow().technology_grade)
-                                                                    .or_else(|| Some(recipe.required_stage)),
-                                                                recipe.product.clone(),
-                                                                0,
-                                                                0,
-                                                                0,
-                                                                0,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                            )
-                                                        }
-                                                        crate::game_data::Item::Consume(consume) => (
+                                                        crate::game_data::item::Item::Recipe(recipe) => (
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            recipe.recipe_type.as_ref().map(|f| BTreeSet::from([*f])).clone(),
+                                                            recipe
+                                                                .product
+                                                                .as_ref()
+                                                                .and_then(|f| f.upgrade())
+                                                                .map(|p| p.borrow().technology_grade)
+                                                                .or_else(|| Some(recipe.required_stage)),
+                                                            recipe.product.clone(),
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            None,
+                                                        ),
+                                                        crate::game_data::item::Item::Consume(consume) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2285,11 +2242,11 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                         ),
-                                                        crate::game_data::Item::SkillBook(skill_book) => (
+                                                        crate::game_data::item::Item::SkillBook(_) => (
                                                             None, None, None, None, None, None, None, None, None, None, None, None, None, None, None,
                                                             None, None, 0, 0, 0, 0, None, None, None, None, None,
                                                         ),
-                                                        crate::game_data::Item::SealedFellow(sealed_fellow) => (
+                                                        crate::game_data::item::Item::SealedFellow(sealed_fellow) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2322,7 +2279,7 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                         ),
-                                                        crate::game_data::Item::Boost(boost) => (
+                                                        crate::game_data::item::Item::Boost(boost) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2350,7 +2307,7 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                         ),
-                                                        crate::game_data::Item::Bag(bag) => (
+                                                        crate::game_data::item::Item::Bag(bag) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2378,7 +2335,7 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                         ),
-                                                        crate::game_data::Item::Style(style) => (
+                                                        crate::game_data::item::Item::Style(style) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2406,7 +2363,7 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                         ),
-                                                        crate::game_data::Item::RandomBox(random_box) => (
+                                                        crate::game_data::item::Item::RandomBox(random_box) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2434,7 +2391,7 @@ impl Render for GameDataView {
                                                             random_box.content.clone(),
                                                             None,
                                                         ),
-                                                        crate::game_data::Item::Package(package) => (
+                                                        crate::game_data::item::Item::Package(package) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2462,7 +2419,7 @@ impl Render for GameDataView {
                                                             None,
                                                             Some(package.package_items.clone()),
                                                         ),
-                                                        crate::game_data::Item::Exchange(exchange) => (
+                                                        crate::game_data::item::Item::Exchange(exchange) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2490,11 +2447,11 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                         ),
-                                                        crate::game_data::Item::Gem(gem) => (
+                                                        crate::game_data::item::Item::Gem(_) => (
                                                             None, None, None, None, None, None, None, None, None, None, None, None, None, None, None,
                                                             None, None, 0, 0, 0, 0, None, None, None, None, None,
                                                         ),
-                                                        crate::game_data::Item::FellowEquip(fellow_equip) => (
+                                                        crate::game_data::item::Item::FellowEquip(fellow_equip) => (
                                                             None,
                                                             None,
                                                             None,
@@ -2522,45 +2479,26 @@ impl Render for GameDataView {
                                                             None,
                                                             None,
                                                         ),
-                                                        crate::game_data::Item::Accessory(accessory) => {
+                                                        crate::game_data::item::Item::Accessory(accessory) => {
                                                             let temper_limit = accessory.enhancement_limit;
                                                             let reverse_limit = accessory.reverse_enhancement_limit;
                                                             let transcendence_limit = accessory.overrise_max;
-                                                            let random_effects = self
-                                                                .game_data
-                                                                .effects_by_grade
-                                                                .get(&grade)
-                                                                .and_then(|effects| effects.get(&accessory.common.item_level))
-                                                                .and_then(|e| {
-                                                                    GameClass::check_item_option(
-                                                                        e,
-                                                                        &accessory.common.usable_class,
-                                                                        &accessory.accessory_type,
-                                                                    )
-                                                                });
+                                                            let random_effects = self.game_data.get_random_effects(
+                                                                grade,
+                                                                accessory.common.item_level,
+                                                                &accessory.common.usable_class,
+                                                                &accessory.accessory_type,
+                                                            );
 
-                                                            let quality_effect = self
-                                                                .game_data
-                                                                .quality_by_types
-                                                                .get(&accessory.get_type())
-                                                                .and_then(|quality| quality.get(&accessory.common.item_level))
-                                                                .and_then(|f| match preview.quality {
-                                                                    Quality::Simple => None,
-                                                                    Quality::Good => f
-                                                                        .intermediate_fixed_effect
-                                                                        .as_ref()
-                                                                        .and_then(|f| f.parsed.as_ref())
-                                                                        .map(|f| f.1),
-                                                                    Quality::Perfect => {
-                                                                        f.advanced_fixed_effect.as_ref().and_then(|f| f.parsed.as_ref()).map(|f| f.1)
-                                                                    }
-                                                                });
+                                                            let quality_effect = self.game_data.get_quality_effect(
+                                                                accessory.get_type(),
+                                                                accessory.common.item_level,
+                                                                preview.quality,
+                                                            );
 
                                                             let tempering_effect = self
                                                                 .game_data
-                                                                .tempering_by_types
-                                                                .get(&accessory.get_full_type())
-                                                                .and_then(|tempering| tempering.get(&accessory.common.item_level))
+                                                                .get_tempering_effect(accessory.get_full_type(), accessory.common.item_level)
                                                                 .and_then(|f| {
                                                                     preview.total_tempering.checked_sub(1).and_then(|index| {
                                                                         f.defense_ratios.get(index as usize).map(|f| {
@@ -2775,30 +2713,121 @@ impl Render for GameDataView {
                 StatusBar::new()
                     .left(
                         Input::new(&self.filters.search_state)
+                            .appearance(false)
                             .flex_shrink_0()
-                            .w(px(290.))
+                            .w(px(280.))
                             .disabled(self.is_reading)
                             .prefix(Icon::new(IconName::Search).small())
                             .small(),
                     )
-                    .left(
+                    .left(Separator::vertical())
+                    .left({
+                        let entity = self.filters.item_type_state.clone();
+                        let status = entity.read_with(cx, |this, _| {
+                            let selected_len = this.selected_values().len();
+                            if selected_len == 0 {
+                                return Some(false);
+                            }
+                            if selected_len == ItemType::iter().len() {
+                                return Some(true);
+                            }
+                            None
+                        });
                         Combobox::new(&self.filters.item_type_state)
+                            .appearance(false)
                             .w(px(200.))
                             .flex_shrink_0()
                             .disabled(self.is_reading)
                             .small()
-                            .render_trigger(move |_, _, _| div().child(t("item-types"))),
-                    )
-                    .left(
+                            .render_trigger(move |_, _, _| div().child(t("item-types")))
+                            .footer(move |_, _| {
+                                let entity = entity.clone();
+                                Button::new("check-selection-grade")
+                                    .ghost()
+                                    .map(move |this| match status {
+                                        Some(true) => this.icon(Icon::new(AppIcon::SquareCheckBig)).on_click(move |_, _, cx| {
+                                            entity.update(cx, |this, cx| {
+                                                this.clear_selection(cx);
+                                                cx.notify();
+                                            });
+                                        }),
+                                        Some(false) => this.icon(Icon::new(AppIcon::Square)).on_click(move |_, window, cx| {
+                                            entity.update(cx, |this, cx| {
+                                                this.set_selected_indices(ItemType::iter().enumerate().map(|(i, _)| IndexPath::new(i)), window, cx);
+
+                                                cx.notify();
+                                            });
+                                        }),
+                                        None => this.icon(Icon::new(AppIcon::SquareMinus)).on_click(move |_, _, cx| {
+                                            entity.update(cx, |this, cx| {
+                                                this.clear_selection(cx);
+                                                cx.notify();
+                                            });
+                                        }),
+                                    })
+                                    .label(t("checkbox-check-all"))
+                                    .small()
+                                    .w_full()
+                                    .justify_start()
+                                    .into_any_element()
+                            })
+                    })
+                    .left(Separator::vertical())
+                    .left({
+                        let entity = self.filters.grade_state.clone();
+                        let status = entity.read_with(cx, |this, _| {
+                            let selected_len = this.selected_values().len();
+                            if selected_len == 0 {
+                                return Some(false);
+                            }
+                            if selected_len == Grade::iter().len() {
+                                return Some(true);
+                            }
+                            None
+                        });
                         Combobox::new(&self.filters.grade_state)
+                            .appearance(false)
                             .w(px(150.))
                             .flex_shrink_0()
                             .disabled(self.is_reading)
                             .small()
-                            .render_trigger(move |_, _, _| div().child(t("item-grades"))),
-                    )
+                            .render_trigger(move |_, _, _| div().child(t("item-grades")))
+                            .footer(move |_, _| {
+                                let entity = entity.clone();
+                                Button::new("check-selection-grade")
+                                    .ghost()
+                                    .map(move |this| match status {
+                                        Some(true) => this.icon(Icon::new(AppIcon::SquareCheckBig)).on_click(move |_, _, cx| {
+                                            entity.update(cx, |this, cx| {
+                                                this.clear_selection(cx);
+                                                cx.notify();
+                                            });
+                                        }),
+                                        Some(false) => this.icon(Icon::new(AppIcon::Square)).on_click(move |_, window, cx| {
+                                            entity.update(cx, |this, cx| {
+                                                this.set_selected_indices(Grade::iter().enumerate().map(|(i, _)| IndexPath::new(i)), window, cx);
+
+                                                cx.notify();
+                                            });
+                                        }),
+                                        None => this.icon(Icon::new(AppIcon::SquareMinus)).on_click(move |_, _, cx| {
+                                            entity.update(cx, |this, cx| {
+                                                this.clear_selection(cx);
+                                                cx.notify();
+                                            });
+                                        }),
+                                    })
+                                    .label(t("checkbox-check-all"))
+                                    .small()
+                                    .w_full()
+                                    .justify_start()
+                                    .into_any_element()
+                            })
+                    })
+                    .left(Separator::vertical())
                     .left(
                         Combobox::new(&self.filters.effects_state)
+                            .appearance(false)
                             .w(px(300.))
                             .flex_shrink_0()
                             .disabled(self.is_reading)
@@ -2807,12 +2836,13 @@ impl Render for GameDataView {
                             .placeholder(t("item-effects")),
                     )
                     .right(
-                        Button::new("export-button")
+                        Button::new("button-export")
                             .ghost()
                             .xsmall()
                             .cursor_pointer()
-                            .label(t("export-button"))
-                            .on_click(cx.listener(|this, state, window, cx| {
+                            .disabled(self.is_reading)
+                            .label(t("button-export"))
+                            .on_click(cx.listener(|this, _, window, cx| {
                                 this.export_xlsx(window, cx);
                             })),
                     )

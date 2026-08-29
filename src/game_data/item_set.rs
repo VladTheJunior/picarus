@@ -1,18 +1,16 @@
 use std::{collections::HashMap, io::SeekFrom};
 
 use crate::{
-    game_data::{AsyncBufReadExtReadString, ReadableItem},
-    game_data::{DataFormat, ItemEffect, TagType, locale::Locale},
-    language::LanguageController,
+    game_data::{AsyncBufReadExtReadString, item::ReadableItem},
+    game_data::{DataFormat, TagType, effects::ItemEffect, locale::Locale},
 };
 use anyhow::Result;
 use gpui::SharedString;
 use indexmap::IndexMap;
-use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use tracing::warn;
 
-#[derive(Default, Serialize, Clone)]
+#[derive(Default, Clone)]
 pub struct ItemSetEffects {
     pub locale: Option<Locale>,
     pub seteffect_count: u8,
@@ -20,13 +18,13 @@ pub struct ItemSetEffects {
     pub seteffect_skill: Option<SharedString>,
 }
 
-impl ItemSetEffects{
-        pub fn get_localized_name(&self)->Option<SharedString>{
-        self.locale.as_ref().and_then(|f| f.locale()).or_else( || self.seteffect_skill.clone())
+impl ItemSetEffects {
+    pub fn get_localized_name(&self) -> Option<SharedString> {
+        self.locale.as_ref().and_then(|f| f.locale()).or_else(|| self.seteffect_skill.clone())
     }
 }
 
-#[derive(Default, Serialize, Clone)]
+#[derive(Default, Clone)]
 pub struct ItemSet {
     pub locale: Option<Locale>,
     pub setid: SharedString,
@@ -51,7 +49,7 @@ impl ItemSet {
         }
     }
 
-    pub fn get_localized_name(&self)->SharedString{
+    pub fn get_localized_name(&self) -> SharedString {
         self.locale.as_ref().and_then(|f| f.locale()).unwrap_or_else(|| self.setid.clone())
     }
 }
@@ -60,9 +58,19 @@ impl ReadableItem for ItemSet {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
-    fn key(item: &Self) -> Self::Key {
-        item.setid.clone()
+    fn key(&self) -> Self::Key {
+        self.setid.clone()
     }
+
+    type CollectionItem = Self;
+    fn new_collection_item(item: Self) -> Self::CollectionItem {
+        item
+    }
+
+    fn debug_mut(&mut self) -> &mut Vec<u8> {
+        unimplemented!()
+    }
+
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
         mut self,
         reader: &mut R,

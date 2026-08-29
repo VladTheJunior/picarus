@@ -1,31 +1,22 @@
-use std::{
-    cell::RefCell,
-    collections::{BTreeSet, HashMap},
-    io::{Read, SeekFrom},
-    rc::Rc,
-    sync::Arc,
-};
+use std::{collections::HashMap, io::SeekFrom};
 
-use crate::{
-    game_data::{
-        AsyncBufReadExtReadString, Binding, Common, DataFormat, GameClass, Grade, Item, ItemEffect, ItemTrait, ReadableItem, TagType, item_set::ItemSet, locale::Locale, product::Product,
-    }, language::LanguageController,
-};
+use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, common::Common, item::ItemTrait, item::ReadableItem, locale::Locale};
 use anyhow::Result;
 
-use gpui::{Image, SharedString};
+use gpui::SharedString;
 use indexmap::IndexMap;
-use serde::Serialize;
+
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use tracing::warn;
 
 #[derive(Default)]
 pub struct SecondaryWeapon {
+    pub debug: Vec<u8>,
     pub skill_locale: Option<Locale>,
     pub common: Common,
-pub equipment_slot: SharedString,
+    pub equipment_slot: SharedString,
     pub weapon_type: SharedString,
-pub skill_effect: Option<SharedString>,
+    pub skill_effect: Option<SharedString>,
     pub physical_defense: f32,
     pub magical_defense: f32,
 
@@ -43,8 +34,17 @@ impl ReadableItem for SecondaryWeapon {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
-    fn key(item: &Self) -> Self::Key {
-        item.common.id.clone()
+    fn key(&self) -> Self::Key {
+        self.common.id.clone()
+    }
+
+    type CollectionItem = Self;
+    fn new_collection_item(item: Self) -> Self::CollectionItem {
+        item
+    }
+
+    fn debug_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.debug
     }
 
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
@@ -55,7 +55,7 @@ impl ReadableItem for SecondaryWeapon {
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
     ) -> Result<Self> {
-        self.common.debug = Self::parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
+        self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;
@@ -86,10 +86,7 @@ impl ReadableItem for SecondaryWeapon {
 
                 45 => {
                     self.skill_effect = {
-                        let effect_skill = reader.read_string(Self::FORMAT)
-                            .await?
-                            .to_uppercase()
-                            .replace(".", "_DESCRIPTION_");
+                        let effect_skill = reader.read_string(Self::FORMAT).await?.to_uppercase().replace(".", "_DESCRIPTION_");
                         if effect_skill != "*" {
                             Some(SharedString::new(effect_skill))
                         } else {
@@ -137,7 +134,7 @@ impl SecondaryWeapon {
         }
     }
 
-        pub fn get_localized_skill(&self) -> Option<SharedString> {
+    pub fn get_localized_skill(&self) -> Option<SharedString> {
         self.skill_locale.as_ref().and_then(|f| f.locale()).or_else(|| self.skill_effect.clone())
     }
 
@@ -151,14 +148,18 @@ impl SecondaryWeapon {
 }
 
 impl ItemTrait for SecondaryWeapon {
-   fn common(&self) ->  &Common {
-       &self.common
-   }
+    fn common(&self) -> &Common {
+        &self.common
+    }
 
-       fn get_full_type(&self) -> Option<SharedString> {
+    fn debug(&self) -> &[u8] {
+        &self.debug
+    }
+
+    fn get_full_type(&self) -> Option<SharedString> {
         Some(self.get_full_type())
     }
-    
+
     fn get_type(&self) -> Option<SharedString> {
         Some(self.get_type())
     }

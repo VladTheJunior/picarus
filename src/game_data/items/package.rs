@@ -1,16 +1,12 @@
-use std::{
-    cell::RefCell, collections::{BTreeMap, BTreeSet, HashMap}, io::{Read, SeekFrom}, rc::{Rc, Weak}, sync::Arc,
-};
+use std::{io::SeekFrom, rc::Rc};
 
-use crate::game_data::{
-    AsyncBufReadExtReadString, Binding, Common, DataFormat, GameClass, Grade, Item, ItemEffect, ItemNode, ItemTrait, ReadableItem, TagType, item_set::ItemSet, locale::Locale, product::Product, random_box_group::RandomBoxGroup,
-};
+use crate::game_data::{AsyncBufReadExtReadString, DataFormat, Item, TagType, common::Common, item::ItemNode, item::ItemTrait, item::ReadableItem};
 use anyhow::Result;
 use indexmap::IndexMap;
-use serde::Serialize;
+
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use gpui::{Image, SharedString};
+use gpui::SharedString;
 use tracing::warn;
 
 #[derive(Default, Clone)]
@@ -21,6 +17,7 @@ pub struct PackageItem {
 
 #[derive(Default)]
 pub struct Package {
+    pub debug: Vec<u8>,
     pub common: Common,
 
     pub package_items: IndexMap<usize, PackageItem>,
@@ -30,8 +27,17 @@ impl ReadableItem for Package {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
-    fn key(item: &Self) -> Self::Key {
-        item.common.id.clone()
+    fn key(&self) -> Self::Key {
+        self.common.id.clone()
+    }
+
+    type CollectionItem = Self;
+    fn new_collection_item(item: Self) -> Self::CollectionItem {
+        item
+    }
+
+    fn debug_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.debug
     }
 
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
@@ -42,7 +48,7 @@ impl ReadableItem for Package {
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
     ) -> Result<Self> {
-        self.common.debug = Self::parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
+        self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;
@@ -108,7 +114,12 @@ impl ReadableItem for Package {
 }
 
 impl Package {
-    async fn parse_package_id<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(&mut self, index: usize, reader: &mut R, format: DataFormat)->Result<()> {
+    async fn parse_package_id<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+        &mut self,
+        index: usize,
+        reader: &mut R,
+        format: DataFormat,
+    ) -> Result<()> {
         let id = SharedString::new(reader.read_string(format).await?.to_uppercase());
         if id != "*" {
             self.package_items
@@ -122,7 +133,7 @@ impl Package {
         Ok(())
     }
 
-    async fn parse_package_count<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(&mut self, index: usize, reader: &mut R)->Result<()> {
+    async fn parse_package_count<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(&mut self, index: usize, reader: &mut R) -> Result<()> {
         let count = reader.read_f32_le().await? as u16;
 
         self.package_items.entry(index).and_modify(|f| f.count = count);
@@ -139,9 +150,12 @@ impl Package {
     }
 }
 
-
 impl ItemTrait for Package {
-   fn common(&self) ->  &Common {
-       &self.common
-   }
+    fn common(&self) -> &Common {
+        &self.common
+    }
+
+    fn debug(&self) -> &[u8] {
+        &self.debug
+    }
 }

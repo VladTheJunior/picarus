@@ -1,21 +1,18 @@
-use std::{
-    cell::RefCell, collections::{BTreeMap, BTreeSet, HashMap}, io::{Read, SeekFrom}, rc::Rc, sync::Arc,
-};
+use std::{cell::RefCell, collections::HashMap, io::SeekFrom, rc::Rc};
 
 use crate::game_data::{
-    AsyncBufReadExtReadString, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, ItemNode, ReadableItem, TagType, item_set::ItemSet, locale::Locale, product::Product, random_box_probability::RandomBoxProbability,
+    AsyncBufReadExtReadString, DataFormat, Item, TagType, item::ItemNode, item::ReadableItem, random_box_probability::RandomBoxProbability,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
-use serde::Serialize;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use gpui::{Image, SharedString};
+use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
+
+use gpui::SharedString;
 use tracing::warn;
 
 #[derive(Default, Clone)]
 pub struct RandomBoxGroup {
-
     pub node: ItemNode,
 
     pub items: IndexMap<usize, ItemNode>,
@@ -24,12 +21,20 @@ pub struct RandomBoxGroup {
 }
 
 impl ReadableItem for RandomBoxGroup {
-
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
-    fn key(item: &Self) -> Self::Key {
-        item.node.id.clone()
+    fn key(&self) -> Self::Key {
+        self.node.id.clone()
+    }
+
+    type CollectionItem = Rc<RefCell<Self>>;
+    fn new_collection_item(item: Self) -> Self::CollectionItem {
+        Rc::new(RefCell::new(item))
+    }
+
+    fn debug_mut(&mut self) -> &mut Vec<u8> {
+        unimplemented!()
     }
 
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
@@ -55,7 +60,7 @@ impl ReadableItem for RandomBoxGroup {
 
             match tag_idx {
                 0 => self.node.id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
-              
+
                 10..110 => {
                     let id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase());
                     if id != "*" {
@@ -68,8 +73,6 @@ impl ReadableItem for RandomBoxGroup {
 
         Ok(self)
     }
-    
-
 }
 
 impl RandomBoxGroup {
@@ -85,11 +88,10 @@ impl RandomBoxGroup {
             }
         }
 
-        if let Some(p) = probabilities.get(&self.node.id){
+        if let Some(p) = probabilities.get(&self.node.id) {
             self.attributes = p.attributes.clone();
             self.probabilities = p.probabilities.clone();
-        }
-        else{
+        } else {
             warn!(id = ?self.node.id, "Failed to detect random box probabilities");
         }
     }

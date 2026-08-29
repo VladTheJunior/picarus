@@ -1,25 +1,22 @@
-use std::{
-    cell::RefCell,
-    collections::{BTreeSet, HashMap},
-    io::{Read, SeekFrom},
-    rc::Rc,
-    sync::Arc,
-};
+use std::io::SeekFrom;
 
 use crate::game_data::{
-    AsyncBufReadExtReadString, Binding, Common, DataFormat, Grade, Item, ItemMinMaxNoStepEffect, ItemMinMaxStepEffect, ItemTrait, ReadableItem,
-    TagType, item_set::ItemSet, locale::Locale, product::Product,
+    AsyncBufReadExtReadString, DataFormat, TagType,
+    common::Common,
+    effects::{ItemMinMaxNoStepEffect, ItemMinMaxStepEffect},
+    item::ItemTrait,
+    item::ReadableItem,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
-use serde::Serialize;
+
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use gpui::{Image, SharedString};
-use tracing::warn;
+use gpui::SharedString;
 
 #[derive(Default)]
 pub struct SealedFellow {
+    pub debug: Vec<u8>,
     pub common: Common,
 
     pub effects: Vec<ItemMinMaxStepEffect>,
@@ -34,8 +31,17 @@ impl ReadableItem for SealedFellow {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
-    fn key(item: &Self) -> Self::Key {
-        item.common.id.clone()
+    fn key(&self) -> Self::Key {
+        self.common.id.clone()
+    }
+
+    type CollectionItem = Self;
+    fn new_collection_item(item: Self) -> Self::CollectionItem {
+        item
+    }
+
+    fn debug_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.debug
     }
 
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
@@ -46,7 +52,7 @@ impl ReadableItem for SealedFellow {
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
     ) -> Result<Self> {
-        self.common.debug = Self::parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
+        self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;
@@ -109,6 +115,10 @@ impl SealedFellow {
 impl ItemTrait for SealedFellow {
     fn common(&self) -> &Common {
         &self.common
+    }
+
+    fn debug(&self) -> &[u8] {
+        &self.debug
     }
 
     fn get_unique_effects(&self) -> std::collections::HashSet<SharedString> {

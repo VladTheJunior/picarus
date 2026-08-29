@@ -1,13 +1,12 @@
 use std::io::SeekFrom;
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, ItemEffect, ReadableItem, TagType};
+use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, effects::ItemEffect, item::ReadableItem};
 use anyhow::Result;
 use gpui::SharedString;
 use indexmap::IndexMap;
-use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-#[derive(Default, Serialize, Clone)]
+#[derive(Default, Clone)]
 pub struct ItemQuality {
     pub level: u16,
     pub intermediate_fixed_effect: Option<ItemEffect>,
@@ -20,8 +19,17 @@ impl ReadableItem for ItemQuality {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = u16;
 
-    fn key(item: &Self) -> Self::Key {
-        item.level
+    fn key(&self) -> Self::Key {
+        self.level
+    }
+
+    type CollectionItem = Self;
+    fn new_collection_item(item: Self) -> Self::CollectionItem {
+        item
+    }
+
+    fn debug_mut(&mut self) -> &mut Vec<u8> {
+        unimplemented!()
     }
 
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(

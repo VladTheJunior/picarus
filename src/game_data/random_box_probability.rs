@@ -1,23 +1,13 @@
-use std::{
-    cell::RefCell,
-    collections::{BTreeSet, HashMap},
-    io::{Read, SeekFrom},
-    rc::Rc,
-    sync::Arc,
-};
+use std::io::SeekFrom;
 
-use crate::game_data::{
-    AsyncBufReadExtReadString, Binding, DataFormat, GameClass, Grade, Item, ItemEffect, ReadableItem, TagType, item_set::ItemSet, locale::Locale, product::Product,
-};
+use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, item::ReadableItem};
 use anyhow::Result;
 use indexmap::IndexMap;
-use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use gpui::{Image, SharedString};
-use tracing::warn;
+use gpui::SharedString;
 
-#[derive(Default, Serialize, Clone)]
+#[derive(Default, Clone)]
 pub struct RandomBoxProbability {
     pub randomboxgroupid: SharedString,
 
@@ -26,13 +16,20 @@ pub struct RandomBoxProbability {
 }
 
 impl ReadableItem for RandomBoxProbability {
-
-
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
-    fn key(item: &Self) -> Self::Key {
-        item.randomboxgroupid.clone()
+    fn key(&self) -> Self::Key {
+        self.randomboxgroupid.clone()
+    }
+
+    type CollectionItem = Self;
+    fn new_collection_item(item: Self) -> Self::CollectionItem {
+        item
+    }
+
+    fn debug_mut(&mut self) -> &mut Vec<u8> {
+        unimplemented!()
     }
 
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
@@ -42,7 +39,6 @@ impl ReadableItem for RandomBoxProbability {
         item_idx: usize,
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
-
     ) -> Result<Self> {
         let tag_count = definitions.len();
         for tag_idx in 0..tag_count {

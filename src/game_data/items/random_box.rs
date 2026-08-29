@@ -1,24 +1,21 @@
 use std::{
     cell::RefCell,
-    collections::{BTreeSet, HashMap},
-    io::{Read, SeekFrom},
+    collections::HashMap,
+    io::SeekFrom,
     rc::{Rc, Weak},
-    sync::Arc,
 };
 
-use crate::game_data::{
-     Binding, Common, DataFormat, GameClass, Grade, Item, ItemEffect, ItemTrait, ReadableItem, TagType, item_set::ItemSet, locale::Locale, product::Product, random_box_group::RandomBoxGroup,
-};
+use crate::game_data::{DataFormat, TagType, common::Common, item::ItemTrait, item::ReadableItem, random_box_group::RandomBoxGroup};
 use anyhow::Result;
 use indexmap::IndexMap;
-use serde::Serialize;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use gpui::{Image, SharedString};
-use tracing::warn;
+use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
+
+use gpui::SharedString;
 
 #[derive(Default)]
 pub struct RandomBox {
+    pub debug: Vec<u8>,
     pub content: Option<Weak<RefCell<RandomBoxGroup>>>,
 
     pub common: Common,
@@ -28,8 +25,17 @@ impl ReadableItem for RandomBox {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
-    fn key(item: &Self) -> Self::Key {
-        item.common.id.clone()
+    fn key(&self) -> Self::Key {
+        self.common.id.clone()
+    }
+
+    type CollectionItem = Self;
+    fn new_collection_item(item: Self) -> Self::CollectionItem {
+        item
+    }
+
+    fn debug_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.debug
     }
 
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
@@ -40,7 +46,7 @@ impl ReadableItem for RandomBox {
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
     ) -> Result<Self> {
-        self.common.debug = Self::parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
+        self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;
@@ -82,9 +88,12 @@ impl RandomBox {
     }
 }
 
-
 impl ItemTrait for RandomBox {
-   fn common(&self) ->  &Common {
-       &self.common
-   }
+    fn common(&self) -> &Common {
+        &self.common
+    }
+
+    fn debug(&self) -> &[u8] {
+        &self.debug
+    }
 }

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::{
-    game_data::{Item, Grade, ItemType},
+    game_data::{grade::Grade, item::Item, item::ItemType},
     game_data_view::GameDataView,
     language::t_v,
 };

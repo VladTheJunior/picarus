@@ -1,6 +1,6 @@
 use std::io::SeekFrom;
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, ReadableItem, TagType};
+use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, item::ReadableItem};
 use anyhow::Result;
 use gpui::SharedString;
 use indexmap::IndexMap;
@@ -16,10 +16,20 @@ pub struct ItemRes {
 impl ReadableItem for ItemRes {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
-    
-    fn key(item: &Self) -> Self::Key {
-        item.id.clone()
+
+    fn key(&self) -> Self::Key {
+        self.id.clone()
     }
+
+    type CollectionItem = Self;
+    fn new_collection_item(item: Self) -> Self::CollectionItem {
+        item
+    }
+
+    fn debug_mut(&mut self) -> &mut Vec<u8> {
+        unimplemented!()
+    }
+
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
         mut self,
         reader: &mut R,

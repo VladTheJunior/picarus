@@ -1,11 +1,9 @@
-use std::{
-    collections::BTreeMap, io::SeekFrom, rc::{Rc, Weak},
-};
+use std::{cell::RefCell, io::SeekFrom, rc::Rc};
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, Item, ItemNode, ReadableItem, TagType};
+use crate::game_data::{AsyncBufReadExtReadString, DataFormat, Item, TagType, item::ItemNode, item::ReadableItem};
 use anyhow::Result;
 use indexmap::IndexMap;
-use serde::Serialize;
+
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui::SharedString;
@@ -22,6 +20,7 @@ pub struct MaterialItem {
 
 #[derive(Default, Clone)]
 pub struct Product {
+    pub recipe: Option<SharedString>,
     pub debug: Vec<u8>,
     pub node: ItemNode,
     pub productid: SharedString,
@@ -38,8 +37,17 @@ impl ReadableItem for Product {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
-    fn key(item: &Self) -> Self::Key {
-        item.node.id.clone()
+    fn key(&self) -> Self::Key {
+        self.node.id.clone()
+    }
+
+    type CollectionItem = Rc<RefCell<Self>>;
+    fn new_collection_item(item: Self) -> Self::CollectionItem {
+        Rc::new(RefCell::new(item))
+    }
+
+    fn debug_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.debug
     }
 
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
@@ -50,7 +58,7 @@ impl ReadableItem for Product {
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
     ) -> Result<Self> {
-        self.debug = Self::parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
+        self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;

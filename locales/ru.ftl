@@ -6,6 +6,10 @@ button-export = Экспорт
 message-export-error = Ошибка при экспорте!
 message-export-completed = Экспортирование успешно завершено!
 
+checkbox-check-all = Выбрать все
+
+game-data-elapsed = время загрузки: { $elapsed }
+
 item-required-level = Треб. уровень
 item-attack-dps = ДПС
 item-attack = Атака

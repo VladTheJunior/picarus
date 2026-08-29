@@ -6,6 +6,10 @@ button-export = Export
 message-export-error = Error during export!
 message-export-completed = Export to file completed successfully!
 
+checkbox-check-all = Check All
+
+game-data-elapsed = load elapsed: { $elapsed }
+
 item-required-level = Required Level
 item-attack = Attack
 item-attack-dps = DPS

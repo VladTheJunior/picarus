@@ -10,7 +10,6 @@ LegalCopyright = "Copyright © VladTheJunior, 2026"
 FileDescription = "Interactive items viewer for Riders of Icarus"
 
 [dependencies.gpui]
-version = "0.2.2"
 git = "https://github.com/zed-industries/zed"
 
 [dependencies.gpui_platform]
@@ -54,9 +53,6 @@ version = "=0.1.44"
 [dependencies.tracing-subscriber]
 version = "=0.3.23"
 
-[dependencies.itertools]
-version = "=0.15.0"
-
 [dependencies.zip]
 version = "=8.6.0"
 
@@ -95,7 +91,7 @@ version = "=0.8.35"
 version = "=0.3.2"
 
 [dependencies.indexmap]
-version = "=2.14.0"
+version = "=2.14.1"
 
 [dependencies.regex]
 version = "=1.13.1"

@@ -1,13 +1,12 @@
 use std::io::SeekFrom;
 
-use crate::game_data::{DataFormat, ReadableItem, TagType};
+use crate::game_data::{DataFormat, TagType, item::ReadableItem};
 use anyhow::Result;
 use gpui::SharedString;
 use indexmap::IndexMap;
-use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-#[derive(Default, Serialize, Clone)]
+#[derive(Default, Clone)]
 pub struct Tempering {
     pub level: u16,
     pub attack_ratios: [f32; 30],
@@ -17,14 +16,21 @@ pub struct Tempering {
 }
 
 impl ReadableItem for Tempering {
-
     const FORMAT: DataFormat = DataFormat::String;
     type Key = u16;
 
-    fn key(item: &Self) -> Self::Key {
-        item.level
+    fn key(&self) -> Self::Key {
+        self.level
     }
 
+    type CollectionItem = Self;
+    fn new_collection_item(item: Self) -> Self::CollectionItem {
+        item
+    }
+
+    fn debug_mut(&mut self) -> &mut Vec<u8> {
+        unimplemented!()
+    }
 
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
         mut self,

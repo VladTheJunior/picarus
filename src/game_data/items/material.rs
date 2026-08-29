@@ -1,25 +1,21 @@
 use std::{
-    cell::RefCell,
     collections::{BTreeSet, HashMap},
-    io::{Read, SeekFrom},
-    rc::Rc,
-    sync::Arc,
+    io::SeekFrom,
 };
 
 use crate::game_data::{
-    Binding, Common, DataFormat, Grade, Item, ItemTrait, ReadableItem, TagType, item_set::ItemSet, locale::Locale, product::Product,
-    recipe::RecipeType,
+    DataFormat, TagType, common::Common, item::ItemTrait, item::ReadableItem, item_res::ItemRes, items::recipe::RecipeType, locale::Locale,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
-use serde::Serialize;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use gpui::{Image, SharedString};
-use tracing::warn;
+use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
+
+use gpui::SharedString;
 
 #[derive(Default)]
 pub struct Material {
+    pub debug: Vec<u8>,
     pub description_locale: Option<Locale>,
     pub recipe_type: Option<BTreeSet<RecipeType>>,
     pub common: Common,
@@ -29,8 +25,17 @@ impl ReadableItem for Material {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
-    fn key(item: &Self) -> Self::Key {
-        item.common.id.clone()
+    fn key(&self) -> Self::Key {
+        self.common.id.clone()
+    }
+
+    type CollectionItem = Self;
+    fn new_collection_item(item: Self) -> Self::CollectionItem {
+        item
+    }
+
+    fn debug_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.debug
     }
 
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
@@ -41,7 +46,7 @@ impl ReadableItem for Material {
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
     ) -> Result<Self> {
-        self.common.debug = Self::parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
+        self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
         for tag_idx in 0..tag_count {
             let global_idx = item_idx * tag_count + tag_idx;
@@ -81,7 +86,7 @@ impl Material {
         self.description_locale = locales.get(&SharedString::new(format!("{}_DESCRIPTION", self.common.id))).cloned();
     }
 
-    pub fn set_recipe_type(&mut self, res: &HashMap<SharedString, super::item_res::ItemRes>) {
+    pub fn set_recipe_type(&mut self, res: &HashMap<SharedString, ItemRes>) {
         if let Some(item_res) = res.get(&self.common.id) {
             self.recipe_type = item_res
                 .using_recipe_type
@@ -94,5 +99,9 @@ impl Material {
 impl ItemTrait for Material {
     fn common(&self) -> &Common {
         &self.common
+    }
+
+    fn debug(&self) -> &[u8] {
+        &self.debug
     }
 }

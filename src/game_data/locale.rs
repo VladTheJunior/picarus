@@ -1,15 +1,16 @@
 use std::io::SeekFrom;
 
 use crate::{
-    game_data::{AsyncBufReadExtReadString, DataFormat, ReadableItem}, game_data::{TagType}, language::LanguageController,
+    game_data::TagType,
+    game_data::{AsyncBufReadExtReadString, DataFormat, item::ReadableItem},
+    language::LanguageController,
 };
 use anyhow::Result;
 use gpui::SharedString;
 use indexmap::IndexMap;
-use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 
-#[derive(Default, Clone, Serialize)]
+#[derive(Default, Clone)]
 pub struct Locale {
     pub key: SharedString,
     pub eng: SharedString,
@@ -35,9 +36,18 @@ impl Locale {
 impl ReadableItem for Locale {
     const FORMAT: DataFormat = DataFormat::WideString;
     type Key = SharedString;
-    
-    fn key(item: &Self) -> Self::Key {
-        item.key.clone()
+
+    fn key(&self) -> Self::Key {
+        self.key.clone()
+    }
+
+    type CollectionItem = Self;
+    fn new_collection_item(item: Self) -> Self::CollectionItem {
+        item
+    }
+
+    fn debug_mut(&mut self) -> &mut Vec<u8> {
+        unimplemented!()
     }
 
     async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
@@ -75,6 +85,4 @@ impl ReadableItem for Locale {
         }
         Ok(self)
     }
-    
-
 }
