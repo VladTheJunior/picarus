@@ -7,20 +7,28 @@ on:
         description: 'Release tag'
         required: true
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-latest 
     permissions:
       contents: write
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
       - name: Clone repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: cargo-bins/cargo-binstall@main
+      - uses: cargo-bins/cargo-binstall@5aafaaca52423a22d83a812fa3ca77492e2895db # main
       - run: cargo binstall toml-cli
       - name: Import GPG Key
-        uses: crazy-max/ghaction-import-gpg@v7
+        uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7.0.0
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
@@ -41,7 +49,7 @@ jobs:
       - name: Create archives
         run: 7z a -tzip dist/picarus.zip ./target/release/picarus.exe
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: v${{ github.event.inputs.tag }}
           files: dist/picarus.zip

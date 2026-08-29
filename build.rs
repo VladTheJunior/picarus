@@ -3,7 +3,7 @@ use vergen_gitcl::{Build, Cargo, Emitter, Gitcl, Rustc};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let build = Build::all_build();
     let cargo = Cargo::all_cargo();
-    let gitcl = Gitcl::builder().branch(true).commit_timestamp(true).describe(true, false, None).build();
+    let gitcl = Gitcl::all_git();
     let rustc = Rustc::all_rustc();
 
     Emitter::default()
