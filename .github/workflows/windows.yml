@@ -20,7 +20,7 @@ jobs:
       - uses: cargo-bins/cargo-binstall@main
       - run: cargo binstall toml-cli
       - name: Import GPG Key
-        uses: crazy-max/ghaction-import-gpg@v6
+        uses: crazy-max/ghaction-import-gpg@v7
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
@@ -35,7 +35,7 @@ jobs:
       - name: Prepare release
         run: |
           toml set Cargo.toml package.version ${{ github.event.inputs.tag }} > temp.toml
-          mv temp.toml Cargo.toml
+          move /y temp.toml Cargo.toml
       - name: Build
         run: cargo build --release
       - name: Create archives
