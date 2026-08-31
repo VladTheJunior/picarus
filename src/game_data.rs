@@ -26,6 +26,7 @@ use gpui::{AsyncWindowContext, Entity, Image, SharedString};
 use image::{ImageReader, imageops::FilterType};
 use indexmap::IndexMap;
 
+use itertools::Itertools;
 use rust_xlsxwriter::{DocProperties, Table, TableColumn, workbook::Workbook};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -51,7 +52,7 @@ use crate::{
         effects::ItemMinMaxEffect,
         game_class::GameClass,
         grade::Grade,
-        item::{Item, ItemTrait, ReadableItem},
+        item::{Item, ItemTrait, ItemType, ReadableItem},
         item_option::ItemOption,
         item_quality::ItemQuality,
         item_res::ItemRes,
@@ -83,7 +84,7 @@ pub enum DataFormat {
     WideString,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum DebugValue {
     String(SharedString),
@@ -864,41 +865,53 @@ impl GameData {
         Ok(())
     }
 
-    pub fn export_xlsx(&self, path: PathBuf) -> Result<()> {
+    pub async fn export_xlsx(&self, path: PathBuf) -> Result<()> {
         let mut workbook = Workbook::new();
         let properties = DocProperties::new().set_author("picarus");
         workbook.set_properties(&properties);
 
-        let worksheet = workbook.add_worksheet().set_name("111")?;
+        let mut items_data: Vec<(ItemType, Vec<Vec<u8>>)> = Vec::new();
 
-        let items = self
-            .products
-            .iter()
-            .filter_map(|f| {
-                lz4_flex::block::decompress_size_prepended(&f.borrow().debug)
-                    .ok()
-                    .and_then(|b| serde_json::from_slice::<IndexMap<SharedString, DebugValue>>(&b).ok())
-            })
-            .collect::<Vec<_>>();
-
-        for (row, item) in items.iter().enumerate() {
-            for (col, (_, value)) in item.iter().enumerate() {
-                match value {
-                    DebugValue::String(string) => worksheet.write(row as u32 + 1, col as u16, string.as_str()),
-                    DebugValue::Float(float) => worksheet.write(row as u32 + 1, col as u16, *float),
-                }?;
+        for (item_type, group) in self.items.iter().into_group_map_by(|(_, value)| value.item_type()) {
+            let mut debug_data = Vec::with_capacity(group.len());
+            for (_, item) in group {
+                debug_data.push(item.debug().to_vec());
             }
+            items_data.push((item_type, debug_data));
         }
 
-        if let Some(first) = items.first() {
-            let table = Table::new().set_columns(&first.keys().map(|key| TableColumn::new().set_header(key.as_str())).collect::<Vec<_>>());
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            for (item_type, group) in items_data {
+                let worksheet = workbook.add_worksheet().set_name(item_type.locale())?;
+                let mut items = Vec::with_capacity(group.len());
+                for item in group {
+                    let decompressed = lz4_flex::block::decompress_size_prepended(&item)?;
+                    items.push(serde_json::from_slice::<IndexMap<SharedString, DebugValue>>(&decompressed)?);
+                }
+                let first = items.first().cloned();
+                let length = items.len();
+                for (row, item) in items.into_iter().enumerate() {
+                    for (col, (_, value)) in item.into_iter().enumerate() {
+                        match value {
+                            DebugValue::String(string) => worksheet.write(row as u32 + 1, col as u16, string.as_str()),
+                            DebugValue::Float(float) => worksheet.write(row as u32 + 1, col as u16, float),
+                        }?;
+                    }
+                }
 
-            // Add the table to the worksheet.
-            worksheet.add_table(0, 0, items.len() as u32, first.len() as u16, &table)?;
-            worksheet.set_freeze_panes(1, 0)?;
-        }
-        workbook.save(path)?;
+                if let Some(first) = first {
+                    let table = Table::new().set_columns(&first.keys().map(|key| TableColumn::new().set_header(key.as_str())).collect::<Vec<_>>());
 
+                    // Add the table to the worksheet.
+                    worksheet.add_table(0, 0, length as u32, first.len() as u16, &table)?;
+                    worksheet.set_freeze_panes(1, 0)?;
+                }
+            }
+
+            workbook.save(path)?;
+            Ok(())
+        })
+        .await??;
         Ok(())
     }
 }

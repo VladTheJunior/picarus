@@ -2,7 +2,7 @@ use gpui::{
     Action, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight, ImageSource, InteractiveElement,
     IntoElement, KeyBinding, ListSizingBehavior, ObjectFit, ParentElement, PathPromptOptions, ReadGlobal, Render, ScrollHandle, ScrollStrategy,
     SharedString, StatefulInteractiveElement, Styled, StyledImage, UniformListScrollHandle, UpdateGlobal, Window, actions, div, img,
-    prelude::FluentBuilder, px, rgb, uniform_list,
+    prelude::FluentBuilder, px, rems, rgb, uniform_list,
 };
 use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName, IndexPath, Root, Sizable, StyledExt, TitleBar, WindowExt,
@@ -13,10 +13,10 @@ use gpui_component::{
     label::Label,
     menu::{DropdownMenu, PopupMenuItem},
     notification::{Notification, NotificationType},
+    progress::ProgressCircle,
     scroll::ScrollableElement,
     select::SearchableVec,
     separator::Separator,
-    spinner::Spinner,
     status_bar::StatusBar,
     switch::Switch,
     tab::{Tab, TabBar},
@@ -36,10 +36,7 @@ use std::{
     path::Path,
     rc::{Rc, Weak},
     sync::LazyLock,
-    time::Duration,
 };
-
-use tracing::{error, warn};
 
 use crate::{
     assets::AppIcon,
@@ -63,6 +60,8 @@ use crate::{
     language::{LanguageController, t, t_v},
     settings::Settings,
 };
+use anyhow::Result;
+use tracing::{error, warn};
 
 const CONTEXT: &str = "game_data";
 
@@ -220,8 +219,8 @@ pub struct GameDataView {
     game_data: GameData,
     pub filters: GameDataFilters,
     pub filtered: IndexMap<SharedString, Rc<Item>>,
+    is_exporting: bool,
     is_reading: bool,
-    duration: usize,
     explorer_scroll_handle: UniformListScrollHandle,
     tabs_scroll_handle: ScrollHandle,
     focus_handle: FocusHandle,
@@ -236,31 +235,14 @@ pub struct GameDataView {
 
 impl GameDataView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        cx.spawn(async move |view, cx| {
-            loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                if view
-                    .update(cx, |this, cx| {
-                        if this.is_reading {
-                            this.duration = this.duration.saturating_add(1);
-                            cx.notify();
-                        }
-                    })
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        })
-        .detach();
         Self {
             game_data: GameData::default(),
             tabs: IndexSet::new(),
             filtered: IndexMap::new(),
             selected_item: None,
             filters: GameDataFilters::new(window, cx),
+            is_exporting: false,
             is_reading: false,
-            duration: 0,
             explorer_scroll_handle: UniformListScrollHandle::new(),
             tabs_scroll_handle: ScrollHandle::new(),
             focus_handle: cx.focus_handle(),
@@ -276,7 +258,9 @@ impl GameDataView {
         }
     }
 
-    pub fn export_xlsx(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn export_xlsx(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.is_exporting = true;
+        cx.notify();
         if let Ok(path) = cx.app_path() {
             let result = cx.prompt_for_new_path(&path, Some("game_data.xlsx"));
 
@@ -285,38 +269,43 @@ impl GameDataView {
                     if path.extension().is_none_or(|f| f != "xlsx") {
                         path.set_extension("xlsx");
                     }
-                    let export_result = this
-                        .read_with(cx, {
-                            let path = path.clone();
 
-                            move |this, _| this.game_data.export_xlsx(path)
-                        })
-                        .flatten();
+                    let export_result = (async || -> Result<()> {
+                        let game_data = this.read_with(cx, |this, _| this.game_data.clone())?;
+                        Ok(game_data.export_xlsx(path.clone()).await?)
+                    })()
+                    .await;
 
                     let _ = cx.update({
-                        move |window, cx| match export_result {
-                            Ok(_) => window.push_notification(
-                                Notification::new()
-                                    .message(t("message-export-completed"))
-                                    .with_type(NotificationType::Info)
-                                    .action(move |_, _, cx| {
-                                        Button::new("notification-open-export").label(t("dialog-button-open")).on_click({
-                                            let path = path.clone();
-                                            cx.listener(move |this, _, window, cx| {
-                                                cx.open_with_system(&path);
-                                                this.dismiss(window, cx);
+                        move |window, cx| {
+                            match export_result {
+                                Ok(_) => window.push_notification(
+                                    Notification::new()
+                                        .message(t("message-export-completed"))
+                                        .with_type(NotificationType::Info)
+                                        .action(move |_, _, cx| {
+                                            Button::new("notification-open-export").label(t("dialog-button-open")).on_click({
+                                                let path = path.clone();
+                                                cx.listener(move |this, _, window, cx| {
+                                                    cx.open_with_system(&path);
+                                                    this.dismiss(window, cx);
+                                                })
                                             })
-                                        })
-                                    }),
-                                cx,
-                            ),
-                            Err(e) => {
-                                warn!(?e, "Error while export");
-                                window.push_notification((NotificationType::Error, t("message-export-error")), cx);
+                                        }),
+                                    cx,
+                                ),
+                                Err(e) => {
+                                    warn!(?e, "Error while export");
+                                    window.push_notification((NotificationType::Error, t("message-export-error")), cx);
+                                }
                             }
+                            let _ = this.update(cx, |this, cx| {
+                                this.is_exporting = false;
+                                cx.notify();
+                            });
                         }
                     });
-                };
+                }
             })
             .detach();
         }
@@ -1459,7 +1448,9 @@ impl GameDataView {
             cx.notify();
             return;
         };
-
+        if let Some(index) = self.tabs.get_index_of(item) {
+            self.tabs_scroll_handle.scroll_to_item(index);
+        }
         if let Some(item) = self.game_data.items.get(item) {
             self.selected_item = Some(item.get_id());
             self.debug_preview.update(cx, |state, cx| {
@@ -1522,8 +1513,13 @@ impl Focusable for GameDataView {
 }
 
 impl Render for GameDataLoadingStatus {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().child(self.localize())
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div().w(px(400.)).child(
+            Label::new(self.localize())
+                .text_sm()
+                .line_height(rems(1.8))
+                .text_color(cx.theme().muted_foreground),
+        )
     }
 }
 
@@ -1552,25 +1548,31 @@ impl Render for GameDataView {
                                     .on_click(|_, _, cx| cx.open_url("https://github.com/VladTheJunior/picarus")),
                             )
                         })
-                        .when(!self.game_data.elapsed.is_zero(), |this|
-                        this.child(
-                            Label::new(t_v("game-data-elapsed", vec![("elapsed", format!("{:?}", self.game_data.elapsed))]))
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground),
-                        )),
+                        .when(!self.game_data.elapsed.is_zero(), |this| {
+                            this.child(
+                                Label::new(t_v("game-data-elapsed", vec![("elapsed", format!("{:?}", self.game_data.elapsed))]))
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground),
+                            )
+                        }),
                 ),
             )
             .when_else(
                 self.is_reading,
                 |this| {
                     this.child(
-                        v_flex()
-                            .size_full()
-                            .justify_center()
-                            .items_center()
-                            .child(Spinner::new().icon(IconName::LoaderCircle).with_size(px(128.)))
-                            .child(self.loading_status.clone())
-                            .child(t_v("loading-duration-seconds", vec![("seconds", self.duration)])),
+                        v_flex().size_full().justify_center().items_center().child(
+                            h_flex()
+                                .items_center()
+                                .gap_5()
+                                .child(ProgressCircle::new("analysis-progress").loading(self.is_reading).size(px(80.)))
+                                .child(
+                                    v_flex()
+                                        .gap_1()
+                                        .child(div().font_medium().child(t("game-data-loading")))
+                                        .child(self.loading_status.clone()),
+                                ),
+                        ),
                     )
                 },
                 |this| {
@@ -2715,7 +2717,7 @@ impl Render for GameDataView {
                         Input::new(&self.filters.search_state)
                             .appearance(false)
                             .flex_shrink_0()
-                            .w(px(280.))
+                            .w(px(284.))
                             .disabled(self.is_reading)
                             .prefix(Icon::new(IconName::Search).small())
                             .small(),
@@ -2839,6 +2841,8 @@ impl Render for GameDataView {
                         Button::new("button-export")
                             .ghost()
                             .xsmall()
+                            .icon(AppIcon::Upload)
+                            .loading(self.is_exporting)
                             .cursor_pointer()
                             .disabled(self.is_reading)
                             .label(t("button-export"))

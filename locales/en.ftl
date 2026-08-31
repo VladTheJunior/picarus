@@ -79,6 +79,8 @@ item-type-skill-book = Skill Book
 item-type-exchange = Exchange
 item-type-random-box = Random Box
 item-type-package = Package
+item-type-style = Style
+item-type-bag = Bag
 
 item-linked-recipes = Linked Recipes
 
@@ -105,6 +107,7 @@ sealed-fellow-max-level = Max. Level
 sealed-fellow-plus-level = Max. Level (+5)
 sealed-fellow-tempered-level = Max. Level (+{ $level })
 
+game-data-loading = Loading data
 game-data-loading-weapon = Loading weapon data...
 game-data-loading-accessory = Loading jewelry data...
 game-data-loading-armor = Loading armor data...
@@ -127,15 +130,11 @@ game-data-loading-random-box = Loading random boxes data...
 game-data-loading-random-box-group = Loading random box contents data...
 game-data-loading-random-box-probabilities = Loading random box probabilities data...
 game-data-loading-package = Loading packages data...
+game-data-loading-style = Loading styles data...
+game-data-loading-bag = Loading bags data...
 
 label-select-random-equipped-effect = Select effect
 button-load-game-data = Load
-
-loading-duration-seconds = { $seconds } {
-$seconds ->
-[one] second
-*[other] seconds
-}
 
 button-select-game-folder = Select Game Folder
 

@@ -88,6 +88,8 @@ item-type-skill-book = Книги навыков
 item-type-exchange = Валюта
 item-type-random-box = Случайный сундук
 item-type-package = Запечатанный предмет
+item-type-style = Аксессуар
+item-type-bag = Сумка
 
 item-tag-no-trade = Нельзя передать
 item-tag-no-sell = Нельзя продать
@@ -102,6 +104,7 @@ sealed-fellow-max-level = Макс. уровень
 sealed-fellow-plus-level = Макс. уровень (+5)
 sealed-fellow-tempered-level = Макс. уровень (+{ $level })
 
+game-data-loading = Загрузка данных
 game-data-loading-weapon = Загрузка данных оружия...
 game-data-loading-accessory = Загрузка данных украшений...
 game-data-loading-armor = Загрузка данных доспехов...
@@ -124,16 +127,12 @@ game-data-loading-random-box = Загрузка данных случайных 
 game-data-loading-random-box-group = Загрузка данных содержимого случайных сундуков...
 game-data-loading-random-box-probabilities = Загрузка данных шанса содержимого случайных сундуков...
 game-data-loading-package = Загрузка данных запечатанных предметов...
+game-data-loading-style = Загрузка данных аксессуаров...
+game-data-loading-bag = Загрузка данных сумок...
 
 label-select-random-equipped-effect = Выбрать эффект
 button-load-game-data = Загрузить
 
-loading-duration-seconds = { $seconds } {
-$seconds ->
-[one] секунда
-[few] секунды
-*[other] секунд
-}
 
 item-random-box-contents = Содержимое сундука:
 item-package-contents = Запечатанное содержимое:

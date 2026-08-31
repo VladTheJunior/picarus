@@ -34,6 +34,9 @@ default-features = false
 [dependencies.enum_dispatch]
 version = "=0.3.13"
 
+[dependencies.itertools]
+version = "=0.15.0"
+
 [dependencies.lz4_flex ]
 version = "=0.14.0"
 default-features = false
