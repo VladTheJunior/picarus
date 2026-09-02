@@ -1,6 +1,6 @@
 use std::io::SeekFrom;
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, effects::ItemEffect, item::ReadableItem};
+use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, effects::ItemEffect, items::ReadableItem};
 use anyhow::Result;
 use gpui::SharedString;
 use indexmap::IndexMap;

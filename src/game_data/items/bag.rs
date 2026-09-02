@@ -1,6 +1,14 @@
 use std::{collections::HashMap, io::SeekFrom};
 
-use crate::game_data::{DataFormat, TagType, common::Common, item::ItemTrait, item::ReadableItem, locale::Locale};
+use crate::{
+    game_data::{
+        DataFormat, TagType,
+        common::Common,
+        items::{ItemTrait, ReadableItem},
+        locale::Locale,
+    },
+    game_data_view::PreviewBuilder,
+};
 use anyhow::Result;
 use indexmap::IndexMap;
 
@@ -8,7 +16,7 @@ use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui::SharedString;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Bag {
     pub debug: Vec<u8>,
     pub common: Common,
@@ -42,7 +50,7 @@ impl ReadableItem for Bag {
     ) -> Result<Self> {
         self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
-        for tag_idx in 0..tag_count {
+        for (tag_idx, tag) in definitions.keys().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -54,21 +62,7 @@ impl ReadableItem for Bag {
                 }
             };
 
-            match tag_idx {
-                0 => self.common.parse_id(reader, Self::FORMAT).await?,
-
-                3 => self.common.parse_grade(reader).await?,
-                4 => self.common.parse_required_level(reader).await?,
-                5 => self.common.parse_item_level(reader).await?,
-
-                11 => self.common.parse_no_trade(reader).await?,
-                12 => self.common.parse_no_sell(reader).await?,
-                13 => self.common.parse_no_destroy(reader).await?,
-
-                15 => self.common.parse_binding(reader, Self::FORMAT).await?,
-
-                _ => {}
-            }
+            self.common.parse(tag, reader, Self::FORMAT).await?;
         }
 
         Ok(self)
@@ -88,5 +82,8 @@ impl ItemTrait for Bag {
 
     fn debug(&self) -> &[u8] {
         &self.debug
+    }
+    fn build_preview(&self) -> PreviewBuilder<'_> {
+        PreviewBuilder::new(self.common()).description_locale(self.description_locale.as_ref().and_then(|f| f.locale()))
     }
 }

@@ -1,10 +1,11 @@
-use std::io::SeekFrom;
+use std::{collections::HashMap, io::SeekFrom};
 
 use crate::{
     game_data::{
         DataFormat, TagType,
         common::Common,
         items::{ItemTrait, ReadableItem},
+        locale::Locale,
     },
     game_data_view::PreviewBuilder,
 };
@@ -16,12 +17,13 @@ use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 use gpui::SharedString;
 
 #[derive(Default, Clone)]
-pub struct SkillBook {
+pub struct FellowBook {
     pub debug: Vec<u8>,
     pub common: Common,
+    pub description_locale: Option<Locale>,
 }
 
-impl ReadableItem for SkillBook {
+impl ReadableItem for FellowBook {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
@@ -67,7 +69,13 @@ impl ReadableItem for SkillBook {
     }
 }
 
-impl ItemTrait for SkillBook {
+impl FellowBook {
+    pub fn set_description_locale(&mut self, locales: &HashMap<SharedString, Locale>) {
+        self.description_locale = locales.get(&SharedString::new(format!("{}_DESCRIPTION", self.common.id))).cloned();
+    }
+}
+
+impl ItemTrait for FellowBook {
     fn common(&self) -> &Common {
         &self.common
     }
@@ -75,8 +83,7 @@ impl ItemTrait for SkillBook {
     fn debug(&self) -> &[u8] {
         &self.debug
     }
-
     fn build_preview(&self) -> PreviewBuilder<'_> {
-        PreviewBuilder::new(self.common())
+        PreviewBuilder::new(self.common()).description_locale(self.description_locale.as_ref().and_then(|f| f.locale()))
     }
 }

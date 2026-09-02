@@ -2,20 +2,29 @@ use gpui::SharedString;
 
 use crate::language::t_v;
 
+pub enum EffectKind {
+    Common { id: SharedString, effect: ItemEffect },
+    MinMaxNoStep { id: SharedString, effect: ItemMinMaxNoStepEffect },
+    MinMaxStep { id: SharedString, effect: ItemMinMaxStepEffect },
+}
+
 #[derive(Default, Clone)]
 pub struct ItemEffect {
     pub effect: SharedString,
+    pub intermediate_effect: Option<SharedString>,
     pub parsed: Option<(SharedString, f32)>,
 }
 
 #[derive(Default, Clone)]
 pub struct ItemMinMaxStepEffect {
     pub effect: SharedString,
+    pub intermediate_effect: Option<SharedString>,
     pub parsed: Option<(SharedString, f32, f32, f32)>,
 }
 #[derive(Default, Clone)]
 pub struct ItemMinMaxNoStepEffect {
     pub effect: SharedString,
+    pub intermediate_effect: Option<SharedString>,
     pub parsed: Option<(SharedString, f32, f32)>,
 }
 
@@ -73,6 +82,7 @@ impl ItemMinMaxStepEffect {
 
     fn parse_effect(&mut self) {
         if let Some((effect_key, min, max, step)) = Self::parse_key_min_max_step(&self.effect) {
+            self.intermediate_effect = Some(SharedString::new(effect_key));
             if let Some(effect_key) = ItemEffect::matching(effect_key) {
                 self.parsed = Some((SharedString::new(effect_key), min, max, step));
             }
@@ -121,6 +131,7 @@ impl ItemMinMaxNoStepEffect {
 
     fn parse_effect(&mut self) {
         if let Some((effect_key, min, max)) = Self::parse_key_min_max(&self.effect) {
+            self.intermediate_effect = Some(SharedString::new(effect_key));
             if let Some(effect_key) = ItemEffect::matching(effect_key) {
                 self.parsed = Some((SharedString::new(effect_key), min, max));
             }
@@ -321,6 +332,7 @@ impl ItemEffect {
 
     fn parse_effect(&mut self) {
         if let Some((effect_key, value)) = Self::parse_key_value(&self.effect) {
+            self.intermediate_effect = Some(SharedString::new(effect_key));
             if let Some(effect_key) = Self::matching(effect_key) {
                 self.parsed = Some((SharedString::new(effect_key), value));
             }

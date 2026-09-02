@@ -1,13 +1,19 @@
-use std::{io::SeekFrom, rc::Rc};
+use std::{cell::RefCell, collections::BTreeMap, io::SeekFrom, rc::Rc};
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, Item, TagType, common::Common, item::ItemNode, item::ItemTrait, item::ReadableItem};
+use crate::{
+    game_data::{
+        AsyncBufReadExtReadString, DataFormat, Item, TagType,
+        common::Common,
+        items::{ItemNode, ItemTrait, ReadableItem},
+    },
+    game_data_view::PreviewBuilder,
+};
 use anyhow::Result;
 use indexmap::IndexMap;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui::SharedString;
-use tracing::warn;
 
 #[derive(Default, Clone)]
 pub struct PackageItem {
@@ -15,7 +21,7 @@ pub struct PackageItem {
     pub count: u16,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Package {
     pub debug: Vec<u8>,
     pub common: Common,
@@ -50,7 +56,7 @@ impl ReadableItem for Package {
     ) -> Result<Self> {
         self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
-        for tag_idx in 0..tag_count {
+        for (tag_idx, tag) in definitions.keys().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -61,20 +67,8 @@ impl ReadableItem for Package {
                     reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
                 }
             };
-
+            self.common.parse(tag, reader, Self::FORMAT).await?;
             match tag_idx {
-                0 => self.common.parse_id(reader, Self::FORMAT).await?,
-
-                2 => self.common.parse_usable_class(reader, Self::FORMAT).await?,
-                3 => self.common.parse_grade(reader).await?,
-                4 => self.common.parse_required_level(reader).await?,
-
-                9 => self.common.parse_no_trade(reader).await?,
-                10 => self.common.parse_no_sell(reader).await?,
-                11 => self.common.parse_no_destroy(reader).await?,
-
-                13 => self.common.parse_binding(reader, Self::FORMAT).await?,
-
                 23 => self.parse_package_id(0, reader, Self::FORMAT).await?,
                 24 => self.parse_package_count(0, reader).await?,
 
@@ -140,11 +134,11 @@ impl Package {
         Ok(())
     }
 
-    pub fn set_package_contents(&mut self, items: &IndexMap<SharedString, Rc<Item>>) {
+    pub fn set_package_contents(&mut self, items: &IndexMap<SharedString, Rc<RefCell<Item>>>, unknown_ids: &mut BTreeMap<SharedString, u32>) {
         for (_, content) in &mut self.package_items {
             content.node.item = items.get(&content.node.id).map(|f| Rc::downgrade(f));
             if content.node.item.is_none() {
-                warn!(?content.node.id, "Failed to detect package content");
+                unknown_ids.entry(content.node.id.clone()).and_modify(|count| *count += 1).or_insert(1);
             }
         }
     }
@@ -157,5 +151,9 @@ impl ItemTrait for Package {
 
     fn debug(&self) -> &[u8] {
         &self.debug
+    }
+
+    fn build_preview(&self) -> PreviewBuilder<'_> {
+        PreviewBuilder::new(self.common()).package_contents(self.package_items.clone())
     }
 }

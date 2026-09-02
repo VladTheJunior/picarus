@@ -1,24 +1,56 @@
+pub mod accessory;
+pub mod armor;
+pub mod bag;
+pub mod boost;
+pub mod consume;
+pub mod exchange;
+pub mod fellow_equip;
+pub mod gem;
+pub mod material;
+pub mod package;
+pub mod weapon;
+
+pub mod bracelet;
+pub mod elluns;
+pub mod event;
+pub mod fellow_book;
+pub mod fellow_consume;
+pub mod fellow_style;
+pub mod quest;
+pub mod random_box;
+pub mod recipe;
+pub mod relic;
+pub mod sealed_fellow;
+pub mod secondary_weapon;
+pub mod skill_book;
+pub mod style;
+
 use std::{
+    cell::RefCell,
     collections::{HashMap, HashSet},
     io::{Cursor, Read, SeekFrom},
     rc::Weak,
     sync::Arc,
 };
 
-use crate::game_data::{DataFormat, DebugValue, TagType, read_definitions, read_item_count, read_offsets};
 use crate::{
     game_data::{
         AsyncBufReadExtReadString,
         common::Common,
         grade::Grade,
         items::{
-            accessory::Accessory, armor::Armor, bag::Bag, boost::Boost, consume::Consume, exchange::Exchange, fellow_equip::FellowEquip, gem::Gem,
-            material::Material, package::Package, random_box::RandomBox, recipe::Recipe, sealed_fellow::SealedFellow,
-            secondary_weapon::SecondaryWeapon, skill_book::SkillBook, style::Style, weapon::Weapon,
+            accessory::Accessory, armor::Armor, bag::Bag, boost::Boost, bracelet::Bracelet, consume::Consume, elluns::Elluns, event::Event,
+            exchange::Exchange, fellow_book::FellowBook, fellow_consume::FellowConsume, fellow_equip::FellowEquip, fellow_style::FellowStyle,
+            gem::Gem, material::Material, package::Package, quest::Quest, random_box::RandomBox, recipe::Recipe, relic::Relic,
+            sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon, skill_book::SkillBook, style::Style, weapon::Weapon,
         },
         locale::Locale,
     },
     language::t,
+};
+use crate::{
+    game_data::{DataFormat, DebugValue, TagType, effects::EffectKind, read_definitions, read_item_count, read_offsets},
+    game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
 use enum_dispatch::enum_dispatch;
@@ -60,6 +92,7 @@ pub enum ItemSubType {
     Crest,
     Vambrace,
     TeddyBear,
+    Relic,
 }
 
 impl TryFrom<&str> for ItemSubType {
@@ -106,6 +139,7 @@ impl TryFrom<&str> for ItemSubType {
             "at" => Ok(Self::Crest),
             "ga" => Ok(Self::Vambrace),
             "tb" => Ok(Self::TeddyBear),
+            "re" => Ok(Self::Relic),
             unk => Err(format!("Cannot convert {} item subtype", unk)),
         }
     }
@@ -130,6 +164,14 @@ pub enum ItemType {
     Package,
     Style,
     Bag,
+    FellowStyle,
+    FellowConsume,
+    Quest,
+    Bracelet,
+    Relic,
+    FellowBook,
+    Event,
+    Elluns,
 }
 
 impl ItemType {
@@ -152,6 +194,14 @@ impl ItemType {
             ItemType::Package => t("item-type-package"),
             ItemType::Style => t("item-type-style"),
             ItemType::Bag => t("item-type-bag"),
+            ItemType::FellowStyle => t("item-type-fellow-style"),
+            ItemType::FellowConsume => t("item-type-fellow-consume"),
+            ItemType::Quest => t("item-type-quest"),
+            ItemType::Bracelet => t("item-type-bracelet"),
+            ItemType::Relic => t("item-type-relic"),
+            ItemType::FellowBook => t("item-type-fellow-book"),
+            ItemType::Event => t("item-type-event"),
+            ItemType::Elluns => t("item-type-elluns"),
         }
     }
 }
@@ -184,7 +234,7 @@ pub trait ItemTrait {
         self.common().grade
     }
 
-    fn get_unique_effects(&self) -> HashSet<SharedString> {
+    fn get_unique_effects(&self) -> Vec<EffectKind> {
         self.common().get_unique_effects()
     }
 
@@ -195,15 +245,18 @@ pub trait ItemTrait {
     fn get_full_type(&self) -> Option<SharedString> {
         None
     }
+
+    fn build_preview(&self) -> PreviewBuilder<'_>;
 }
 
 #[derive(Default, Clone)]
 pub struct ItemNode {
     pub id: SharedString,
-    pub item: Option<Weak<Item>>,
+    pub item: Option<Weak<RefCell<Item>>>,
 }
 
 #[enum_dispatch(ItemTrait)]
+#[derive(Clone)]
 pub enum Item {
     SecondaryWeapon(SecondaryWeapon),
     Weapon(Weapon),
@@ -222,6 +275,14 @@ pub enum Item {
     Package(Package),
     Style(Style),
     Bag(Bag),
+    FellowStyle(FellowStyle),
+    FellowConsume(FellowConsume),
+    Quest(Quest),
+    Bracelet(Bracelet),
+    Relic(Relic),
+    FellowBook(FellowBook),
+    Event(Event),
+    Elluns(Elluns),
 }
 
 impl Item {
@@ -244,12 +305,28 @@ impl Item {
             Self::Package(_) => ItemType::Package,
             Self::Style(_) => ItemType::Style,
             Self::Bag(_) => ItemType::Bag,
+            Self::FellowStyle(_) => ItemType::FellowStyle,
+            Self::FellowConsume(_) => ItemType::FellowConsume,
+            Self::Quest(_) => ItemType::Quest,
+            Self::Bracelet(_) => ItemType::Bracelet,
+            Self::Relic(_) => ItemType::Relic,
+            Self::FellowBook(_) => ItemType::FellowBook,
+            Self::Event(_) => ItemType::Event,
+            Self::Elluns(_) => ItemType::Elluns,
         }
     }
 
     pub fn filter_effect(&self, filter: &Option<SharedString>) -> bool {
         if let Some(filter) = filter {
-            let effects = self.get_unique_effects();
+            let effects = self
+                .get_unique_effects()
+                .into_iter()
+                .filter_map(|e| match e {
+                    super::effects::EffectKind::Common { id: _, effect } => effect.parsed.as_ref().map(|(key, _)| key.clone()),
+                    super::effects::EffectKind::MinMaxNoStep { id: _, effect } => effect.parsed.as_ref().map(|(key, _, _)| key.clone()),
+                    super::effects::EffectKind::MinMaxStep { id: _, effect } => effect.parsed.as_ref().map(|(key, _, _, _)| key.clone()),
+                })
+                .collect::<HashSet<SharedString>>();
             return effects.contains(filter);
         }
         return true;

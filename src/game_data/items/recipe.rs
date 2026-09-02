@@ -1,17 +1,24 @@
 use std::{
     cell::RefCell,
+    collections::BTreeSet,
     io::SeekFrom,
     rc::{Rc, Weak},
 };
 
 use crate::{
-    game_data::{AsyncBufReadExtReadString, DataFormat, TagType, common::Common, item::ItemTrait, item::ReadableItem, product::Product},
+    game_data::{
+        AsyncBufReadExtReadString, DataFormat, TagType,
+        common::Common,
+        items::{ItemTrait, ReadableItem},
+        product::Product,
+    },
+    game_data_view::PreviewBuilder,
     language::t,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
 use serde::Serialize;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui::SharedString;
 
@@ -54,14 +61,13 @@ impl RecipeType {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Recipe {
     pub debug: Vec<u8>,
     pub product: Option<Weak<RefCell<Product>>>,
     pub common: Common,
 
     pub recipe_type: Option<RecipeType>,
-    pub required_stage: u8,
     pub crafted_item_id: SharedString,
 }
 
@@ -92,7 +98,7 @@ impl ReadableItem for Recipe {
     ) -> Result<Self> {
         self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
-        for tag_idx in 0..tag_count {
+        for (tag_idx, tag) in definitions.keys().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -103,27 +109,13 @@ impl ReadableItem for Recipe {
                     reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
                 }
             };
-
+            self.common.parse(tag, reader, Self::FORMAT).await?;
             match tag_idx {
-                0 => self.common.parse_id(reader, Self::FORMAT).await?,
-
-                2 => self.common.parse_grade(reader).await?,
-
                 4 => {
                     let m = reader.read_string(Self::FORMAT).await?;
                     self.recipe_type = RecipeType::try_from(m.as_str()).ok()
                 }
-                5 => self.common.parse_item_level(reader).await?,
-                6 => self.required_stage = reader.read_f32_le().await? as u8,
-
-                8 => self.common.parse_required_level(reader).await?,
                 9 => self.crafted_item_id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
-
-                17 => self.common.parse_no_trade(reader).await?,
-                18 => self.common.parse_no_sell(reader).await?,
-                19 => self.common.parse_no_destroy(reader).await?,
-
-                21 => self.common.parse_binding(reader, Self::FORMAT).await?,
 
                 _ => {}
             }
@@ -153,5 +145,12 @@ impl ItemTrait for Recipe {
 
     fn debug(&self) -> &[u8] {
         &self.debug
+    }
+
+    fn build_preview(&self) -> PreviewBuilder<'_> {
+        PreviewBuilder::new(self.common())
+            .recipe_stage(self.product.as_ref().and_then(|f| f.upgrade()).map(|p| p.borrow().technology_grade))
+            .product(self.product.clone())
+            .recipe_types(self.recipe_type.as_ref().map(|f| BTreeSet::from([*f])))
     }
 }

@@ -1,6 +1,14 @@
 use std::{collections::HashMap, io::SeekFrom};
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, common::Common, item::ItemTrait, item::ReadableItem, locale::Locale};
+use crate::{
+    game_data::{
+        AsyncBufReadExtReadString, DataFormat, TagType,
+        common::Common,
+        items::{ItemTrait, ReadableItem},
+        locale::Locale,
+    },
+    game_data_view::PreviewBuilder,
+};
 use anyhow::Result;
 use indexmap::IndexMap;
 
@@ -9,7 +17,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use gpui::SharedString;
 use tracing::warn;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Accessory {
     pub debug: Vec<u8>,
     pub common: Common,
@@ -60,7 +68,7 @@ impl ReadableItem for Accessory {
         self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
         // Read all fields sequentially
-        for tag_idx in 0..tag_count {
+        for (tag_idx, tag) in definitions.keys().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -71,20 +79,9 @@ impl ReadableItem for Accessory {
                     reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
                 }
             };
-
+            self.common.parse(tag, reader, Self::FORMAT).await?;
             match tag_idx {
-                // String fields
-                0 => self.common.parse_id(reader, Self::FORMAT).await?,
-
-                6 => self.common.parse_usable_class(reader, Self::FORMAT).await?,
-
                 10 => self.accessory_type = SharedString::new(reader.read_string(Self::FORMAT).await?.to_lowercase()),
-                17 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                18 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                19 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                20 => self.common.parse_effect(reader, Self::FORMAT).await?,
-
-                35 => self.common.parse_binding(reader, Self::FORMAT).await?,
 
                 41 => {
                     self.skill_effect = {
@@ -97,11 +94,6 @@ impl ReadableItem for Accessory {
                     }
                 }
 
-                3 => self.common.parse_required_level(reader).await?,
-
-                5 => self.common.parse_item_level(reader).await?,
-                9 => self.common.parse_grade(reader).await?,
-
                 14 => self.physical_min_attack = reader.read_f32_le().await?,
                 15 => self.physical_max_attack = reader.read_f32_le().await?,
                 16 => self.magic_defense = reader.read_f32_le().await?,
@@ -110,10 +102,6 @@ impl ReadableItem for Accessory {
                 23 => self.random_effects_count_max = reader.read_f32_le().await? as u8,
 
                 28 => self.enhancement_limit = reader.read_f32_le().await? as u8,
-
-                31 => self.common.parse_no_trade(reader).await?,
-                32 => self.common.parse_no_sell(reader).await?,
-                33 => self.common.parse_no_destroy(reader).await?,
 
                 51 => self.overrise_max = reader.read_f32_le().await? as u8,
 
@@ -164,5 +152,16 @@ impl ItemTrait for Accessory {
 
     fn get_type(&self) -> Option<SharedString> {
         Some(self.get_type())
+    }
+
+    fn build_preview(&self) -> PreviewBuilder<'_> {
+        PreviewBuilder::new(self.common())
+            .magic_defense(self.magic_defense)
+            .min_random_effects(self.random_effects_count_min)
+            .max_random_effects(self.random_effects_count_max)
+            .temper_limit(self.enhancement_limit)
+            .reverse_limit(self.reverse_enhancement_limit)
+            .transcendence_limit(self.overrise_max)
+            .skill_locale(self.get_localized_skill())
     }
 }

@@ -1,6 +1,6 @@
 use std::io::SeekFrom;
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, item::ReadableItem};
+use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, items::ReadableItem};
 use anyhow::Result;
 use gpui::SharedString;
 use indexmap::IndexMap;
@@ -10,7 +10,6 @@ use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 pub struct ItemRes {
     pub id: SharedString,
     pub icon: SharedString,
-    pub using_recipe_type: Option<SharedString>,
 }
 
 impl ReadableItem for ItemRes {
@@ -40,8 +39,8 @@ impl ReadableItem for ItemRes {
     ) -> Result<Self> {
         // Read all fields sequentially
         let tag_count = definitions.len();
-        let icon_index = definitions.get_index_of("icon");
-        for tag_idx in 0..tag_count {
+
+        for (tag_idx, tag) in definitions.keys().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -53,23 +52,17 @@ impl ReadableItem for ItemRes {
                 }
             };
 
-            match tag_idx {
-                0 => {
+            match tag.as_str() {
+                "id" => {
                     self.id = {
                         let id = reader.read_string(Self::FORMAT).await?.to_uppercase();
                         SharedString::new(id)
                     }
                 }
-                11 => {
-                    if tag_count == 17 {
-                        self.using_recipe_type = Some(reader.read_string(Self::FORMAT).await?);
-                    }
+                "icon" => {
+                    self.icon = reader.read_string(Self::FORMAT).await?;
                 }
-                i => {
-                    if icon_index.is_some_and(|f| f == i) {
-                        self.icon = reader.read_string(Self::FORMAT).await?;
-                    }
-                }
+                _ => {}
             }
         }
         Ok(self)

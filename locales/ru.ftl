@@ -8,7 +8,7 @@ message-export-completed = Экспортирование успешно зав�
 
 checkbox-check-all = Выбрать все
 
-game-data-elapsed = время загрузки: { $elapsed }
+game-data-elapsed = время загрузки: { $elapsed }, предметы: { $items }
 
 item-required-level = Треб. уровень
 item-attack-dps = ДПС
@@ -53,7 +53,7 @@ item-class-assassin = Ассасин
 item-class-berserker = Берсерк
 
 empty-list =  Предметы не найдены
-empty-list-description = Попробуйте изменить фильтры, чтобы увидедеть больше предметов
+empty-list-description = Попробуйте изменить фильтры, чтобы увидеть больше предметов
 
 item-types = Тип предмета
 item-grades = Ранг предмета
@@ -86,10 +86,18 @@ item-type-gem = Самоцветы
 item-type-sealed-fellow = Запечатанные спутники
 item-type-skill-book = Книги навыков
 item-type-exchange = Валюта
-item-type-random-box = Случайный сундук
-item-type-package = Запечатанный предмет
-item-type-style = Аксессуар
-item-type-bag = Сумка
+item-type-random-box = Случайные сундуки
+item-type-package = Запечатанные предметы
+item-type-style = Аксессуары
+item-type-bag = Сумки
+item-type-fellow-style = Облики спутников
+item-type-fellow-consume = Расходники спутников
+item-type-quest = Квестовые предметы
+item-type-bracelet = Браслеты
+item-type-relic = Реликвии
+item-type-fellow-book = Книги спутников
+item-type-event = Предметы событий
+item-type-elluns = Эллуны
 
 item-tag-no-trade = Нельзя передать
 item-tag-no-sell = Нельзя продать
@@ -98,6 +106,7 @@ item-tag-no-destroy = Нельзя разобрать
 item-binding-equip = Привязка при экипировке
 item-binding-obtain = Привязка при получении
 
+item-max-gem-slots = Слоты самоцветов
 item-talent-power = Сила таланта
 sealed-fellow-min-level = Мин. уровень
 sealed-fellow-max-level = Макс. уровень
@@ -129,6 +138,14 @@ game-data-loading-random-box-probabilities = Загрузка данных ша�
 game-data-loading-package = Загрузка данных запечатанных предметов...
 game-data-loading-style = Загрузка данных аксессуаров...
 game-data-loading-bag = Загрузка данных сумок...
+game-data-loading-fellow-style = Загрузка данных обликов спутников...
+game-data-loading-fellow-consume = Загрузка данных расходников спутников...
+game-data-loading-quest = Загрузка данных квестовых предметов...
+game-data-loading-bracelet = Загрузка данных браслетов...
+game-data-loading-relic = Загрузка данных реликвий...
+game-data-loading-fellow-book = Загрузка данных книг спутников...
+game-data-loading-event = Загрузка данных предметов событий...
+game-data-loading-elluns = Загрузка данных эллун...
 
 label-select-random-equipped-effect = Выбрать эффект
 button-load-game-data = Загрузить

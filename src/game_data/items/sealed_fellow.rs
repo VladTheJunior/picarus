@@ -1,11 +1,13 @@
 use std::io::SeekFrom;
 
-use crate::game_data::{
-    AsyncBufReadExtReadString, DataFormat, TagType,
-    common::Common,
-    effects::{ItemMinMaxNoStepEffect, ItemMinMaxStepEffect},
-    item::ItemTrait,
-    item::ReadableItem,
+use crate::{
+    game_data::{
+        AsyncBufReadExtReadString, DataFormat, TagType,
+        common::Common,
+        effects::{EffectKind, ItemMinMaxNoStepEffect, ItemMinMaxStepEffect},
+        items::{ItemTrait, ReadableItem},
+    },
+    game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -14,7 +16,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui::SharedString;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SealedFellow {
     pub debug: Vec<u8>,
     pub common: Common,
@@ -54,7 +56,7 @@ impl ReadableItem for SealedFellow {
     ) -> Result<Self> {
         self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
-        for tag_idx in 0..tag_count {
+        for (tag_idx, tag) in definitions.keys().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -65,14 +67,8 @@ impl ReadableItem for SealedFellow {
                     reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
                 }
             };
-
+            self.common.parse(tag, reader, Self::FORMAT).await?;
             match tag_idx {
-                0 => self.common.parse_id(reader, Self::FORMAT).await?,
-
-                2 => self.common.parse_grade(reader).await?,
-
-                5 => self.common.parse_item_level(reader).await?,
-
                 9 => self.parse_effect(reader, Self::FORMAT).await?,
                 10 => self.parse_effect(reader, Self::FORMAT).await?,
                 11 => self.parse_effect(reader, Self::FORMAT).await?,
@@ -84,12 +80,6 @@ impl ReadableItem for SealedFellow {
                 }
                 13 => self.tempering = reader.read_f32_le().await? as u8,
                 14 => self.tempering_effect = reader.read_f32_le().await?,
-
-                18 => self.common.parse_no_trade(reader).await?,
-                19 => self.common.parse_no_sell(reader).await?,
-                20 => self.common.parse_no_destroy(reader).await?,
-
-                22 => self.common.parse_binding(reader, Self::FORMAT).await?,
 
                 24 => self.characteristic_power = reader.read_f32_le().await? as u16,
 
@@ -121,17 +111,30 @@ impl ItemTrait for SealedFellow {
         &self.debug
     }
 
-    fn get_unique_effects(&self) -> std::collections::HashSet<SharedString> {
-        let mut effects = std::collections::HashSet::new();
-        effects.extend(self.effects.iter().filter_map(|f| f.parsed.as_ref().map(|(key, _, _, _)| key.clone())));
+    fn get_unique_effects(&self) -> Vec<EffectKind> {
+        let mut effects = Vec::new();
+        effects.extend(self.effects.iter().map(|effect| EffectKind::MinMaxStep {
+            id: self.common.id.clone(),
+            effect: effect.clone(),
+        }));
 
-        if let Some(e) = self
-            .max_enhancement_sealed_fellow_effect
-            .as_ref()
-            .and_then(|f| f.parsed.as_ref().map(|(key, _, _)| key))
-        {
-            effects.insert(e.clone());
+        if let Some(effect) = self.max_enhancement_sealed_fellow_effect.as_ref() {
+            effects.push(EffectKind::MinMaxNoStep {
+                id: self.common.id.clone(),
+                effect: effect.clone(),
+            });
         }
         effects
+    }
+
+    fn build_preview(&self) -> PreviewBuilder<'_> {
+        PreviewBuilder::new(self.common())
+            .fellow_stone_effects(
+                self.effects.clone(),
+                self.max_enhancement_sealed_fellow_effect.clone(),
+                self.tempering,
+                self.tempering_effect,
+            )
+            .talent_power(self.characteristic_power)
     }
 }

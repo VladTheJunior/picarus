@@ -1,13 +1,12 @@
-use std::{cell::RefCell, io::SeekFrom, rc::Rc};
+use std::{cell::RefCell, collections::BTreeMap, io::SeekFrom, rc::Rc};
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, Item, TagType, item::ItemNode, item::ReadableItem};
+use crate::game_data::{AsyncBufReadExtReadString, DataFormat, Item, TagType, items::ItemNode, items::ReadableItem};
 use anyhow::Result;
 use indexmap::IndexMap;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui::SharedString;
-use tracing::warn;
 
 #[derive(Clone)]
 
@@ -173,22 +172,22 @@ impl Product {
         Ok(())
     }
 
-    pub fn set_materials(&mut self, items: &IndexMap<SharedString, Rc<Item>>) {
+    pub fn set_materials(&mut self, items: &IndexMap<SharedString, Rc<RefCell<Item>>>, unknown_ids: &mut BTreeMap<SharedString, u32>) {
         self.node.item = items.get(&self.node.id).map(|f| Rc::downgrade(f));
         if self.node.item.is_none() {
-            warn!(id = ?self.node.id, "Failed to detect product result");
+            unknown_ids.entry(self.node.id.clone()).and_modify(|count| *count += 1).or_insert(1);
         }
 
         for (_, m) in self.materials.iter_mut() {
             m.node.item = items.get(&m.node.id).map(|f| Rc::downgrade(f));
             if m.node.item.is_none() {
-                warn!(?m.node.id, "Failed to detect product material");
+                unknown_ids.entry(m.node.id.clone()).and_modify(|count| *count += 1).or_insert(1);
             }
 
             if let Some(node) = m.additional_node.as_mut() {
                 node.item = items.get(&node.id).map(|f| Rc::downgrade(f));
                 if node.item.is_none() {
-                    warn!(?node.id, "Failed to detect product material");
+                    unknown_ids.entry(node.id.clone()).and_modify(|count| *count += 1).or_insert(1);
                 }
             }
         }

@@ -1,7 +1,12 @@
-use std::{cell::RefCell, collections::HashMap, io::SeekFrom, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, HashMap},
+    io::SeekFrom,
+    rc::Rc,
+};
 
 use crate::game_data::{
-    AsyncBufReadExtReadString, DataFormat, Item, TagType, item::ItemNode, item::ReadableItem, random_box_probability::RandomBoxProbability,
+    AsyncBufReadExtReadString, DataFormat, Item, TagType, items::ItemNode, items::ReadableItem, random_box_probability::RandomBoxProbability,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -13,7 +18,7 @@ use tracing::warn;
 
 #[derive(Default, Clone)]
 pub struct RandomBoxGroup {
-    pub node: ItemNode,
+    pub id: SharedString,
 
     pub items: IndexMap<usize, ItemNode>,
     pub attributes: IndexMap<usize, f32>,
@@ -25,7 +30,7 @@ impl ReadableItem for RandomBoxGroup {
     type Key = SharedString;
 
     fn key(&self) -> Self::Key {
-        self.node.id.clone()
+        self.id.clone()
     }
 
     type CollectionItem = Rc<RefCell<Self>>;
@@ -59,7 +64,7 @@ impl ReadableItem for RandomBoxGroup {
             };
 
             match tag_idx {
-                0 => self.node.id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
+                0 => self.id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
 
                 10..110 => {
                     let id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase());
@@ -76,23 +81,24 @@ impl ReadableItem for RandomBoxGroup {
 }
 
 impl RandomBoxGroup {
-    pub fn set_items(&mut self, items: &IndexMap<SharedString, Rc<Item>>, probabilities: &HashMap<SharedString, RandomBoxProbability>) {
-        self.node.item = items.get(&self.node.id).map(|f| Rc::downgrade(f));
-        if self.node.item.is_none() {
-            warn!(id = ?self.node.id, "Failed to detect random box");
-        }
+    pub fn set_items(
+        &mut self,
+        items: &IndexMap<SharedString, Rc<RefCell<Item>>>,
+        probabilities: &HashMap<SharedString, RandomBoxProbability>,
+        unknown_ids: &mut BTreeMap<SharedString, u32>,
+    ) {
         for (_, content) in &mut self.items {
             content.item = items.get(&content.id).map(|f| Rc::downgrade(f));
             if content.item.is_none() {
-                warn!(?content.id, "Failed to detect random box content");
+                unknown_ids.entry(content.id.clone()).and_modify(|count| *count += 1).or_insert(1);
             }
         }
 
-        if let Some(p) = probabilities.get(&self.node.id) {
+        if let Some(p) = probabilities.get(&self.id) {
             self.attributes = p.attributes.clone();
             self.probabilities = p.probabilities.clone();
         } else {
-            warn!(id = ?self.node.id, "Failed to detect random box probabilities");
+            warn!(id = ?self.id, "Failed to detect random box probabilities");
         }
     }
 }

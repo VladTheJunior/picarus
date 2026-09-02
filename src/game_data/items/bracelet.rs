@@ -1,27 +1,30 @@
-use std::io::SeekFrom;
+use std::{collections::HashMap, io::SeekFrom};
 
 use crate::{
     game_data::{
         DataFormat, TagType,
         common::Common,
         items::{ItemTrait, ReadableItem},
+        locale::Locale,
     },
     game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
 
-use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui::SharedString;
 
 #[derive(Default, Clone)]
-pub struct SkillBook {
+pub struct Bracelet {
     pub debug: Vec<u8>,
+    pub description_locale: Option<Locale>,
     pub common: Common,
+    pub max_gem_slots: u8,
 }
 
-impl ReadableItem for SkillBook {
+impl ReadableItem for Bracelet {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
@@ -61,13 +64,25 @@ impl ReadableItem for SkillBook {
             };
 
             self.common.parse(tag, reader, Self::FORMAT).await?;
+
+            match tag_idx {
+                41 => self.max_gem_slots = reader.read_f32_le().await? as u8,
+
+                _ => {}
+            }
         }
 
         Ok(self)
     }
 }
 
-impl ItemTrait for SkillBook {
+impl Bracelet {
+    pub fn set_description_locale(&mut self, locales: &HashMap<SharedString, Locale>) {
+        self.description_locale = locales.get(&SharedString::new(format!("{}_DESCRIPTION", self.common.id))).cloned();
+    }
+}
+
+impl ItemTrait for Bracelet {
     fn common(&self) -> &Common {
         &self.common
     }
@@ -78,5 +93,7 @@ impl ItemTrait for SkillBook {
 
     fn build_preview(&self) -> PreviewBuilder<'_> {
         PreviewBuilder::new(self.common())
+            .description_locale(self.description_locale.as_ref().and_then(|f| f.locale()))
+            .max_gem_slots(self.max_gem_slots)
     }
 }

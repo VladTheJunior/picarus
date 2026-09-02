@@ -1,13 +1,20 @@
 use std::io::SeekFrom;
 
-use crate::game_data::{DataFormat, TagType, common::Common, item::ItemTrait, item::ReadableItem};
+use crate::{
+    game_data::{
+        DataFormat, TagType,
+        common::Common,
+        items::{ItemTrait, ReadableItem},
+    },
+    game_data_view::PreviewBuilder,
+};
 use anyhow::Result;
 use gpui::SharedString;
 use indexmap::IndexMap;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct FellowEquip {
     pub debug: Vec<u8>,
     pub common: Common,
@@ -42,7 +49,7 @@ impl ReadableItem for FellowEquip {
         self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
         // Read all fields sequentially
-        for tag_idx in 0..tag_count {
+        for (tag_idx, tag) in definitions.keys().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -53,16 +60,8 @@ impl ReadableItem for FellowEquip {
                     reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
                 }
             };
-
+            self.common.parse(tag, reader, Self::FORMAT).await?;
             match tag_idx {
-                0 => self.common.parse_id(reader, Self::FORMAT).await?,
-
-                3 => self.common.parse_required_level(reader).await?,
-
-                5 => self.common.parse_item_level(reader).await?,
-                6 => self.common.parse_usable_class(reader, Self::FORMAT).await?,
-                7 => self.common.parse_grade(reader).await?,
-
                 12 => {
                     let v = reader.read_f32_le().await?;
 
@@ -70,16 +69,6 @@ impl ReadableItem for FellowEquip {
                         self.max_ep_plus = Some(v);
                     }
                 }
-                13 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                14 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                15 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                16 => self.common.parse_effect(reader, Self::FORMAT).await?,
-
-                24 => self.common.parse_no_trade(reader).await?,
-                25 => self.common.parse_no_sell(reader).await?,
-                26 => self.common.parse_no_destroy(reader).await?,
-
-                28 => self.common.parse_binding(reader, Self::FORMAT).await?,
 
                 _ => {}
             }
@@ -96,5 +85,9 @@ impl ItemTrait for FellowEquip {
 
     fn debug(&self) -> &[u8] {
         &self.debug
+    }
+
+    fn build_preview(&self) -> PreviewBuilder<'_> {
+        PreviewBuilder::new(self.common()).max_ep(self.max_ep_plus)
     }
 }

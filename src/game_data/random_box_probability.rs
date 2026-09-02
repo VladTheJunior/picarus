@@ -1,6 +1,6 @@
 use std::io::SeekFrom;
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, item::ReadableItem};
+use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, items::ReadableItem};
 use anyhow::Result;
 use indexmap::IndexMap;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};

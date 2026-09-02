@@ -4,7 +4,7 @@ use crate::game_data::{
     AsyncBufReadExtReadString, DataFormat, TagType,
     effects::ItemMinMaxEffect,
     game_class::GameClass,
-    item::{ArmorClassKind, ArmorTypes, ItemSubType, ReadableItem},
+    items::{ArmorClassKind, ArmorTypes, ItemSubType, ReadableItem},
 };
 use anyhow::Result;
 
@@ -12,7 +12,7 @@ use gpui::SharedString;
 use indexmap::IndexMap;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ItemOption {
     pub level: u16,
     pub effect1: Vec<ItemMinMaxEffect>,
@@ -175,6 +175,18 @@ impl ItemOption {
         };
 
         match item_sub_type {
+            ItemSubType::Relic => {
+                effects.push(self.effect1.get(0).cloned());
+                effects.push(self.effect1.get(1).cloned());
+                effects.push(self.effect1.get(2).cloned());
+                effects.push(self.effect1.get(3).cloned());
+                effects.push(self.effect1.get(4).cloned());
+                effects.push(self.effect2.get(1).cloned());
+                effects.push(self.effect2.get(3).cloned());
+                effects.push(self.special_effect.get(0).cloned());
+                effects.push(self.special_effect.get(1).cloned());
+            }
+
             // +
             ItemSubType::Necklage => {
                 effects.push(self.effect2.get(0).cloned());

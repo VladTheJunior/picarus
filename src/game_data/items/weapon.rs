@@ -1,6 +1,14 @@
 use std::{collections::HashMap, io::SeekFrom};
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, common::Common, item::ItemTrait, item::ReadableItem, locale::Locale};
+use crate::{
+    game_data::{
+        AsyncBufReadExtReadString, DataFormat, TagType,
+        common::Common,
+        items::{ItemTrait, ReadableItem},
+        locale::Locale,
+    },
+    game_data_view::PreviewBuilder,
+};
 use anyhow::Result;
 
 use gpui::SharedString;
@@ -9,7 +17,7 @@ use indexmap::IndexMap;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use tracing::warn;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Weapon {
     pub debug: Vec<u8>,
     pub skill_locale: Option<Locale>,
@@ -65,7 +73,7 @@ impl ReadableItem for Weapon {
     ) -> Result<Self> {
         self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
-        for tag_idx in 0..tag_count {
+        for (tag_idx, tag) in definitions.keys().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -76,21 +84,11 @@ impl ReadableItem for Weapon {
                     reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
                 }
             };
-
+            self.common.parse(tag, reader, Self::FORMAT).await?;
             match tag_idx {
-                0 => self.common.parse_id(reader, Self::FORMAT).await?,
-
-                6 => self.common.parse_usable_class(reader, Self::FORMAT).await?,
-
                 10 => self.equipment_slot = reader.read_string(Self::FORMAT).await?,
                 11 => self.weapon_type = SharedString::new(reader.read_string(Self::FORMAT).await?.to_lowercase()),
-
-                31 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                32 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                33 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                34 => self.common.parse_effect(reader, Self::FORMAT).await?,
-
-                58 => self.common.parse_binding(reader, Self::FORMAT).await?,
+                12 => self.attack_range_type = reader.read_string(Self::FORMAT).await?,
 
                 64 => {
                     self.skill_effect = {
@@ -103,11 +101,6 @@ impl ReadableItem for Weapon {
                     }
                 }
 
-                3 => self.common.parse_required_level(reader).await?,
-
-                5 => self.common.parse_item_level(reader).await?,
-                9 => self.common.parse_grade(reader).await?,
-
                 17 => self.min_attack = reader.read_f32_le().await?,
                 18 => self.max_attack = reader.read_f32_le().await?,
                 20 => self.attack_speed = reader.read_f32_le().await?,
@@ -119,10 +112,6 @@ impl ReadableItem for Weapon {
                 43 => self.max_crafting_seal_slots = reader.read_f32_le().await? as u8,
 
                 51 => self.enhancement_limit = reader.read_f32_le().await? as u8,
-
-                54 => self.common.parse_no_trade(reader).await?,
-                55 => self.common.parse_no_sell(reader).await?,
-                56 => self.common.parse_no_destroy(reader).await?,
 
                 73 => self.overrise_max = reader.read_f32_le().await? as u8,
 
@@ -174,5 +163,18 @@ impl ItemTrait for Weapon {
 
     fn get_type(&self) -> Option<SharedString> {
         Some(self.get_type())
+    }
+
+    fn build_preview(&self) -> PreviewBuilder<'_> {
+        PreviewBuilder::new(self.common())
+            .attack(self.min_attack, self.max_attack, self.attack_speed)
+            .min_random_effects(self.min_random_options)
+            .max_random_effects(self.min_random_options)
+            .min_sealed_slots(self.min_crafting_seal_slots)
+            .max_sealed_slots(self.max_crafting_seal_slots)
+            .temper_limit(self.enhancement_limit)
+            .reverse_limit(self.reverse_enhancement_limit)
+            .transcendence_limit(self.overrise_max)
+            .skill_locale(self.get_localized_skill())
     }
 }

@@ -2,7 +2,7 @@ use std::io::SeekFrom;
 
 use crate::{
     game_data::{
-        DataFormat, TagType,
+        AsyncBufReadExtReadString, DataFormat, TagType,
         common::Common,
         items::{ItemTrait, ReadableItem},
     },
@@ -11,17 +11,21 @@ use crate::{
 use anyhow::Result;
 use indexmap::IndexMap;
 
-use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui::SharedString;
 
 #[derive(Default, Clone)]
-pub struct SkillBook {
+pub struct Relic {
     pub debug: Vec<u8>,
     pub common: Common,
+    pub magical_defense: f32,
+    pub random_effects_count_min: u8,
+    pub random_effects_count_max: u8,
+    pub equip_slot: SharedString,
 }
 
-impl ReadableItem for SkillBook {
+impl ReadableItem for Relic {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
@@ -61,13 +65,28 @@ impl ReadableItem for SkillBook {
             };
 
             self.common.parse(tag, reader, Self::FORMAT).await?;
+
+            match tag_idx {
+                10 => self.equip_slot = reader.read_string(Self::FORMAT).await?,
+                14 => self.magical_defense = reader.read_f32_le().await?,
+                20 => self.random_effects_count_min = reader.read_f32_le().await? as u8,
+                21 => self.random_effects_count_max = reader.read_f32_le().await? as u8,
+
+                _ => {}
+            }
         }
 
         Ok(self)
     }
 }
 
-impl ItemTrait for SkillBook {
+impl Relic {
+    pub fn get_type(&self) -> SharedString {
+        self.equip_slot.clone()
+    }
+}
+
+impl ItemTrait for Relic {
     fn common(&self) -> &Common {
         &self.common
     }
@@ -78,5 +97,8 @@ impl ItemTrait for SkillBook {
 
     fn build_preview(&self) -> PreviewBuilder<'_> {
         PreviewBuilder::new(self.common())
+            .magic_defense(self.magical_defense)
+            .min_random_effects(self.random_effects_count_min)
+            .max_random_effects(self.random_effects_count_max)
     }
 }

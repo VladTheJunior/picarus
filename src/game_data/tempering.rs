@@ -1,6 +1,6 @@
 use std::io::SeekFrom;
 
-use crate::game_data::{DataFormat, TagType, item::ReadableItem};
+use crate::game_data::{DataFormat, TagType, items::ReadableItem};
 use anyhow::Result;
 use gpui::SharedString;
 use indexmap::IndexMap;

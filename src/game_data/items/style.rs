@@ -1,6 +1,14 @@
 use std::{collections::HashMap, io::SeekFrom};
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, common::Common, item::ItemTrait, item::ReadableItem, locale::Locale};
+use crate::{
+    game_data::{
+        AsyncBufReadExtReadString, DataFormat, TagType,
+        common::Common,
+        items::{ItemTrait, ReadableItem},
+        locale::Locale,
+    },
+    game_data_view::PreviewBuilder,
+};
 use anyhow::Result;
 use indexmap::IndexMap;
 
@@ -9,7 +17,7 @@ use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 use gpui::SharedString;
 use tracing::warn;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Style {
     pub debug: Vec<u8>,
     pub skill_locale: Option<Locale>,
@@ -45,7 +53,7 @@ impl ReadableItem for Style {
     ) -> Result<Self> {
         self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
-        for tag_idx in 0..tag_count {
+        for (tag_idx, tag) in definitions.keys().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -56,28 +64,8 @@ impl ReadableItem for Style {
                     reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
                 }
             };
-
+            self.common.parse(tag, reader, Self::FORMAT).await?;
             match tag_idx {
-                0 => self.common.parse_id(reader, Self::FORMAT).await?,
-
-                3 => self.common.parse_required_level(reader).await?,
-
-                5 => self.common.parse_item_level(reader).await?,
-                6 => self.common.parse_usable_class(reader, Self::FORMAT).await?,
-
-                8 => self.common.parse_grade(reader).await?,
-
-                13 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                14 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                15 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                16 => self.common.parse_effect(reader, Self::FORMAT).await?,
-
-                26 => self.common.parse_no_trade(reader).await?,
-                27 => self.common.parse_no_sell(reader).await?,
-                28 => self.common.parse_no_destroy(reader).await?,
-
-                30 => self.common.parse_binding(reader, Self::FORMAT).await?,
-
                 37 => {
                     self.skill_effect = {
                         let effect_skill = reader.read_string(Self::FORMAT).await?.to_uppercase().replace(".", "_DESCRIPTION_");
@@ -119,5 +107,9 @@ impl ItemTrait for Style {
 
     fn debug(&self) -> &[u8] {
         &self.debug
+    }
+
+    fn build_preview(&self) -> PreviewBuilder<'_> {
+        PreviewBuilder::new(self.common()).skill_locale(self.get_localized_skill())
     }
 }

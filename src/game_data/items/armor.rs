@@ -1,13 +1,21 @@
 use std::{collections::HashMap, io::SeekFrom};
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, common::Common, item::ItemTrait, item::ReadableItem, locale::Locale};
+use crate::{
+    game_data::{
+        AsyncBufReadExtReadString, DataFormat, TagType,
+        common::Common,
+        items::{ItemTrait, ReadableItem},
+        locale::Locale,
+    },
+    game_data_view::PreviewBuilder,
+};
 use anyhow::Result;
 use gpui::SharedString;
 use indexmap::IndexMap;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use tracing::warn;
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Armor {
     pub debug: Vec<u8>,
     pub common: Common,
@@ -77,7 +85,7 @@ impl ReadableItem for Armor {
         self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
 
-        for tag_idx in 0..tag_count {
+        for (tag_idx, tag) in definitions.keys().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -88,19 +96,11 @@ impl ReadableItem for Armor {
                     reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
                 }
             };
-
+            self.common.parse(tag, reader, Self::FORMAT).await?;
             match tag_idx {
-                0 => self.common.parse_id(reader, Self::FORMAT).await?,
-                6 => self.common.parse_usable_class(reader, Self::FORMAT).await?,
                 10 => self.equip_slot = reader.read_string(Self::FORMAT).await?,
                 11 => self.armor_type = SharedString::new(reader.read_string(Self::FORMAT).await?.to_lowercase()),
 
-                19 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                20 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                21 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                22 => self.common.parse_effect(reader, Self::FORMAT).await?,
-
-                43 => self.common.parse_binding(reader, Self::FORMAT).await?,
                 49 => {
                     self.skill_effect = {
                         let effect_skill = reader.read_string(Self::FORMAT).await?.to_uppercase().replace(".", "_DESCRIPTION_");
@@ -112,9 +112,6 @@ impl ReadableItem for Armor {
                     }
                 }
 
-                3 => self.common.parse_required_level(reader).await?,
-                5 => self.common.parse_item_level(reader).await?,
-                9 => self.common.parse_grade(reader).await?,
                 14 => self.physical_defense = reader.read_f32_le().await?,
                 15 => self.magical_defense = reader.read_f32_le().await?,
 
@@ -124,9 +121,6 @@ impl ReadableItem for Armor {
                 28 => self.sealed_fellow_slots_max = reader.read_f32_le().await? as u8,
                 36 => self.enhancement_limit = reader.read_f32_le().await? as u8,
 
-                39 => self.common.parse_no_trade(reader).await?,
-                40 => self.common.parse_no_sell(reader).await?,
-                41 => self.common.parse_no_destroy(reader).await?,
                 58 => self.overrise_max = reader.read_f32_le().await? as u8,
                 64 => self.reverse_enhancement_limit = reader.read_f32_le().await? as u8,
 
@@ -153,5 +147,19 @@ impl ItemTrait for Armor {
 
     fn get_type(&self) -> Option<SharedString> {
         Some(self.get_type())
+    }
+
+    fn build_preview(&self) -> PreviewBuilder<'_> {
+        PreviewBuilder::new(self.common())
+            .magic_defense(self.magical_defense)
+            .physic_defense(self.physical_defense)
+            .min_random_effects(self.random_effects_count_min)
+            .max_random_effects(self.random_effects_count_max)
+            .min_sealed_slots(self.sealed_fellow_slots_min)
+            .max_sealed_slots(self.sealed_fellow_slots_max)
+            .temper_limit(self.enhancement_limit)
+            .reverse_limit(self.reverse_enhancement_limit)
+            .transcendence_limit(self.overrise_max)
+            .skill_locale(self.get_localized_skill())
     }
 }

@@ -1,6 +1,14 @@
 use std::{collections::HashMap, io::SeekFrom};
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, common::Common, item::ItemTrait, item::ReadableItem, locale::Locale};
+use crate::{
+    game_data::{
+        AsyncBufReadExtReadString, DataFormat, TagType,
+        common::Common,
+        items::{ItemTrait, ReadableItem},
+        locale::Locale,
+    },
+    game_data_view::PreviewBuilder,
+};
 use anyhow::Result;
 
 use gpui::SharedString;
@@ -9,7 +17,7 @@ use indexmap::IndexMap;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use tracing::warn;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SecondaryWeapon {
     pub debug: Vec<u8>,
     pub skill_locale: Option<Locale>,
@@ -57,7 +65,7 @@ impl ReadableItem for SecondaryWeapon {
     ) -> Result<Self> {
         self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
-        for tag_idx in 0..tag_count {
+        for (tag_idx, tag) in definitions.keys().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -68,21 +76,10 @@ impl ReadableItem for SecondaryWeapon {
                     reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
                 }
             };
-
+            self.common.parse(tag, reader, Self::FORMAT).await?;
             match tag_idx {
-                0 => self.common.parse_id(reader, Self::FORMAT).await?,
-
-                6 => self.common.parse_usable_class(reader, Self::FORMAT).await?,
-
                 10 => self.equipment_slot = reader.read_string(Self::FORMAT).await?,
                 11 => self.weapon_type = SharedString::new(reader.read_string(Self::FORMAT).await?.to_lowercase()),
-
-                21 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                22 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                23 => self.common.parse_effect(reader, Self::FORMAT).await?,
-                24 => self.common.parse_effect(reader, Self::FORMAT).await?,
-
-                39 => self.common.parse_binding(reader, Self::FORMAT).await?,
 
                 45 => {
                     self.skill_effect = {
@@ -95,11 +92,6 @@ impl ReadableItem for SecondaryWeapon {
                     }
                 }
 
-                3 => self.common.parse_required_level(reader).await?,
-
-                5 => self.common.parse_item_level(reader).await?,
-                9 => self.common.parse_grade(reader).await?,
-
                 15 => self.physical_defense = reader.read_f32_le().await?,
                 16 => self.magical_defense = reader.read_f32_le().await?,
 
@@ -108,15 +100,11 @@ impl ReadableItem for SecondaryWeapon {
 
                 32 => self.enchant_limit = reader.read_f32_le().await? as u8,
 
-                35 => self.common.parse_no_trade(reader).await?,
-                36 => self.common.parse_no_sell(reader).await?,
-                37 => self.common.parse_no_destroy(reader).await?,
-
                 54 => self.overrise_max = reader.read_f32_le().await? as u8,
 
                 60 => self.reverse_enchant_limit = reader.read_f32_le().await? as u8,
 
-                _ => {} // Should not happen
+                _ => {}
             }
         }
 
@@ -162,5 +150,17 @@ impl ItemTrait for SecondaryWeapon {
 
     fn get_type(&self) -> Option<SharedString> {
         Some(self.get_type())
+    }
+
+    fn build_preview(&self) -> PreviewBuilder<'_> {
+        PreviewBuilder::new(self.common())
+            .magic_defense(self.magical_defense)
+            .physic_defense(self.physical_defense)
+            .min_random_effects(self.random_option_count_min)
+            .max_random_effects(self.random_option_count_max)
+            .temper_limit(self.enchant_limit)
+            .reverse_limit(self.reverse_enchant_limit)
+            .transcendence_limit(self.overrise_max)
+            .skill_locale(self.get_localized_skill())
     }
 }

@@ -2,7 +2,7 @@ use std::io::SeekFrom;
 
 use crate::{
     game_data::TagType,
-    game_data::{AsyncBufReadExtReadString, DataFormat, item::ReadableItem},
+    game_data::{AsyncBufReadExtReadString, DataFormat, items::ReadableItem},
     language::LanguageController,
 };
 use anyhow::Result;

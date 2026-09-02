@@ -27,6 +27,15 @@ Interactive Item Viewer for Riders of Icarus is a desktop application that allow
   - Consumes
   - Boosts
   - Familiar Equips
+  - Random Boxes (with drop chance in percents!!!)
+  - Packages
+  - Accessories
+  - Bags
+  - Familiar Skins
+  - Familiar Consumes
+  - Quest Items
+  - Bracelets
+  - Relics
 - Detailed Information:
   - Basic stats (attack, defense, etc.)
   - Item grade and quality
@@ -43,6 +52,7 @@ Interactive Item Viewer for Riders of Icarus is a desktop application that allow
 - **Random Effects Selection:** Browse and select from all possible random effects that can roll on items
 - **Tempering System:** Simulate item tempering to see stat increases at different tempering levels
 - **Transdense System:** Explore the transdense enhancement system and its effects on item stats
+- **Item Quality Selection:** Simulation of item quality and its impact on stats
 
 ## Planned Features
 - Mounts support

@@ -16,12 +16,12 @@ use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 use gpui::SharedString;
 
 #[derive(Default, Clone)]
-pub struct SkillBook {
+pub struct FellowStyle {
     pub debug: Vec<u8>,
     pub common: Common,
 }
 
-impl ReadableItem for SkillBook {
+impl ReadableItem for FellowStyle {
     const FORMAT: DataFormat = DataFormat::String;
     type Key = SharedString;
 
@@ -59,7 +59,6 @@ impl ReadableItem for SkillBook {
                     reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
                 }
             };
-
             self.common.parse(tag, reader, Self::FORMAT).await?;
         }
 
@@ -67,7 +66,7 @@ impl ReadableItem for SkillBook {
     }
 }
 
-impl ItemTrait for SkillBook {
+impl ItemTrait for FellowStyle {
     fn common(&self) -> &Common {
         &self.common
     }

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io::SeekFrom};
 
 use crate::{
-    game_data::{AsyncBufReadExtReadString, item::ReadableItem},
+    game_data::{AsyncBufReadExtReadString, items::ReadableItem},
     game_data::{DataFormat, TagType, effects::ItemEffect, locale::Locale},
 };
 use anyhow::Result;

@@ -1,13 +1,13 @@
 use gpui::{
-    Action, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight, ImageSource, InteractiveElement,
-    IntoElement, KeyBinding, ListSizingBehavior, ObjectFit, ParentElement, PathPromptOptions, ReadGlobal, Render, ScrollHandle, ScrollStrategy,
-    SharedString, StatefulInteractiveElement, Styled, StyledImage, UniformListScrollHandle, UpdateGlobal, Window, actions, div, img,
-    prelude::FluentBuilder, px, rems, rgb, uniform_list,
+    Action, App, AppContext, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight, ImageSource, InteractiveElement, IntoElement,
+    KeyBinding, ListSizingBehavior, ObjectFit, ParentElement, PathPromptOptions, ReadGlobal, Render, ScrollHandle, ScrollStrategy, SharedString,
+    StatefulInteractiveElement, Styled, StyledImage, UniformListScrollHandle, UpdateGlobal, Window, actions, div, img, prelude::FluentBuilder, px,
+    rems, rgb, uniform_list,
 };
 use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName, IndexPath, Root, Sizable, StyledExt, TitleBar, WindowExt,
-    button::{Button, ButtonVariants},
-    combobox::Combobox,
+    button::{Button, ButtonCustomVariant, ButtonVariants},
+    combobox::{Combobox, ComboboxEvent},
     h_flex,
     input::{Editor, EditorState, Input, InputState},
     label::Label,
@@ -49,9 +49,9 @@ use crate::{
         effects::ItemMinMaxStepEffect,
         filters::{GameDataFilters, ItemEffectFilter},
         grade::Grade,
-        item::Item,
-        item::ItemTrait,
-        item::ItemType,
+        items::Item,
+        items::ItemTrait,
+        items::ItemType,
         items::{package::PackageItem, recipe::RecipeType},
         product::Product,
         quality::Quality,
@@ -94,9 +94,200 @@ pub enum GameDataViewEvent {
     Reset,
 }
 
+pub struct PreviewBuilder<'a> {
+    pub common: &'a Common,
+    pub optional: PreviewBuilderOptional,
+}
+
+#[derive(Default)]
+pub struct PreviewBuilderOptional {
+    pub quality_effect: Option<f32>,
+    pub temper_limit: Option<u8>,
+    pub reverse_limit: Option<u8>,
+    pub transcendence_limit: Option<u8>,
+    pub transcendence_effect: Option<f32>,
+    pub skill_locale: Option<SharedString>,
+    pub description_locale: Option<SharedString>,
+    pub max_gem_slots: Option<u8>,
+    pub attack: Option<(f32, f32, f32)>,
+    pub attack_tempering_effect: Option<(f32, f32)>,
+    pub physic_defense: Option<f32>,
+    pub physic_defense_tempering_effect: Option<f32>,
+    pub magic_defense: Option<f32>,
+    pub magic_defense_tempering_effect: Option<f32>,
+    pub talent_power: Option<u16>,
+
+    pub recipe_types: Option<BTreeSet<RecipeType>>,
+    pub recipe_stage: Option<u8>,
+    pub product: Option<Weak<RefCell<Product>>>,
+
+    pub min_sealed_slots: u8,
+    pub max_sealed_slots: u8,
+    pub min_random_effects: u8,
+    pub max_random_effects: u8,
+    pub random_effects: Option<Vec<ItemMinMaxEffect>>,
+
+    pub fellow_stone_effects: Option<(Vec<ItemMinMaxStepEffect>, Option<ItemMinMaxNoStepEffect>, u8, f32)>,
+
+    pub max_ep: Option<f32>,
+
+    pub random_box_group: Option<Weak<RefCell<RandomBoxGroup>>>,
+    pub package_contents: Option<IndexMap<usize, PackageItem>>,
+}
+
+impl<'a> PreviewBuilder<'a> {
+    pub fn new(common: &'a Common) -> Self {
+        Self {
+            common,
+            optional: PreviewBuilderOptional::default(),
+        }
+    }
+
+    pub fn quality_effect(mut self, value: Option<f32>) -> Self {
+        self.optional.quality_effect = value;
+        self
+    }
+
+    pub fn temper_limit(mut self, value: u8) -> Self {
+        self.optional.temper_limit = Some(value);
+        self
+    }
+
+    pub fn max_gem_slots(mut self, value: u8) -> Self {
+        self.optional.max_gem_slots = Some(value);
+        self
+    }
+
+    pub fn reverse_limit(mut self, value: u8) -> Self {
+        self.optional.reverse_limit = Some(value);
+        self
+    }
+
+    pub fn transcendence_limit(mut self, value: u8) -> Self {
+        self.optional.transcendence_limit = Some(value);
+        self
+    }
+
+    pub fn transcendence_effect(mut self, value: Option<f32>) -> Self {
+        self.optional.transcendence_effect = value;
+        self
+    }
+
+    pub fn skill_locale(mut self, value: Option<SharedString>) -> Self {
+        self.optional.skill_locale = value;
+        self
+    }
+
+    pub fn description_locale(mut self, value: Option<SharedString>) -> Self {
+        self.optional.description_locale = value;
+        self
+    }
+
+    pub fn attack(mut self, min: f32, max: f32, attack_speed: f32) -> Self {
+        self.optional.attack = Some((min, max, attack_speed));
+        self
+    }
+
+    pub fn attack_tempering_effect(mut self, value: Option<(f32, f32)>) -> Self {
+        self.optional.attack_tempering_effect = value;
+        self
+    }
+
+    pub fn physic_defense(mut self, value: f32) -> Self {
+        self.optional.physic_defense = Some(value);
+        self
+    }
+
+    pub fn physic_defense_tempering_effect(mut self, value: Option<f32>) -> Self {
+        self.optional.physic_defense_tempering_effect = value;
+        self
+    }
+
+    pub fn magic_defense(mut self, value: f32) -> Self {
+        self.optional.magic_defense = Some(value);
+        self
+    }
+
+    pub fn magic_defense_tempering_effect(mut self, value: Option<f32>) -> Self {
+        self.optional.magic_defense_tempering_effect = value;
+        self
+    }
+
+    pub fn talent_power(mut self, value: u16) -> Self {
+        self.optional.talent_power = Some(value);
+        self
+    }
+
+    pub fn recipe_types(mut self, value: Option<BTreeSet<RecipeType>>) -> Self {
+        self.optional.recipe_types = value;
+        self
+    }
+
+    pub fn recipe_stage(mut self, value: Option<u8>) -> Self {
+        self.optional.recipe_stage = value;
+        self
+    }
+
+    pub fn product(mut self, value: Option<Weak<RefCell<Product>>>) -> Self {
+        self.optional.product = value;
+        self
+    }
+
+    pub fn min_sealed_slots(mut self, value: u8) -> Self {
+        self.optional.min_sealed_slots = value;
+        self
+    }
+
+    pub fn max_sealed_slots(mut self, value: u8) -> Self {
+        self.optional.max_sealed_slots = value;
+        self
+    }
+
+    pub fn min_random_effects(mut self, value: u8) -> Self {
+        self.optional.min_random_effects = value;
+        self
+    }
+
+    pub fn max_random_effects(mut self, value: u8) -> Self {
+        self.optional.max_random_effects = value;
+        self
+    }
+
+    pub fn random_effects(mut self, value: Option<Vec<ItemMinMaxEffect>>) -> Self {
+        self.optional.random_effects = value;
+        self
+    }
+
+    pub fn fellow_stone_effects(
+        mut self,
+        effects: Vec<ItemMinMaxStepEffect>,
+        no_step_effect: Option<ItemMinMaxNoStepEffect>,
+        level: u8,
+        value: f32,
+    ) -> Self {
+        self.optional.fellow_stone_effects = Some((effects, no_step_effect, level, value));
+        self
+    }
+
+    pub fn max_ep(mut self, value: Option<f32>) -> Self {
+        self.optional.max_ep = value;
+        self
+    }
+
+    pub fn random_box_group(mut self, value: Option<Weak<RefCell<RandomBoxGroup>>>) -> Self {
+        self.optional.random_box_group = value;
+        self
+    }
+
+    pub fn package_contents(mut self, value: IndexMap<usize, PackageItem>) -> Self {
+        self.optional.package_contents = Some(value);
+        self
+    }
+}
+
 #[derive(Default)]
 struct PreviewValues {
-    quality: Quality,
+    quality: Option<Quality>,
     total_tempering: u8,
     tempering: u8,
     reverse_tempering: u8,
@@ -182,6 +373,14 @@ pub enum GameDataLoadingStatus {
     Package,
     Style,
     Bag,
+    FellowStyle,
+    FellowConsume,
+    Quest,
+    Bracelet,
+    Relic,
+    FellowBook,
+    Event,
+    Elluns,
 }
 
 impl GameDataLoadingStatus {
@@ -211,6 +410,14 @@ impl GameDataLoadingStatus {
             GameDataLoadingStatus::Package => t("game-data-loading-package"),
             GameDataLoadingStatus::Style => t("game-data-loading-style"),
             GameDataLoadingStatus::Bag => t("game-data-loading-bag"),
+            GameDataLoadingStatus::FellowStyle => t("game-data-loading-fellow-style"),
+            GameDataLoadingStatus::FellowConsume => t("game-data-loading-fellow-consume"),
+            GameDataLoadingStatus::Quest => t("game-data-loading-quest"),
+            GameDataLoadingStatus::Bracelet => t("game-data-loading-bracelet"),
+            GameDataLoadingStatus::Relic => t("game-data-loading-relic"),
+            GameDataLoadingStatus::FellowBook => t("game-data-loading-fellow-book"),
+            GameDataLoadingStatus::Event => t("game-data-loading-event"),
+            GameDataLoadingStatus::Elluns => t("game-data-loading-elluns"),
         }
     }
 }
@@ -218,7 +425,7 @@ impl GameDataLoadingStatus {
 pub struct GameDataView {
     game_data: GameData,
     pub filters: GameDataFilters,
-    pub filtered: IndexMap<SharedString, Rc<Item>>,
+    pub filtered: IndexMap<SharedString, Rc<RefCell<Item>>>,
     is_exporting: bool,
     is_reading: bool,
     explorer_scroll_handle: UniformListScrollHandle,
@@ -316,56 +523,16 @@ impl GameDataView {
             .game_data
             .items
             .iter()
-            .filter(|(_, item)| self.filters.check_item(item))
+            .filter(|(_, item)| self.filters.check_item(&item.borrow()))
             .map(|(id, item)| (id.clone(), Rc::clone(item)))
             .collect();
     }
 
     fn render_preview(
-        common: &Common,
-        quality: Option<Quality>,
-        temper_limit: Option<u8>,
-        reverse_limit: Option<u8>,
-        transcendence_limit: Option<u8>,
-        transcendence_effect: Option<f32>,
-        skill_locale: Option<SharedString>,
-        description_locale: Option<SharedString>,
-
-        attack: Option<(f32, f32, f32)>,
-        attack_tempering_effect: Option<(f32, f32)>,
-        physic_defense: Option<f32>,
-        physic_defense_tempering_effect: Option<f32>,
-        magic_defense: Option<f32>,
-        magic_defense_tempering_effect: Option<f32>,
-        attack_speed: Option<f32>,
-        talent_power: Option<u16>,
-
-        recipe_types: Option<BTreeSet<RecipeType>>,
-        recipe_stage: Option<u8>,
-        product: Option<Weak<RefCell<Product>>>,
-
-        min_sealed_slots: u8,
-        max_sealed_slots: u8,
-        min_random_effects: u8,
-        max_random_effects: u8,
-        random_effects: Option<Vec<ItemMinMaxEffect>>,
-
-        fellow_stone_effects: Option<(Vec<ItemMinMaxStepEffect>, Option<ItemMinMaxNoStepEffect>, u8, f32)>,
+        preview_builder: PreviewBuilder,
         preview: &PreviewValues,
-        items: &IndexMap<SharedString, Rc<Item>>,
-        decrease_transcendence_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-        increase_transcendence_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-        decrease_tempering_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-        increase_tempering_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-        decrease_reverse_tempering_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-        increase_reverse_tempering_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-        copy_item_name_handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-        viewer_entity: Entity<GameDataView>,
-        max_ep: Option<f32>,
-
-        random_box_group: Option<Weak<RefCell<RandomBoxGroup>>>,
-        package_contents: Option<IndexMap<usize, PackageItem>>,
-        cx: &App,
+        items: &IndexMap<SharedString, Rc<RefCell<Item>>>,
+        cx: &Context<'_, GameDataView>,
     ) -> gpui::Div {
         v_flex()
             .items_start()
@@ -377,21 +544,21 @@ impl GameDataView {
                     .items_start()
                     .child(
                         h_flex()
-                            .when_none(&common.icon, |this| {
+                            .when_none(&preview_builder.common.icon, |this| {
                                 this.child(
                                     div()
                                         .size(px(128.))
-                                        .when_some(common.grade.color(), |this, color| this.border_color(color))
+                                        .when_some(preview_builder.common.grade.color(), |this, color| this.border_color(color))
                                         .border_2(),
                                 )
                             })
-                            .when_some(common.icon.as_ref(), |this, icon| {
+                            .when_some(preview_builder.common.icon.as_ref(), |this, icon| {
                                 this.child(
                                     img(ImageSource::Image(icon.clone()))
                                         .object_fit(ObjectFit::Cover)
                                         .size(px(128.))
                                         .border_2()
-                                        .when_some(common.grade.color(), |this, color| this.border_color(color)),
+                                        .when_some(preview_builder.common.grade.color(), |this, color| this.border_color(color)),
                                 )
                             }),
                     )
@@ -402,92 +569,110 @@ impl GameDataView {
                                     .gap_1()
                                     .child(
                                         div()
-                                            .child(common.get_localized_name())
+                                            .child(preview_builder.common.get_localized_name())
                                             .text_lg()
-                                            .when_some(common.grade.color(), |this, color| this.text_color(color)),
+                                            .when_some(preview_builder.common.grade.color(), |this, color| this.text_color(color)),
                                     )
                                     .child(
                                         Button::new("copy-item-name")
                                             .icon(IconName::Copy)
                                             .ghost()
                                             .compact()
-                                            .on_click(copy_item_name_handler),
+                                            .on_click(cx.listener({
+                                                let item_locale = preview_builder.common.get_localized_name();
+                                                move |_, _, window, cx| {
+                                                    cx.write_to_clipboard(ClipboardItem::new_string(item_locale.to_string()));
+                                                    window.push_notification((NotificationType::Info, t("message-copy-item-name")), cx);
+                                                }
+                                            })),
                                     ),
                             )
                             .child(
                                 h_flex()
                                     .gap_1()
-                                    .child(common.grade.locale())
-                                    .when_some(common.grade.color(), |this, color| this.text_color(color))
-                                    .when_some(quality, |this, quality| {
+                                    .child(preview_builder.common.grade.locale())
+                                    .when_some(preview_builder.common.grade.color(), |this, color| this.text_color(color))
+                                    .when_some(preview.quality, |this, quality| {
                                         this.child(
                                             Button::new("button-quality")
                                                 .small()
                                                 .link()
-                                                .when_some(common.grade.color(), |this, color| this.text_color(color))
+                                                .when_some(preview_builder.common.grade.color(), |this, color| this.text_color(color))
                                                 .label(quality.locale())
-                                                .on_click({
-                                                    let viewer_entity: Entity<GameDataView> = viewer_entity.clone();
-                                                    let id = common.id.clone();
-                                                    move |_, _, cx| {
-                                                        viewer_entity.update(cx, {
-                                                            let id = id.clone();
-                                                            move |this, cx| {
-                                                                this.preview.entry(id.clone()).and_modify(|v| {
-                                                                    v.quality = v.quality.next();
-                                                                });
-                                                                cx.notify();
-                                                            }
-                                                        })
+                                                .on_click(cx.listener({
+                                                    let id = preview_builder.common.id.clone();
+                                                    move |this, _, _, cx| {
+                                                        this.preview.entry(id.clone()).and_modify(|v| {
+                                                            v.quality = Some(quality.next());
+                                                        });
+                                                        cx.notify();
                                                     }
-                                                }),
+                                                })),
                                         )
                                     }),
                             )
-                            .when_some(max_ep, |this, max_ep| {
+                            .when_some(preview_builder.optional.max_ep, |this, max_ep| {
                                 this.child(h_flex().gap_1().child(format!("{} {:.1}", t("item-effect-max-ep"), max_ep)))
                             })
-                            .when_some(attack, |this, (dps, min, max)| {
+                            .when_some(preview_builder.optional.attack, |this, (min, max, attack_speed)| {
+                                let dps = (max
+                                    + preview_builder.optional.quality_effect.unwrap_or_default()
+                                    + min
+                                    + preview_builder.optional.quality_effect.unwrap_or_default())
+                                    / 2.0
+                                    / attack_speed;
                                 this.child(h_flex().gap_1().child(format!("{} {:.1}", t("item-attack-dps"), dps)).when_some(
-                                    attack_tempering_effect,
+                                    preview_builder.optional.attack_tempering_effect,
                                     |this, (dps_tempering_effect, _)| {
                                         this.child(div().text_color(cx.theme().cyan).child(format!("({:+.1})", dps_tempering_effect)))
                                     },
                                 ))
                                 .child(
-                                    h_flex().gap_1().child(format!("{} {} - {}", t("item-attack"), min, max)).when_some(
-                                        attack_tempering_effect,
-                                        |this, (_, min_max_tempering_effect)| {
+                                    h_flex()
+                                        .gap_1()
+                                        .child(format!(
+                                            "{} {} - {}",
+                                            t("item-attack"),
+                                            min + preview_builder.optional.quality_effect.unwrap_or_default(),
+                                            max + preview_builder.optional.quality_effect.unwrap_or_default()
+                                        ))
+                                        .when_some(preview_builder.optional.attack_tempering_effect, |this, (_, min_max_tempering_effect)| {
                                             this.child(div().text_color(cx.theme().cyan).child(format!("({:+.1})", min_max_tempering_effect)))
-                                        },
-                                    ),
+                                        }),
                                 )
                             })
-                            .when_some(physic_defense, |this, physic_defense| {
+                            .when_some(preview_builder.optional.physic_defense, |this, physic_defense| {
                                 this.child(
                                     h_flex()
                                         .gap_1()
-                                        .child(format!("{} {:.1}", t("item-physical-defense"), physic_defense))
-                                        .when_some(physic_defense_tempering_effect, |this, tempering_effect| {
+                                        .child(format!(
+                                            "{} {:.1}",
+                                            t("item-physical-defense"),
+                                            physic_defense + preview_builder.optional.quality_effect.unwrap_or_default()
+                                        ))
+                                        .when_some(preview_builder.optional.physic_defense_tempering_effect, |this, tempering_effect| {
                                             this.child(div().text_color(cx.theme().cyan).child(format!("({:+.1})", tempering_effect)))
                                         }),
                                 )
                             })
-                            .when_some(magic_defense, |this, magic_defense| {
+                            .when_some(preview_builder.optional.magic_defense, |this, magic_defense| {
                                 this.child(
                                     h_flex()
                                         .gap_1()
                                         .child(format!("{} {:.1}", t("item-magic-defense"), magic_defense))
-                                        .when_some(magic_defense_tempering_effect, |this, tempering_effect| {
+                                        .when_some(preview_builder.optional.magic_defense_tempering_effect, |this, tempering_effect| {
                                             this.child(div().text_color(cx.theme().cyan).child(format!("({:+.1})", tempering_effect)))
                                         }),
                                 )
                             })
-                            .when_some(attack_speed, |this, attack_speed| {
+                            .when_some(preview_builder.optional.attack, |this, (_, _, attack_speed)| {
                                 this.child(format!("{} {:.1}", t("item-attack-speed"), attack_speed))
                             })
-                            .when_some(talent_power, |this, talent_power| {
+                            .when_some(preview_builder.optional.talent_power, |this, talent_power| {
                                 this.child(format!("{} {}", t("item-talent-power"), talent_power))
+                            })
+                            .when_some(preview_builder.optional.max_gem_slots, |this, max_gem_slots| {
+                                this.child(format!("{} {}", t("item-max-gem-slots"), max_gem_slots))
                             }),
                     ),
             )
@@ -497,21 +682,21 @@ impl GameDataView {
                     .items_start()
                     .child(
                         v_flex()
-                            .when_some(transcendence_limit, |this, transcendence_limit| {
+                            .when_some(preview_builder.optional.transcendence_limit, |this, transcendence_limit| {
                                 this.when_else(
                                     transcendence_limit == 0,
                                     |this| this.child(t("item-no-transcendence")),
                                     |this| this.child(t("item-transcendence-limit")),
                                 )
                             })
-                            .when_some(temper_limit, |this, temper_limit| {
+                            .when_some(preview_builder.optional.temper_limit, |this, temper_limit| {
                                 this.when_else(
                                     temper_limit == 0,
                                     |this| this.child(t("item-no-tempering")),
                                     |this| this.child(t("item-tempering-limit")),
                                 )
                             })
-                            .when_some(reverse_limit, |this, reverse_limit| {
+                            .when_some(preview_builder.optional.reverse_limit, |this, reverse_limit| {
                                 this.when_else(
                                     reverse_limit == 0,
                                     |this| this.child(t("item-no-reverse-tempering")),
@@ -522,7 +707,7 @@ impl GameDataView {
                     .child(
                         v_flex()
                             .justify_start()
-                            .when_some(transcendence_limit, |this, transcendence_limit| {
+                            .when_some(preview_builder.optional.transcendence_limit, |this, transcendence_limit| {
                                 this.when_else(
                                     transcendence_limit == 0,
                                     |this| this.child(div().child(" ")),
@@ -534,7 +719,15 @@ impl GameDataView {
                                                         //   .ghost()
                                                         .xsmall()
                                                         .icon(IconName::Minus)
-                                                        .on_click(decrease_transcendence_handler),
+                                                        .on_click(cx.listener({
+                                                            let id = preview_builder.common.id.clone();
+                                                            move |this, _, _, cx| {
+                                                                let preview =
+                                                                    this.preview.entry(id.clone()).or_insert_with(|| PreviewValues::default());
+                                                                preview.decrease_transcendence();
+                                                                cx.notify();
+                                                            }
+                                                        })),
                                                 )
                                                 .child(
                                                     h_flex()
@@ -547,13 +740,22 @@ impl GameDataView {
                                                         //   .ghost()
                                                         .xsmall()
                                                         .icon(IconName::Plus)
-                                                        .on_click(increase_transcendence_handler),
+                                                        .on_click(cx.listener({
+                                                            let id = preview_builder.common.id.clone();
+                                                            move |this, _, _, cx| {
+                                                                let preview =
+                                                                    this.preview.entry(id.clone()).or_insert_with(|| PreviewValues::default());
+                                                                preview.increase_transcendence(preview_builder.optional.transcendence_limit);
+
+                                                                cx.notify();
+                                                            }
+                                                        })),
                                                 ),
                                         )
                                     },
                                 )
                             })
-                            .when_some(temper_limit, |this, temper_limit| {
+                            .when_some(preview_builder.optional.temper_limit, |this, temper_limit| {
                                 this.when_else(
                                     temper_limit == 0,
                                     |this| this.child(div().child(" ")),
@@ -565,7 +767,15 @@ impl GameDataView {
                                                         //   .ghost()
                                                         .xsmall()
                                                         .icon(IconName::Minus)
-                                                        .on_click(decrease_tempering_handler),
+                                                        .on_click(cx.listener({
+                                                            let id = preview_builder.common.id.clone();
+                                                            move |this, _, _, cx| {
+                                                                let preview =
+                                                                    this.preview.entry(id.clone()).or_insert_with(|| PreviewValues::default());
+                                                                preview.decrease_tempering();
+                                                                cx.notify();
+                                                            }
+                                                        })),
                                                 )
                                                 .child(
                                                     h_flex()
@@ -578,13 +788,25 @@ impl GameDataView {
                                                         //   .ghost()
                                                         .xsmall()
                                                         .icon(IconName::Plus)
-                                                        .on_click(increase_tempering_handler),
+                                                        .on_click(cx.listener({
+                                                            let id = preview_builder.common.id.clone();
+                                                            move |this, _, _, cx| {
+                                                                let preview =
+                                                                    this.preview.entry(id.clone()).or_insert_with(|| PreviewValues::default());
+                                                                preview.increase_tempering(
+                                                                    preview_builder.optional.temper_limit,
+                                                                    preview_builder.optional.reverse_limit,
+                                                                );
+
+                                                                cx.notify();
+                                                            }
+                                                        })),
                                                 ),
                                         )
                                     },
                                 )
                             })
-                            .when_some(reverse_limit, |this, reverse_limit| {
+                            .when_some(preview_builder.optional.reverse_limit, |this, reverse_limit| {
                                 this.when_else(
                                     reverse_limit == 0,
                                     |this| this.child(div().child(" ")),
@@ -596,7 +818,15 @@ impl GameDataView {
                                                         //   .ghost()
                                                         .xsmall()
                                                         .icon(IconName::Minus)
-                                                        .on_click(decrease_reverse_tempering_handler),
+                                                        .on_click(cx.listener({
+                                                            let id = preview_builder.common.id.clone();
+                                                            move |this, _, _, cx| {
+                                                                let preview =
+                                                                    this.preview.entry(id.clone()).or_insert_with(|| PreviewValues::default());
+                                                                preview.decrease_reverse_tempering();
+                                                                cx.notify();
+                                                            }
+                                                        })),
                                                 )
                                                 .child(
                                                     h_flex()
@@ -609,7 +839,19 @@ impl GameDataView {
                                                         //   .ghost()
                                                         .xsmall()
                                                         .icon(IconName::Plus)
-                                                        .on_click(increase_reverse_tempering_handler),
+                                                        .on_click(cx.listener({
+                                                            let id = preview_builder.common.id.clone();
+                                                            move |this, _, _, cx| {
+                                                                let preview =
+                                                                    this.preview.entry(id.clone()).or_insert_with(|| PreviewValues::default());
+                                                                preview.increase_reverse_tempering(
+                                                                    preview_builder.optional.temper_limit,
+                                                                    preview_builder.optional.reverse_limit,
+                                                                );
+
+                                                                cx.notify();
+                                                            }
+                                                        })),
                                                 ),
                                         )
                                     },
@@ -617,51 +859,55 @@ impl GameDataView {
                             }),
                     ),
             )
-            .when(common.required_level != 0, |this| {
-                this.child(format!("{}: {}", t("item-required-level"), common.required_level))
+            .when(preview_builder.common.required_level != 0, |this| {
+                this.child(format!("{}: {}", t("item-required-level"), preview_builder.common.required_level))
             })
-            .when(max_sealed_slots > 0, |this| {
-                this.child(format!("{}: {} - {}", t("item-sealed-stones-slots"), min_sealed_slots, max_sealed_slots))
+            .when(preview_builder.optional.max_sealed_slots > 0, |this| {
+                this.child(format!(
+                    "{}: {} - {}",
+                    t("item-sealed-stones-slots"),
+                    preview_builder.optional.min_sealed_slots,
+                    preview_builder.optional.max_sealed_slots
+                ))
             })
-            .when(!common.usable_class.is_empty(), |this| {
-                this.child(h_flex().gap_1().children(common.usable_class.iter().map(|c| c.locale())))
+            .when(!preview_builder.common.usable_class.is_empty(), |this| {
+                this.child(h_flex().gap_1().children(preview_builder.common.usable_class.iter().map(|c| c.locale())))
             })
             .child(
                 h_flex()
                     .gap_1()
-                    .when_some(common.binding.and_then(|t| t.locale()), |this, locale| {
+                    .when_some(preview_builder.common.binding.and_then(|t| t.locale()), |this, locale| {
                         this.child(div().text_color(cx.theme().yellow).child(locale))
                     })
-                    .when(common.no_trade, |this| this.child(t("item-tag-no-trade")))
-                    .when(common.no_sell, |this| this.child(t("item-tag-no-sell")))
-                    .when(common.no_destroy, |this| this.child(t("item-tag-no-destroy"))),
+                    .when(preview_builder.common.no_trade, |this| this.child(t("item-tag-no-trade")))
+                    .when(preview_builder.common.no_sell, |this| this.child(t("item-tag-no-sell")))
+                    .when(preview_builder.common.no_destroy, |this| this.child(t("item-tag-no-destroy"))),
             )
-            .when_some(recipe_types, |this, recipe_types| {
+            .when_some(preview_builder.optional.recipe_types, |this, recipe_types| {
                 this.child(
                     h_flex()
                         .gap_1()
                         .children(recipe_types.iter().map(|m| m.locale()))
-                        .when_some(recipe_stage, |this, recipe_stage| {
+                        .when_some(preview_builder.optional.recipe_stage, |this, recipe_stage| {
                             this.child(t_v("item-recipe-stage", vec![("stage", recipe_stage)]))
                         }),
                 )
             })
-            .when_some(skill_locale, |this, skill_locale| {
+            .when_some(preview_builder.optional.skill_locale, |this, skill_locale| {
                 this.child(div().mt_2().text_color(cx.theme().success).child(t("item-equipped-skill")))
                     .child(div().text_color(cx.theme().yellow).child(remove_html_tags_regex(&skill_locale)))
             })
-            .when(max_random_effects > 0, {
-                let viewer_entity = viewer_entity.clone();
-                let id = common.id.clone();
+            .when(preview_builder.optional.max_random_effects > 0, {
+                let id = preview_builder.common.id.clone();
                 move |this| {
                     this.child(div().mt_2().text_color(cx.theme().yellow).child(format!(
                         "{} - {} {}",
-                        min_random_effects,
-                        max_random_effects,
+                        preview_builder.optional.min_random_effects,
+                        preview_builder.optional.max_random_effects,
                         t("item-random-equipped-effects")
                     )))
-                    .when_some(random_effects, move |this, random_effects| {
-                        this.children((0..max_random_effects).map(|i| {
+                    .when_some(preview_builder.optional.random_effects, move |this, random_effects| {
+                        this.children((0..preview_builder.optional.max_random_effects).map(|i| {
                             let re = preview.random_effects.get(&i);
 
                             Button::new(format!("random-effects-dropdown-{}", i))
@@ -676,7 +922,7 @@ impl GameDataView {
                                             this.text_color(cx.theme().foreground).child(t("label-select-random-equipped-effect"))
                                         })
                                         .when_some(
-                                            transcendence_effect.and_then(|transcendence_effect| {
+                                            preview_builder.optional.transcendence_effect.and_then(|transcendence_effect| {
                                                 re.and_then(|f| f.parsed.as_ref())
                                                     .map(|(key, min, max)| (key, min * transcendence_effect, max * transcendence_effect))
                                             }),
@@ -692,7 +938,7 @@ impl GameDataView {
                                         ),
                                 )
                                 .dropdown_menu({
-                                    let viewer_entity = viewer_entity.clone();
+                                    let viewer_entity = cx.entity();
                                     let id = id.clone();
                                     {
                                         let random_effects = random_effects.clone();
@@ -721,14 +967,14 @@ impl GameDataView {
                     })
                 }
             })
-            .when(!common.effects.is_empty(), |this| {
+            .when(!preview_builder.common.effects.is_empty(), |this| {
                 this.child(div().mt_2().text_color(cx.theme().yellow).child(t("item-equipped-effects")))
-                    .children(common.effects.iter().map(|equip_effect| {
+                    .children(preview_builder.common.effects.iter().map(|equip_effect| {
                         h_flex()
                             .gap_1()
                             .child(div().text_color(cx.theme().success).child(equip_effect.get_locale()))
                             .when_some(
-                                transcendence_effect.and_then(|transcendence_effect| {
+                                preview_builder.optional.transcendence_effect.and_then(|transcendence_effect| {
                                     equip_effect
                                         .parsed
                                         .as_ref()
@@ -746,28 +992,27 @@ impl GameDataView {
                             )
                     }))
             })
-            .when_some(common.item_set.as_ref(), |this, item_set| {
+            .when_some(preview_builder.common.item_set.as_ref(), |this, item_set| {
                 this.child(v_flex().child(div().mt_2().text_color(cx.theme().yellow).child(item_set.get_localized_name())))
                     .children(item_set.items.iter().map(|item| items.get(item)).map(|item| {
                         v_flex().items_start().when_some(item, {
-                            let viewer_entity = viewer_entity.clone();
                             move |this, item| {
-                                let id = item.get_id();
-                                let grade = item.get_grade();
+                                let id = item.borrow().get_id();
+                                let grade = item.borrow().get_grade();
                                 this.child(
                                     Button::new(format!("button-{}", id))
-                                        .label(item.get_localized_name())
+                                        .label(item.borrow().get_localized_name())
                                         .link()
                                         .small()
                                         .mb_2()
                                         .when_some(grade.color(), |this, color| this.text_color(color))
-                                        .on_click(move |_, window, cx| {
-                                            cx.update_entity(&viewer_entity, |this, cx| {
+                                        .on_click(cx.listener({
+                                            move |this, _, window, cx| {
                                                 this.tabs.insert(id.clone());
                                                 this.set_selected_item(Some(id.clone()), window, cx);
                                                 cx.notify();
-                                            })
-                                        }),
+                                            }
+                                        })),
                                 )
                             }
                         })
@@ -792,73 +1037,56 @@ impl GameDataView {
                         })))
                     })
             })
-            .when_some(fellow_stone_effects, |this, (effects, plus, tempered, tempered_effect)| {
-                this.child(
-                    h_flex()
-                        .mt_2()
-                        .text_color(cx.theme().success)
-                        .gap_2()
-                        .items_start()
-                        .child(
-                            v_flex()
-                                .child(div().text_color(cx.theme().yellow).child(t("item-equipped-effects")))
-                                .children(effects.iter().map(|e| {
-                                    e.parsed
-                                        .as_ref()
-                                        .map(|f| SharedString::new(t_v(&f.0, vec![("value", "")]).trim_end_matches(&['-']).trim_end()))
-                                        .unwrap_or_else(|| e.effect.clone())
-                                }))
-                                .when_some(plus.as_ref(), |this, e| {
-                                    this.child(
-                                        div().text_color(cx.theme().cyan).child(
-                                            e.parsed
-                                                .as_ref()
-                                                .map(|f| SharedString::new(t_v(&f.0, vec![("value", "")]).trim_end_matches(&['-']).trim_end()))
-                                                .unwrap_or_else(|| e.effect.clone()),
-                                        ),
-                                    )
-                                }),
-                        )
-                        .child(
-                            v_flex()
-                                .child(div().text_color(cx.theme().yellow).child(t("sealed-fellow-min-level")))
-                                .children(effects.iter().map(|e| {
-                                    e.parsed
-                                        .as_ref()
-                                        .map(|(key, min, max, _)| {
-                                            if key.ends_with("-minus-percent") {
-                                                format!("{:-.2}% ~ -{:.2}%", min, max)
-                                            } else if key.ends_with("-percent") {
-                                                format!("{:+.2}% ~ {:+.2}%", min, max)
-                                            } else {
-                                                format!("{:+.0} ~ {:+.0}", min, max)
-                                            }
-                                        })
-                                        .unwrap_or_default()
-                                })),
-                        )
-                        .child(
-                            v_flex()
-                                .child(div().text_color(cx.theme().yellow).child(t("sealed-fellow-max-level")))
-                                .children(effects.iter().map(|e| {
-                                    e.parsed
-                                        .as_ref()
-                                        .map(|(key, min, max, step)| {
-                                            if key.ends_with("-minus-percent") {
-                                                format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
-                                            } else if key.ends_with("-percent") {
-                                                format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
-                                            } else {
-                                                format!("{:+.0} ~ {:+.0}", min + step, max + step)
-                                            }
-                                        })
-                                        .unwrap_or_default()
-                                })),
-                        )
-                        .when(plus.is_some(), |this| {
-                            this.child(
+            .when_some(
+                preview_builder.optional.fellow_stone_effects,
+                |this, (effects, plus, tempered, tempered_effect)| {
+                    this.child(
+                        h_flex()
+                            .mt_2()
+                            .text_color(cx.theme().success)
+                            .gap_2()
+                            .items_start()
+                            .child(
                                 v_flex()
-                                    .child(div().text_color(cx.theme().yellow).child(t("sealed-fellow-plus-level")))
+                                    .child(div().text_color(cx.theme().yellow).child(t("item-equipped-effects")))
+                                    .children(effects.iter().map(|e| {
+                                        e.parsed
+                                            .as_ref()
+                                            .map(|f| SharedString::new(t_v(&f.0, vec![("value", "")]).trim_end_matches(&['-']).trim_end()))
+                                            .unwrap_or_else(|| e.effect.clone())
+                                    }))
+                                    .when_some(plus.as_ref(), |this, e| {
+                                        this.child(
+                                            div().text_color(cx.theme().cyan).child(
+                                                e.parsed
+                                                    .as_ref()
+                                                    .map(|f| SharedString::new(t_v(&f.0, vec![("value", "")]).trim_end_matches(&['-']).trim_end()))
+                                                    .unwrap_or_else(|| e.effect.clone()),
+                                            ),
+                                        )
+                                    }),
+                            )
+                            .child(
+                                v_flex()
+                                    .child(div().text_color(cx.theme().yellow).child(t("sealed-fellow-min-level")))
+                                    .children(effects.iter().map(|e| {
+                                        e.parsed
+                                            .as_ref()
+                                            .map(|(key, min, max, _)| {
+                                                if key.ends_with("-minus-percent") {
+                                                    format!("{:-.2}% ~ -{:.2}%", min, max)
+                                                } else if key.ends_with("-percent") {
+                                                    format!("{:+.2}% ~ {:+.2}%", min, max)
+                                                } else {
+                                                    format!("{:+.0} ~ {:+.0}", min, max)
+                                                }
+                                            })
+                                            .unwrap_or_default()
+                                    })),
+                            )
+                            .child(
+                                v_flex()
+                                    .child(div().text_color(cx.theme().yellow).child(t("sealed-fellow-max-level")))
                                     .children(effects.iter().map(|e| {
                                         e.parsed
                                             .as_ref()
@@ -872,94 +1100,78 @@ impl GameDataView {
                                                 }
                                             })
                                             .unwrap_or_default()
-                                    }))
-                                    .when_some(plus.as_ref(), |this, e| {
-                                        this.child(
-                                            div().text_color(cx.theme().cyan).child(
-                                                e.parsed
-                                                    .as_ref()
-                                                    .map(|(key, min, max)| {
-                                                        if key.ends_with("-minus-percent") {
-                                                            format!("{:-.2}% ~ -{:.2}%", min, max)
-                                                        } else if key.ends_with("-percent") {
-                                                            format!("{:+.2}% ~ {:+.2}%", min, max)
-                                                        } else {
-                                                            format!("{:+.0} ~ {:+.0}", min, max)
-                                                        }
-                                                    })
-                                                    .unwrap_or_default(),
-                                            ),
-                                        )
-                                    }),
+                                    })),
                             )
-                        })
-                        .when(tempered != 0, |this| {
-                            this.child(
-                                v_flex()
-                                    .child(
-                                        div()
-                                            .text_color(cx.theme().yellow)
-                                            .child(t_v("sealed-fellow-tempered-level", vec![("level", tempered)])),
-                                    )
-                                    .children(effects.iter().map(|e| {
-                                        h_flex()
-                                            .gap_1()
-                                            .child(
-                                                e.parsed
-                                                    .as_ref()
-                                                    .map(|(key, min, max, step)| {
-                                                        if key.ends_with("-minus-percent") {
-                                                            format!(
-                                                                "{:-.2}% ~ -{:.2}%",
-                                                                (min + step) * (1.0 + tempered_effect / 100.0),
-                                                                (max + step) * (1.0 + tempered_effect / 100.0)
-                                                            )
-                                                        } else if key.ends_with("-percent") {
-                                                            format!(
-                                                                "{:+.2}% ~ {:+.2}%",
-                                                                (min + step) * (1.0 + tempered_effect / 100.0),
-                                                                (max + step) * (1.0 + tempered_effect / 100.0)
-                                                            )
-                                                        } else {
-                                                            format!(
-                                                                "{:+.0} ~ {:+.0}",
-                                                                (min + step) * (1.0 + tempered_effect / 100.0),
-                                                                (max + step) * (1.0 + tempered_effect / 100.0)
-                                                            )
-                                                        }
-                                                    })
-                                                    .unwrap_or_default(),
-                                            )
-                                            .when(e.parsed.is_some(), |this| {
-                                                this.child(div().text_color(cx.theme().yellow).child(format!("({:+.0}%)", tempered_effect)))
-                                            })
-                                    }))
-                                    .when_some(plus.as_ref(), |this, e| {
-                                        this.child(
-                                            h_flex()
-                                                .text_color(cx.theme().cyan)
-                                                .gap_1()
-                                                .child(
+                            .when(plus.is_some(), |this| {
+                                this.child(
+                                    v_flex()
+                                        .child(div().text_color(cx.theme().yellow).child(t("sealed-fellow-plus-level")))
+                                        .children(effects.iter().map(|e| {
+                                            e.parsed
+                                                .as_ref()
+                                                .map(|(key, min, max, step)| {
+                                                    if key.ends_with("-minus-percent") {
+                                                        format!("{:-.2}% ~ -{:.2}%", min + step, max + step)
+                                                    } else if key.ends_with("-percent") {
+                                                        format!("{:+.2}% ~ {:+.2}%", min + step, max + step)
+                                                    } else {
+                                                        format!("{:+.0} ~ {:+.0}", min + step, max + step)
+                                                    }
+                                                })
+                                                .unwrap_or_default()
+                                        }))
+                                        .when_some(plus.as_ref(), |this, e| {
+                                            this.child(
+                                                div().text_color(cx.theme().cyan).child(
                                                     e.parsed
                                                         .as_ref()
                                                         .map(|(key, min, max)| {
                                                             if key.ends_with("-minus-percent") {
+                                                                format!("{:-.2}% ~ -{:.2}%", min, max)
+                                                            } else if key.ends_with("-percent") {
+                                                                format!("{:+.2}% ~ {:+.2}%", min, max)
+                                                            } else {
+                                                                format!("{:+.0} ~ {:+.0}", min, max)
+                                                            }
+                                                        })
+                                                        .unwrap_or_default(),
+                                                ),
+                                            )
+                                        }),
+                                )
+                            })
+                            .when(tempered != 0, |this| {
+                                this.child(
+                                    v_flex()
+                                        .child(
+                                            div()
+                                                .text_color(cx.theme().yellow)
+                                                .child(t_v("sealed-fellow-tempered-level", vec![("level", tempered)])),
+                                        )
+                                        .children(effects.iter().map(|e| {
+                                            h_flex()
+                                                .gap_1()
+                                                .child(
+                                                    e.parsed
+                                                        .as_ref()
+                                                        .map(|(key, min, max, step)| {
+                                                            if key.ends_with("-minus-percent") {
                                                                 format!(
                                                                     "{:-.2}% ~ -{:.2}%",
-                                                                    min * (1.0 + tempered_effect / 100.0),
-                                                                    max * (1.0 + tempered_effect / 100.0)
+                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
                                                                 )
                                                             } else if key.ends_with("-percent") {
                                                                 format!(
                                                                     "{:+.2}% ~ {:+.2}%",
-                                                                    min * (1.0 + tempered_effect / 100.0),
-                                                                    max * (1.0 + tempered_effect / 100.0)
+                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
                                                                 )
                                                             } else {
                                                                 format!(
                                                                     "{:+.0} ~ {:+.0}",
-                                                                    min * (1.0 + tempered_effect / 100.0),
-                                                                    max * (1.0 + tempered_effect / 100.0)
+                                                                    (min + step) * (1.0 + tempered_effect / 100.0),
+                                                                    (max + step) * (1.0 + tempered_effect / 100.0)
                                                                 )
                                                             }
                                                         })
@@ -967,14 +1179,50 @@ impl GameDataView {
                                                 )
                                                 .when(e.parsed.is_some(), |this| {
                                                     this.child(div().text_color(cx.theme().yellow).child(format!("({:+.0}%)", tempered_effect)))
-                                                }),
-                                        )
-                                    }),
-                            )
-                        }),
-                )
-            })
-            .when_some(description_locale, |this, description_locale| {
+                                                })
+                                        }))
+                                        .when_some(plus.as_ref(), |this, e| {
+                                            this.child(
+                                                h_flex()
+                                                    .text_color(cx.theme().cyan)
+                                                    .gap_1()
+                                                    .child(
+                                                        e.parsed
+                                                            .as_ref()
+                                                            .map(|(key, min, max)| {
+                                                                if key.ends_with("-minus-percent") {
+                                                                    format!(
+                                                                        "{:-.2}% ~ -{:.2}%",
+                                                                        min * (1.0 + tempered_effect / 100.0),
+                                                                        max * (1.0 + tempered_effect / 100.0)
+                                                                    )
+                                                                } else if key.ends_with("-percent") {
+                                                                    format!(
+                                                                        "{:+.2}% ~ {:+.2}%",
+                                                                        min * (1.0 + tempered_effect / 100.0),
+                                                                        max * (1.0 + tempered_effect / 100.0)
+                                                                    )
+                                                                } else {
+                                                                    format!(
+                                                                        "{:+.0} ~ {:+.0}",
+                                                                        min * (1.0 + tempered_effect / 100.0),
+                                                                        max * (1.0 + tempered_effect / 100.0)
+                                                                    )
+                                                                }
+                                                            })
+                                                            .unwrap_or_default(),
+                                                    )
+                                                    .when(e.parsed.is_some(), |this| {
+                                                        this.child(div().text_color(cx.theme().yellow).child(format!("({:+.0}%)", tempered_effect)))
+                                                    }),
+                                            )
+                                        }),
+                                )
+                            }),
+                    )
+                },
+            )
+            .when_some(preview_builder.optional.description_locale, |this, description_locale| {
                 this.child(
                     div()
                         .mt_2()
@@ -982,14 +1230,13 @@ impl GameDataView {
                         .child(remove_html_tags_regex(&description_locale)),
                 )
             })
-            .when_some(product.and_then(|f| f.upgrade()).map(|f| f.borrow().clone()), {
-                let viewer_entity = viewer_entity.clone();
-                let id = common.id.clone();
+            .when_some(preview_builder.optional.product.and_then(|f| f.upgrade()).map(|f| f.borrow().clone()), {
+                let id = preview_builder.common.id.clone();
                 move |this, product| {
                     let item = product.node.item.clone();
 
-                    let icon = item.as_ref().and_then(|f| f.upgrade()).and_then(|i| i.get_icon());
-                    let grade = item.as_ref().and_then(|f| f.upgrade()).map(|i| i.get_grade());
+                    let icon = item.as_ref().and_then(|f| f.upgrade()).and_then(|i| i.borrow().get_icon());
+                    let grade = item.as_ref().and_then(|f| f.upgrade()).map(|i| i.borrow().get_grade());
                     let chance = product.success_probability;
                     let inheritance_enhancement_condition = product.inheritance_enhancement_condition;
                     let inheritance_transcendence_condition = product.inheritance_transcendence_condition;
@@ -1029,7 +1276,7 @@ impl GameDataView {
                                                     .label(
                                                         item.as_ref()
                                                             .and_then(|f| f.upgrade())
-                                                            .map(|i| i.get_localized_name())
+                                                            .map(|i| i.borrow().get_localized_name())
                                                             .unwrap_or_else(|| product.node.id.clone()),
                                                     )
                                                     .link()
@@ -1056,16 +1303,13 @@ impl GameDataView {
                                                         )
                                                     })
                                                     .when(item.is_some(), |this| {
-                                                        this.on_click({
-                                                            let viewer_entity = viewer_entity.clone();
-                                                            move |_, window, cx| {
-                                                                cx.update_entity(&viewer_entity, |this, cx| {
-                                                                    this.tabs.insert(product.node.id.clone());
-                                                                    this.set_selected_item(Some(product.node.id.clone()), window, cx);
-                                                                    cx.notify();
-                                                                })
+                                                        this.on_click(cx.listener({
+                                                            move |this, _, window, cx| {
+                                                                this.tabs.insert(product.node.id.clone());
+                                                                this.set_selected_item(Some(product.node.id.clone()), window, cx);
+                                                                cx.notify();
                                                             }
-                                                        })
+                                                        }))
                                                     }),
                                             )
                                             .child(t_v("item-effect-crafting-chance-percent", vec![("value", format!("{:.0}", chance))])),
@@ -1077,8 +1321,6 @@ impl GameDataView {
                             .gap_1()
                             .child(div().mt_2().text_color(cx.theme().success).child(t("item-product-materials")))
                             .children(product.materials.into_iter().map({
-                                let viewer_entity = viewer_entity.clone();
-
                                 move |(index, material)| {
                                     let use_additional = preview.materials.get(&(index as u8)).cloned().unwrap_or_default();
                                     let (is_present, node_id, count, grade, icon, name) = if !use_additional {
@@ -1086,14 +1328,14 @@ impl GameDataView {
                                             material.node.item.is_some(),
                                             material.node.id.clone(),
                                             material.count,
-                                            material.node.item.as_ref().and_then(|f| f.upgrade()).map(|m| m.get_grade()),
-                                            material.node.item.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.get_icon()),
+                                            material.node.item.as_ref().and_then(|f| f.upgrade()).map(|m| m.borrow().get_grade()),
+                                            material.node.item.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.borrow().get_icon()),
                                             material
                                                 .node
                                                 .item
                                                 .as_ref()
                                                 .and_then(|f| f.upgrade())
-                                                .map(|m| m.get_localized_name())
+                                                .map(|m| m.borrow().get_localized_name())
                                                 .unwrap_or_else(|| material.node.id.clone()),
                                         )
                                     } else {
@@ -1106,19 +1348,19 @@ impl GameDataView {
                                                 .as_ref()
                                                 .and_then(|f| f.item.as_ref())
                                                 .and_then(|f| f.upgrade())
-                                                .map(|m| m.get_grade()),
+                                                .map(|m| m.borrow().get_grade()),
                                             material
                                                 .additional_node
                                                 .as_ref()
                                                 .and_then(|f| f.item.as_ref())
                                                 .and_then(|f| f.upgrade())
-                                                .and_then(|m| m.get_icon()),
+                                                .and_then(|m| m.borrow().get_icon()),
                                             material
                                                 .additional_node
                                                 .as_ref()
                                                 .and_then(|f| f.item.as_ref())
                                                 .and_then(|f| f.upgrade())
-                                                .map(|m| m.get_localized_name())
+                                                .map(|m| m.borrow().get_localized_name())
                                                 .unwrap_or_else(|| material.additional_node.as_ref().unwrap().id.clone()),
                                         )
                                     };
@@ -1147,7 +1389,6 @@ impl GameDataView {
                                                     )
                                                 })
                                                 .when(material.additional_node.is_some(), {
-                                                    let viewer_entity = viewer_entity.clone();
                                                     let id = id.clone();
                                                     move |this| {
                                                         this.child(
@@ -1162,18 +1403,14 @@ impl GameDataView {
                                                                 .absolute()
                                                                 .child(Icon::new(AppIcon::Repeat).text_color(rgb(0xffffff))),
                                                         )
-                                                        .on_click({
-                                                            let viewer_entity = viewer_entity.clone();
-
-                                                            move |_, _, cx| {
-                                                                cx.update_entity(&viewer_entity, |this, cx| {
-                                                                    this.preview.entry(id.clone()).and_modify(|v| {
-                                                                        v.materials.insert(index as u8, !use_additional);
-                                                                    });
-                                                                    cx.notify();
-                                                                })
+                                                        .on_click(cx.listener({
+                                                            move |this, _, _, cx| {
+                                                                this.preview.entry(id.clone()).and_modify(|v| {
+                                                                    v.materials.insert(index as u8, !use_additional);
+                                                                });
+                                                                cx.notify();
                                                             }
-                                                        })
+                                                        }))
                                                     }
                                                 }),
                                         )
@@ -1186,16 +1423,13 @@ impl GameDataView {
                                                 .text_color(cx.theme().foreground)
                                                 .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
                                                 .when(is_present, |this| {
-                                                    this.on_click({
-                                                        let viewer_entity = viewer_entity.clone();
-                                                        move |_, window, cx| {
-                                                            cx.update_entity(&viewer_entity, |this, cx| {
-                                                                this.tabs.insert(node_id.clone());
-                                                                this.set_selected_item(Some(node_id.clone()), window, cx);
-                                                                cx.notify();
-                                                            })
+                                                    this.on_click(cx.listener({
+                                                        move |this, _, window, cx| {
+                                                            this.tabs.insert(node_id.clone());
+                                                            this.set_selected_item(Some(node_id.clone()), window, cx);
+                                                            cx.notify();
                                                         }
-                                                    })
+                                                    }))
                                                 }),
                                         )
                                 }
@@ -1203,118 +1437,114 @@ impl GameDataView {
                     )
                 }
             })
-            .when_some(random_box_group.and_then(|f| f.upgrade()).map(|f| f.borrow().clone()), {
-                let viewer_entity = viewer_entity.clone();
+            .when_some(
+                preview_builder
+                    .optional
+                    .random_box_group
+                    .and_then(|f| f.upgrade())
+                    .map(|f| f.borrow().clone()),
+                {
+                    move |this, random_box_group| {
+                        let contents = random_box_group.items;
 
-                move |this, random_box_group| {
-                    let contents = random_box_group.items;
-
-                    this.child(
-                        v_flex()
-                            .gap_1()
-                            .child(div().mt_2().text_color(cx.theme().success).child(t("item-random-box-contents")))
-                            .children(contents.into_iter().map({
-                                let viewer_entity = viewer_entity.clone();
-
-                                move |(index, node)| {
-                                    let (is_present, node_id, grade, icon, name) = {
-                                        (
-                                            node.item.is_some(),
-                                            node.id.clone(),
-                                            node.item.as_ref().and_then(|f| f.upgrade()).map(|m| m.get_grade()),
-                                            node.item.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.get_icon()),
-                                            node.item
-                                                .as_ref()
-                                                .and_then(|f| f.upgrade())
-                                                .map(|m| m.get_localized_name())
-                                                .unwrap_or_else(|| node.id.clone()),
-                                        )
-                                    };
-                                    let probability = random_box_group.probabilities.get(&index);
-                                    h_flex()
-                                        .gap_2()
-                                        .child(
-                                            h_flex()
-                                                .relative()
-                                                .id(format!("icon-additional-{index}"))
-                                                .when_none(&icon, |this| {
-                                                    this.child(
-                                                        div()
-                                                            .size(px(40.))
-                                                            .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color))
-                                                            .border_2(),
-                                                    )
-                                                })
-                                                .when_some(icon, |this, icon| {
-                                                    this.child(
-                                                        img(ImageSource::Image(icon))
-                                                            .object_fit(ObjectFit::Cover)
-                                                            .size(px(40.))
-                                                            .border_2()
-                                                            .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
-                                                    )
-                                                }),
-                                        )
-                                        .child(
-                                            v_flex()
-                                                .items_start()
-                                                .child(
-                                                    Button::new(format!("button-{}", node_id))
-                                                        .label(name)
-                                                        .link()
-                                                        .small()
-                                                        .mb_2()
-                                                        .text_color(cx.theme().foreground)
-                                                        .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
-                                                        .when(is_present, |this| {
-                                                            this.on_click({
-                                                                let viewer_entity = viewer_entity.clone();
-                                                                move |_, window, cx| {
-                                                                    cx.update_entity(&viewer_entity, |this, cx| {
+                        this.child(
+                            v_flex()
+                                .gap_1()
+                                .child(div().mt_2().text_color(cx.theme().success).child(t("item-random-box-contents")))
+                                .children(contents.into_iter().map({
+                                    move |(index, node)| {
+                                        let (is_present, node_id, grade, icon, name) = {
+                                            (
+                                                node.item.is_some(),
+                                                node.id.clone(),
+                                                node.item.as_ref().and_then(|f| f.upgrade()).map(|m| m.borrow().get_grade()),
+                                                node.item.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.borrow().get_icon()),
+                                                node.item
+                                                    .as_ref()
+                                                    .and_then(|f| f.upgrade())
+                                                    .map(|m| m.borrow().get_localized_name())
+                                                    .unwrap_or_else(|| node.id.clone()),
+                                            )
+                                        };
+                                        let probability = random_box_group.probabilities.get(&index);
+                                        h_flex()
+                                            .gap_2()
+                                            .child(
+                                                h_flex()
+                                                    .relative()
+                                                    .id(format!("icon-additional-{index}"))
+                                                    .when_none(&icon, |this| {
+                                                        this.child(
+                                                            div()
+                                                                .size(px(40.))
+                                                                .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color))
+                                                                .border_2(),
+                                                        )
+                                                    })
+                                                    .when_some(icon, |this, icon| {
+                                                        this.child(
+                                                            img(ImageSource::Image(icon))
+                                                                .object_fit(ObjectFit::Cover)
+                                                                .size(px(40.))
+                                                                .border_2()
+                                                                .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
+                                                        )
+                                                    }),
+                                            )
+                                            .child(
+                                                v_flex()
+                                                    .items_start()
+                                                    .child(
+                                                        Button::new(format!("button-{}-{}", index, node_id))
+                                                            .label(name)
+                                                            .link()
+                                                            .small()
+                                                            .mb_2()
+                                                            .text_color(cx.theme().foreground)
+                                                            .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
+                                                            .when(is_present, |this| {
+                                                                this.on_click(cx.listener({
+                                                                    move |this, _, window, cx| {
                                                                         this.tabs.insert(node_id.clone());
                                                                         this.set_selected_item(Some(node_id.clone()), window, cx);
                                                                         cx.notify();
-                                                                    })
-                                                                }
-                                                            })
-                                                        }),
-                                                )
-                                                .when_some(probability, |this, probability| {
-                                                    this.child(t_v(
-                                                        "item-random-box-probability-percent",
-                                                        vec![("value", format!("{:.2}", probability))],
-                                                    ))
-                                                }),
-                                        )
-                                }
-                            })),
-                    )
-                }
-            })
-            .when_some(package_contents, {
-                let viewer_entity = viewer_entity.clone();
-
+                                                                    }
+                                                                }))
+                                                            }),
+                                                    )
+                                                    .when_some(probability, |this, probability| {
+                                                        this.child(t_v(
+                                                            "item-random-box-probability-percent",
+                                                            vec![("value", format!("{:.2}", probability))],
+                                                        ))
+                                                    }),
+                                            )
+                                    }
+                                })),
+                        )
+                    }
+                },
+            )
+            .when_some(preview_builder.optional.package_contents, {
                 move |this, contents| {
                     this.child(
                         v_flex()
                             .gap_1()
                             .child(div().mt_2().text_color(cx.theme().success).child(t("item-package-contents")))
                             .children(contents.into_iter().map({
-                                let viewer_entity = viewer_entity.clone();
-
                                 move |(index, item)| {
                                     let (is_present, count, node_id, grade, icon, name) = {
                                         (
                                             item.node.item.is_some(),
                                             item.count,
                                             item.node.id.clone(),
-                                            item.node.item.as_ref().and_then(|f| f.upgrade()).map(|m| m.get_grade()),
-                                            item.node.item.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.get_icon()),
+                                            item.node.item.as_ref().and_then(|f| f.upgrade()).map(|m| m.borrow().get_grade()),
+                                            item.node.item.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.borrow().get_icon()),
                                             item.node
                                                 .item
                                                 .as_ref()
                                                 .and_then(|f| f.upgrade())
-                                                .map(|m| m.get_localized_name())
+                                                .map(|m| m.borrow().get_localized_name())
                                                 .unwrap_or_else(|| item.node.id.clone()),
                                         )
                                     };
@@ -1344,7 +1574,7 @@ impl GameDataView {
                                                 }),
                                         )
                                         .child(
-                                            Button::new(format!("button-{}", node_id))
+                                            Button::new(format!("button-{}-{}", index, node_id))
                                                 .label(format!("x{count} {}", name))
                                                 .link()
                                                 .small()
@@ -1352,16 +1582,13 @@ impl GameDataView {
                                                 .text_color(cx.theme().foreground)
                                                 .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
                                                 .when(is_present, |this| {
-                                                    this.on_click({
-                                                        let viewer_entity = viewer_entity.clone();
-                                                        move |_, window, cx| {
-                                                            cx.update_entity(&viewer_entity, |this, cx| {
-                                                                this.tabs.insert(node_id.clone());
-                                                                this.set_selected_item(Some(node_id.clone()), window, cx);
-                                                                cx.notify();
-                                                            })
+                                                    this.on_click(cx.listener({
+                                                        move |this, _, window, cx| {
+                                                            this.tabs.insert(node_id.clone());
+                                                            this.set_selected_item(Some(node_id.clone()), window, cx);
+                                                            cx.notify();
                                                         }
-                                                    })
+                                                    }))
                                                 }),
                                         )
                                 }
@@ -1369,25 +1596,22 @@ impl GameDataView {
                     )
                 }
             })
-            .when(!common.linked_recipes.is_empty(), move |this| {
+            .when(!preview_builder.common.linked_recipes.is_empty(), move |this| {
                 this.child(
                     v_flex().child(
                         Button::new("button-linked-recipes")
                             .my_2()
                             .small()
                             .font_weight(FontWeight::BOLD)
-                            .on_click({
-                                let viewer_entity = viewer_entity.clone();
-                                let id = common.id.clone();
-                                move |_, _, cx| {
-                                    cx.update_entity(&viewer_entity, |this, cx| {
-                                        this.preview.entry(id.clone()).and_modify(|v| {
-                                            v.linked_recipes_expanded = !v.linked_recipes_expanded;
-                                        });
-                                        cx.notify();
-                                    })
+                            .on_click(cx.listener({
+                                let id = preview_builder.common.id.clone();
+                                move |this, _, _, cx| {
+                                    this.preview.entry(id.clone()).and_modify(|v| {
+                                        v.linked_recipes_expanded = !v.linked_recipes_expanded;
+                                    });
+                                    cx.notify();
                                 }
-                            })
+                            }))
                             .text()
                             .icon(if preview.linked_recipes_expanded {
                                 IconName::Minus
@@ -1398,28 +1622,25 @@ impl GameDataView {
                     ),
                 )
                 .when(preview.linked_recipes_expanded, |this| {
-                    this.children(common.linked_recipes.iter().filter_map(|id| items.get(id)).map(|item| {
-                        let id = item.get_id();
-                        let grade = item.get_grade();
+                    this.children(preview_builder.common.linked_recipes.iter().filter_map(|id| items.get(id)).map(|item| {
+                        let id = item.borrow().get_id();
+                        let grade = item.borrow().get_grade();
 
                         v_flex().items_start().child(
                             Button::new(format!("button-recipe-{}", id))
-                                .label(item.get_localized_name())
+                                .label(item.borrow().get_localized_name())
                                 .link()
                                 .small()
                                 .mb_2()
                                 .when_some(grade.color(), |this, color| this.text_color(color))
-                                .on_click({
-                                    let viewer_entity = viewer_entity.clone();
+                                .on_click(cx.listener({
                                     let id = id.clone();
-                                    move |_, window, cx| {
-                                        cx.update_entity(&viewer_entity, |this, cx| {
-                                            this.tabs.insert(id.clone());
-                                            this.set_selected_item(Some(id.clone()), window, cx);
-                                            cx.notify();
-                                        })
+                                    move |this, _, window, cx| {
+                                        this.tabs.insert(id.clone());
+                                        this.set_selected_item(Some(id.clone()), window, cx);
+                                        cx.notify();
                                     }
-                                }),
+                                })),
                         )
                     }))
                 })
@@ -1437,7 +1658,7 @@ impl GameDataView {
             return;
         };
         if let Some(item) = self.filtered.get(selected_item) {
-            cx.write_to_clipboard(ClipboardItem::new_string(item.get_localized_name().to_string()));
+            cx.write_to_clipboard(ClipboardItem::new_string(item.borrow().get_localized_name().to_string()));
             window.push_notification((NotificationType::Info, t("message-copy-item-name")), cx);
         }
     }
@@ -1452,9 +1673,9 @@ impl GameDataView {
             self.tabs_scroll_handle.scroll_to_item(index);
         }
         if let Some(item) = self.game_data.items.get(item) {
-            self.selected_item = Some(item.get_id());
+            self.selected_item = Some(item.borrow().get_id());
             self.debug_preview.update(cx, |state, cx| {
-                state.set_value(item.get_debug().unwrap_or_default(), window, cx);
+                state.set_value(item.borrow().get_debug().unwrap_or_default(), window, cx);
             });
 
             cx.notify();
@@ -1514,7 +1735,7 @@ impl Focusable for GameDataView {
 
 impl Render for GameDataLoadingStatus {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div().w(px(400.)).child(
+        div().child(
             Label::new(self.localize())
                 .text_sm()
                 .line_height(rems(1.8))
@@ -1550,9 +1771,15 @@ impl Render for GameDataView {
                         })
                         .when(!self.game_data.elapsed.is_zero(), |this| {
                             this.child(
-                                Label::new(t_v("game-data-elapsed", vec![("elapsed", format!("{:?}", self.game_data.elapsed))]))
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground),
+                                Label::new(t_v(
+                                    "game-data-elapsed",
+                                    vec![
+                                        ("elapsed", format!("{:?}", self.game_data.elapsed)),
+                                        ("items", format!("{}", self.game_data.items.len())),
+                                    ],
+                                ))
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground),
                             )
                         }),
                 ),
@@ -1563,12 +1790,17 @@ impl Render for GameDataView {
                     this.child(
                         v_flex().size_full().justify_center().items_center().child(
                             h_flex()
+                                .w(px(350.))
                                 .items_center()
                                 .gap_5()
-                                .child(ProgressCircle::new("analysis-progress").loading(self.is_reading).size(px(80.)))
+                                .child(
+                                    ProgressCircle::new("analysis-progress")
+                                        .loading(self.is_reading)
+                                        .min_size(px(80.))
+                                        .size(px(80.)),
+                                )
                                 .child(
                                     v_flex()
-                                        .gap_1()
                                         .child(div().font_medium().child(t("game-data-loading")))
                                         .child(self.loading_status.clone()),
                                 ),
@@ -1709,6 +1941,7 @@ impl Render for GameDataView {
                                                     this.child(
                                                         v_flex()
                                                             .size_full()
+                                                            .px_1()
                                                             .items_center()
                                                             .justify_center()
                                                             .child(div().text_xl().font_bold().child(t("empty-list")))
@@ -1730,8 +1963,8 @@ impl Render for GameDataView {
                                                                     visible_range
                                                                         .filter_map(|ix| {
                                                                             this.filtered.iter().nth(ix).map(|(id, item)| {
-                                                                                let icon = item.get_icon();
-                                                                                let grade = item.get_grade();
+                                                                                let icon = item.borrow().get_icon();
+                                                                                let grade = item.borrow().get_grade();
 
                                                                                 h_flex()
                                                                                     .w_full()
@@ -1780,7 +2013,7 @@ impl Render for GameDataView {
                                                                                             .truncate()
                                                                                             .w_full()
                                                                                             .text_sm()
-                                                                                            .child(item.get_localized_name())
+                                                                                            .child(item.borrow().get_localized_name())
                                                                                             .when_some(grade.color(), |this, color| {
                                                                                                 this.text_color(color)
                                                                                             }),
@@ -1803,56 +2036,75 @@ impl Render for GameDataView {
                                             .min_w(px(300.))
                                             .size_full()
                                             .child(
-                                                h_flex()
-                                                    .id("outer-wrapper")
-                                                    .when(self.tabs.len() > 1, |this| {
-                                                        this.child(Button::new("tabs-menu").icon(IconName::EllipsisVertical).ghost().dropdown_menu({
-                                                            let entity = cx.entity();
-                                                            move |mut menu, window, cx| {
-                                                                for item_id in &entity.read(cx).tabs {
-                                                                    let item = entity.read(cx).game_data.items.get(item_id);
-
-                                                                    menu = menu.scrollable(true).max_h(px(300.)).when_some(item, |this, item| {
-                                                                        this.item(
-                                                                            PopupMenuItem::new(item.get_localized_name())
-                                                                                .checked(
-                                                                                    entity
-                                                                                        .read(cx)
-                                                                                        .selected_item
-                                                                                        .as_ref()
-                                                                                        .is_some_and(|f| f == item_id),
-                                                                                )
-                                                                                .on_click({
-                                                                                    let item_id = item_id.clone();
-
-                                                                                    window.listener_for(&entity, move |this, _, window, cx| {
-                                                                                        this.set_selected_item(Some(item_id.clone()), window, cx);
-                                                                                        cx.notify();
-                                                                                    })
-                                                                                }),
-                                                                        )
-                                                                    });
-                                                                }
-                                                                menu
-                                                            }
-                                                        }))
+                                                TabBar::new("tabs")
+                                                    .scrollbar_width(px(0.0))
+                                                    .min_w_0()
+                                                    .w_full()
+                                                    .track_scroll(&self.tabs_scroll_handle)
+                                                    .when_some(self.selected_item.as_ref().and_then(|f| self.tabs.get_index_of(f)), |this, index| {
+                                                        this.selected_index(index)
                                                     })
-                                                    .child(
-                                                        TabBar::new("tabs")
-                                                            .track_scroll(&self.tabs_scroll_handle)
-                                                            .when_some(
-                                                                self.selected_item.as_ref().and_then(|f| self.tabs.get_index_of(f)),
-                                                                |this, index| this.selected_index(index),
-                                                            )
-                                                            .children(self.tabs.iter().map(|item_id| {
-                                                                let item = self.game_data.items.get(item_id);
+                                                    .when(!self.tabs.is_empty(), |this| {
+                                                        this.prefix(
+                                                            Button::new("tabs-menu")
+                                                                .icon(IconName::EllipsisVertical)
+                                                                .custom(ButtonCustomVariant::new(cx))
+                                                                .small()
+                                                                .dropdown_menu({
+                                                                    let entity = cx.entity();
+                                                                    move |mut menu, window, cx| {
+                                                                        for item_id in &entity.read(cx).tabs {
+                                                                            let item = entity.read(cx).game_data.items.get(item_id);
+
+                                                                            menu = menu.scrollable(true).max_h(px(300.)).when_some(
+                                                                                item,
+                                                                                |this, item| {
+                                                                                    this.item(
+                                                                                        PopupMenuItem::new(item.borrow().get_localized_name())
+                                                                                            .checked(
+                                                                                                entity
+                                                                                                    .read(cx)
+                                                                                                    .selected_item
+                                                                                                    .as_ref()
+                                                                                                    .is_some_and(|f| f == item_id),
+                                                                                            )
+                                                                                            .on_click({
+                                                                                                let item_id = item_id.clone();
+
+                                                                                                window.listener_for(
+                                                                                                    &entity,
+                                                                                                    move |this, _, window, cx| {
+                                                                                                        this.set_selected_item(
+                                                                                                            Some(item_id.clone()),
+                                                                                                            window,
+                                                                                                            cx,
+                                                                                                        );
+                                                                                                        cx.notify();
+                                                                                                    },
+                                                                                                )
+                                                                                            }),
+                                                                                    )
+                                                                                },
+                                                                            );
+                                                                        }
+                                                                        menu
+                                                                    }
+                                                                }),
+                                                        )
+                                                        .children(
+                                                            self.tabs.iter().filter_map(|item_id| self.game_data.items.get(item_id)).map(|item| {
+                                                                let item_id = item.borrow().get_id();
 
                                                                 Tab::new()
-                                                                    .child(div().px_1().w_full().when_some(item, |this, item| {
-                                                                        let grade = item.get_grade();
-                                                                        this.child(item.get_localized_name())
-                                                                            .when_some(grade.color(), |this, color| this.text_color(color))
-                                                                    }))
+                                                                    .child(
+                                                                        div()
+                                                                            .px_1()
+                                                                            .w_full()
+                                                                            .child(item.borrow().get_localized_name())
+                                                                            .when_some(item.borrow().get_grade().color(), |this, color| {
+                                                                                this.text_color(color)
+                                                                            }),
+                                                                    )
                                                                     .on_click({
                                                                         let item_id = item_id.clone();
                                                                         cx.listener(move |this, _, window, cx| {
@@ -1874,57 +2126,34 @@ impl Render for GameDataView {
                                                                                 })
                                                                             }),
                                                                     )
-                                                            })),
-                                                    ),
+                                                            }),
+                                                        )
+                                                    }),
                                             )
                                             .when_some(
                                                 self.selected_item
                                                     .as_ref()
-                                                    .and_then(|selected_item_id| self.game_data.items.get(selected_item_id)),
+                                                    .and_then(|selected_item_id| self.game_data.items.get(selected_item_id).map(|f| f.borrow())),
                                                 |this, selected_item| {
-                                                    let item_locale = selected_item.get_localized_name();
-
                                                     let grade = selected_item.get_grade();
 
-                                                    let preview = self
-                                                        .preview
-                                                        .entry(selected_item.get_id().clone())
-                                                        .or_insert_with(|| PreviewValues::default());
+                                                    let preview = self.preview.entry(selected_item.get_id()).or_insert_with(|| {
+                                                        let mut p = PreviewValues::default();
+                                                        if selected_item.item_type() == ItemType::Accessory
+                                                            || selected_item.item_type() == ItemType::Armor
+                                                            || selected_item.item_type() == ItemType::Weapon
+                                                            || selected_item.item_type() == ItemType::SecondaryWeapon
+                                                            || selected_item.item_type() == ItemType::Relic
+                                                        {
+                                                            p.quality = Some(Quality::Simple);
+                                                        }
+                                                        p
+                                                    });
                                                     let transcendence_effect =
                                                         (preview.transcendence != 0).then(|| preview.transcendence as f32 * 0.05);
-                                                    let id = selected_item.get_id();
-                                                    let (
-                                                        quality,
-                                                        temper_limit,
-                                                        reverse_limit,
-                                                        transcendence_limit,
-                                                        skill_locale,
-                                                        description_locale,
-                                                        attack,
-                                                        attack_tempering_effect,
-                                                        physic_defense,
-                                                        physic_defense_tempering_effect,
-                                                        magic_defense,
-                                                        magic_defense_tempering_effect,
-                                                        attack_speed,
-                                                        talent_power,
-                                                        recipe_types,
-                                                        recipe_stage,
-                                                        product,
-                                                        min_sealed_slots,
-                                                        max_sealed_slots,
-                                                        min_random_effects,
-                                                        max_random_effects,
-                                                        random_effects,
-                                                        fellow_stone_effects,
-                                                        max_ep,
-                                                        random_box_group,
-                                                        package_contents,
-                                                    ) = match selected_item.as_ref() {
-                                                        crate::game_data::item::Item::Armor(armor) => {
-                                                            let temper_limit = armor.enhancement_limit;
-                                                            let reverse_limit = armor.reverse_enhancement_limit;
-                                                            let transcendence_limit = armor.overrise_max;
+
+                                                    let preview_builder = match &*selected_item {
+                                                        crate::game_data::items::Item::Armor(armor) => {
                                                             let random_effects = self.game_data.get_random_effects(
                                                                 grade,
                                                                 armor.common.item_level,
@@ -1945,8 +2174,7 @@ impl Render for GameDataView {
                                                                     preview.total_tempering.checked_sub(1).and_then(|index| {
                                                                         f.defense_ratios.get(index as usize).map(|f| {
                                                                             (
-                                                                                f / 100.0
-                                                                                    * (armor.magical_defense + quality_effect.unwrap_or_default()),
+                                                                                f / 100.0 * (armor.magical_defense),
                                                                                 f / 100.0
                                                                                     * (armor.physical_defense + quality_effect.unwrap_or_default()),
                                                                             )
@@ -1955,41 +2183,16 @@ impl Render for GameDataView {
                                                                 })
                                                                 .map_or((None, None), |(x, y)| (Some(x), Some(y)));
 
-                                                            (
-                                                                Some(preview.quality),
-                                                                Some(temper_limit),
-                                                                Some(reverse_limit),
-                                                                Some(transcendence_limit),
-                                                                armor.get_localized_skill(),
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                Some(armor.physical_defense + quality_effect.unwrap_or_default()),
-                                                                physical_tempering_effect,
-                                                                Some(armor.magical_defense + quality_effect.unwrap_or_default()),
-                                                                magic_tempering_effect,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                armor.sealed_fellow_slots_min,
-                                                                armor.sealed_fellow_slots_max,
-                                                                armor.random_effects_count_min,
-                                                                armor.random_effects_count_max,
-                                                                random_effects,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                            )
+                                                            armor
+                                                                .build_preview()
+                                                                .magic_defense_tempering_effect(magic_tempering_effect)
+                                                                .physic_defense_tempering_effect(physical_tempering_effect)
+                                                                .quality_effect(quality_effect)
+                                                                .random_effects(random_effects)
+                                                                .transcendence_effect(transcendence_effect)
                                                         }
 
-                                                        crate::game_data::item::Item::SecondaryWeapon(secondary_weapon) => {
-                                                            let transcendence_limit = secondary_weapon.overrise_max;
-                                                            let temper_limit = secondary_weapon.enchant_limit;
-                                                            let reverse_limit = secondary_weapon.reverse_enchant_limit;
-
+                                                        crate::game_data::items::Item::SecondaryWeapon(secondary_weapon) => {
                                                             let random_effects = self.game_data.get_random_effects(
                                                                 grade,
                                                                 secondary_weapon.common.item_level,
@@ -2021,41 +2224,16 @@ impl Render for GameDataView {
                                                                     })
                                                                 })
                                                                 .map_or((None, None), |(x, y)| (Some(x), Some(y)));
-
-                                                            (
-                                                                Some(preview.quality),
-                                                                Some(temper_limit),
-                                                                Some(reverse_limit),
-                                                                Some(transcendence_limit),
-                                                                secondary_weapon.get_localized_skill(),
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                Some(secondary_weapon.physical_defense + quality_effect.unwrap_or_default()),
-                                                                physical_tempering_effect,
-                                                                Some(secondary_weapon.magical_defense),
-                                                                magic_tempering_effect,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                0,
-                                                                0,
-                                                                secondary_weapon.random_option_count_min,
-                                                                secondary_weapon.random_option_count_max,
-                                                                random_effects,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                            )
+                                                            secondary_weapon
+                                                                .build_preview()
+                                                                .magic_defense_tempering_effect(magic_tempering_effect)
+                                                                .physic_defense_tempering_effect(physical_tempering_effect)
+                                                                .quality_effect(quality_effect)
+                                                                .random_effects(random_effects)
+                                                                .transcendence_effect(transcendence_effect)
                                                         }
 
-                                                        crate::game_data::item::Item::Weapon(weapon) => {
-                                                            let transcendence_limit = weapon.overrise_max;
-                                                            let temper_limit = weapon.enhancement_limit;
-                                                            let reverse_limit = weapon.reverse_enhancement_limit;
+                                                        crate::game_data::items::Item::Weapon(weapon) => {
                                                             let random_effects = self.game_data.get_random_effects(
                                                                 grade,
                                                                 weapon.common.item_level,
@@ -2082,8 +2260,7 @@ impl Render for GameDataView {
                                                                                             + weapon.min_attack
                                                                                             + quality_effect.unwrap_or_default())
                                                                                         / 2.0
-                                                                                        / weapon.attack_speed
-                                                                                        + quality_effect.unwrap_or_default(),
+                                                                                        / weapon.attack_speed,
                                                                                     f / 100.0
                                                                                         * (weapon.max_attack
                                                                                             + quality_effect.unwrap_or_default()
@@ -2115,376 +2292,53 @@ impl Render for GameDataView {
                                                                         })
                                                                     }
                                                                 });
-
-                                                            (
-                                                                Some(preview.quality),
-                                                                Some(temper_limit),
-                                                                Some(reverse_limit),
-                                                                Some(transcendence_limit),
-                                                                weapon.get_localized_skill(),
-                                                                None,
-                                                                Some((
-                                                                    (weapon.max_attack
-                                                                        + quality_effect.unwrap_or_default()
-                                                                        + weapon.min_attack
-                                                                        + quality_effect.unwrap_or_default())
-                                                                        / 2.0
-                                                                        / weapon.attack_speed,
-                                                                    weapon.min_attack + quality_effect.unwrap_or_default(),
-                                                                    weapon.max_attack + quality_effect.unwrap_or_default(),
-                                                                )),
-                                                                tempering_effect,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                Some(weapon.attack_speed),
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                weapon.min_crafting_seal_slots,
-                                                                weapon.max_crafting_seal_slots,
-                                                                weapon.min_random_options,
-                                                                weapon.max_random_options,
-                                                                random_effects,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                            )
+                                                            weapon
+                                                                .build_preview()
+                                                                .attack_tempering_effect(tempering_effect)
+                                                                .quality_effect(quality_effect)
+                                                                .random_effects(random_effects)
+                                                                .transcendence_effect(transcendence_effect)
                                                         }
 
-                                                        crate::game_data::item::Item::Material(material) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            material.description_locale.as_ref().and_then(|f| f.locale()),
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            material.recipe_type.clone(),
-                                                            None,
-                                                            None,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                        ),
-                                                        crate::game_data::item::Item::Recipe(recipe) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            recipe.recipe_type.as_ref().map(|f| BTreeSet::from([*f])).clone(),
-                                                            recipe
-                                                                .product
-                                                                .as_ref()
-                                                                .and_then(|f| f.upgrade())
-                                                                .map(|p| p.borrow().technology_grade)
-                                                                .or_else(|| Some(recipe.required_stage)),
-                                                            recipe.product.clone(),
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                        ),
-                                                        crate::game_data::item::Item::Consume(consume) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            consume.description_locale.as_ref().and_then(|f| f.locale()),
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                        ),
-                                                        crate::game_data::item::Item::SkillBook(_) => (
-                                                            None, None, None, None, None, None, None, None, None, None, None, None, None, None, None,
-                                                            None, None, 0, 0, 0, 0, None, None, None, None, None,
-                                                        ),
-                                                        crate::game_data::item::Item::SealedFellow(sealed_fellow) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            Some(sealed_fellow.characteristic_power),
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            None,
-                                                            Some((
-                                                                sealed_fellow.effects.clone(),
-                                                                sealed_fellow.max_enhancement_sealed_fellow_effect.clone(),
-                                                                sealed_fellow.tempering,
-                                                                sealed_fellow.tempering_effect,
-                                                            )),
-                                                            None,
-                                                            None,
-                                                            None,
-                                                        ),
-                                                        crate::game_data::item::Item::Boost(boost) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            boost.description_locale.as_ref().and_then(|f| f.locale()),
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                        ),
-                                                        crate::game_data::item::Item::Bag(bag) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            bag.description_locale.as_ref().and_then(|f| f.locale()),
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                        ),
-                                                        crate::game_data::item::Item::Style(style) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            style.get_localized_skill(),
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                        ),
-                                                        crate::game_data::item::Item::RandomBox(random_box) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            random_box.content.clone(),
-                                                            None,
-                                                        ),
-                                                        crate::game_data::item::Item::Package(package) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            Some(package.package_items.clone()),
-                                                        ),
-                                                        crate::game_data::item::Item::Exchange(exchange) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            exchange.description_locale.as_ref().and_then(|f| f.locale()),
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                        ),
-                                                        crate::game_data::item::Item::Gem(_) => (
-                                                            None, None, None, None, None, None, None, None, None, None, None, None, None, None, None,
-                                                            None, None, 0, 0, 0, 0, None, None, None, None, None,
-                                                        ),
-                                                        crate::game_data::item::Item::FellowEquip(fellow_equip) => (
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            None,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            None,
-                                                            None,
-                                                            fellow_equip.max_ep_plus,
-                                                            None,
-                                                            None,
-                                                        ),
-                                                        crate::game_data::item::Item::Accessory(accessory) => {
-                                                            let temper_limit = accessory.enhancement_limit;
-                                                            let reverse_limit = accessory.reverse_enhancement_limit;
-                                                            let transcendence_limit = accessory.overrise_max;
+                                                        crate::game_data::items::Item::Material(material) => material.build_preview(),
+                                                        crate::game_data::items::Item::Recipe(recipe) => recipe.build_preview(),
+                                                        crate::game_data::items::Item::Consume(consume) => consume.build_preview(),
+                                                        crate::game_data::items::Item::Elluns(elluns) => elluns.build_preview(),
+                                                        crate::game_data::items::Item::FellowConsume(fellow_consume) => {
+                                                            fellow_consume.build_preview()
+                                                        }
+                                                        crate::game_data::items::Item::SkillBook(skill_book) => skill_book.build_preview(),
+                                                        crate::game_data::items::Item::SealedFellow(sealed_fellow) => sealed_fellow.build_preview(),
+                                                        crate::game_data::items::Item::Boost(boost) => boost.build_preview(),
+                                                        crate::game_data::items::Item::Relic(relic) => {
+                                                            let quality_effect = self.game_data.get_quality_effect(
+                                                                relic.get_type(),
+                                                                relic.common.item_level,
+                                                                preview.quality,
+                                                            );
+
+                                                            let random_effects = self.game_data.get_random_effects(
+                                                                grade,
+                                                                relic.common.item_level,
+                                                                &relic.common.usable_class,
+                                                                &relic.equip_slot,
+                                                            );
+
+                                                            relic.build_preview().random_effects(random_effects).quality_effect(quality_effect)
+                                                        }
+                                                        crate::game_data::items::Item::Bracelet(bracelet) => bracelet.build_preview(),
+                                                        crate::game_data::items::Item::Bag(bag) => bag.build_preview(),
+                                                        crate::game_data::items::Item::FellowBook(fellow_book) => fellow_book.build_preview(),
+                                                        crate::game_data::items::Item::Style(style) => style.build_preview(),
+                                                        crate::game_data::items::Item::FellowStyle(fellow_style) => fellow_style.build_preview(),
+                                                        crate::game_data::items::Item::RandomBox(random_box) => random_box.build_preview(),
+                                                        crate::game_data::items::Item::Package(package) => package.build_preview(),
+                                                        crate::game_data::items::Item::Exchange(exchange) => exchange.build_preview(),
+                                                        crate::game_data::items::Item::Quest(quest) => quest.build_preview(),
+                                                        crate::game_data::items::Item::Gem(gem) => gem.build_preview(),
+                                                        crate::game_data::items::Item::Event(event) => event.build_preview(),
+                                                        crate::game_data::items::Item::FellowEquip(fellow_equip) => fellow_equip.build_preview(),
+                                                        crate::game_data::items::Item::Accessory(accessory) => {
                                                             let random_effects = self.game_data.get_random_effects(
                                                                 grade,
                                                                 accessory.common.item_level,
@@ -2503,43 +2357,20 @@ impl Render for GameDataView {
                                                                 .get_tempering_effect(accessory.get_full_type(), accessory.common.item_level)
                                                                 .and_then(|f| {
                                                                     preview.total_tempering.checked_sub(1).and_then(|index| {
-                                                                        f.defense_ratios.get(index as usize).map(|f| {
-                                                                            f / 100.0 * (accessory.magic_defense + quality_effect.unwrap_or_default())
-                                                                        })
+                                                                        f.defense_ratios
+                                                                            .get(index as usize)
+                                                                            .map(|f| f / 100.0 * (accessory.magic_defense))
                                                                     })
                                                                 });
-
-                                                            (
-                                                                Some(preview.quality),
-                                                                Some(temper_limit),
-                                                                Some(reverse_limit),
-                                                                Some(transcendence_limit),
-                                                                accessory.get_localized_skill(),
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                Some(accessory.magic_defense + quality_effect.unwrap_or_default()),
-                                                                tempering_effect,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                0,
-                                                                0,
-                                                                accessory.random_effects_count_min,
-                                                                accessory.random_effects_count_max,
-                                                                random_effects,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                                None,
-                                                            )
+                                                            accessory
+                                                                .build_preview()
+                                                                .magic_defense_tempering_effect(tempering_effect)
+                                                                .quality_effect(quality_effect)
+                                                                .random_effects(random_effects)
+                                                                .transcendence_effect(transcendence_effect)
                                                         }
                                                     };
-                                                    /* */
+
                                                     this.child(
                                                         div()
                                                             .flex()
@@ -2568,121 +2399,9 @@ impl Render for GameDataView {
                                                                             .overflow_y_scrollbar()
                                                                             .map(|this| {
                                                                                 this.child(Self::render_preview(
-                                                                                    selected_item.common(),
-                                                                                    quality,
-                                                                                    temper_limit,
-                                                                                    reverse_limit,
-                                                                                    transcendence_limit,
-                                                                                    transcendence_effect,
-                                                                                    skill_locale,
-                                                                                    description_locale,
-                                                                                    attack,
-                                                                                    attack_tempering_effect,
-                                                                                    physic_defense,
-                                                                                    physic_defense_tempering_effect,
-                                                                                    magic_defense,
-                                                                                    magic_defense_tempering_effect,
-                                                                                    attack_speed,
-                                                                                    talent_power,
-                                                                                    recipe_types,
-                                                                                    recipe_stage,
-                                                                                    product,
-                                                                                    min_sealed_slots,
-                                                                                    max_sealed_slots,
-                                                                                    min_random_effects,
-                                                                                    max_random_effects,
-                                                                                    random_effects,
-                                                                                    fellow_stone_effects,
+                                                                                    preview_builder,
                                                                                     preview,
                                                                                     &self.game_data.items,
-                                                                                    cx.listener({
-                                                                                        let id = id.clone();
-                                                                                        move |this, _, _, cx| {
-                                                                                            let preview = this
-                                                                                                .preview
-                                                                                                .entry(id.clone())
-                                                                                                .or_insert_with(|| PreviewValues::default());
-                                                                                            preview.decrease_transcendence();
-                                                                                            cx.notify();
-                                                                                        }
-                                                                                    }),
-                                                                                    cx.listener({
-                                                                                        let id = id.clone();
-                                                                                        move |this, _, _, cx| {
-                                                                                            let preview = this
-                                                                                                .preview
-                                                                                                .entry(id.clone())
-                                                                                                .or_insert_with(|| PreviewValues::default());
-                                                                                            preview.increase_transcendence(transcendence_limit);
-
-                                                                                            cx.notify();
-                                                                                        }
-                                                                                    }),
-                                                                                    cx.listener({
-                                                                                        let id = id.clone();
-                                                                                        move |this, _, _, cx| {
-                                                                                            let preview = this
-                                                                                                .preview
-                                                                                                .entry(id.clone())
-                                                                                                .or_insert_with(|| PreviewValues::default());
-                                                                                            preview.decrease_tempering();
-                                                                                            cx.notify();
-                                                                                        }
-                                                                                    }),
-                                                                                    cx.listener({
-                                                                                        let id = id.clone();
-                                                                                        move |this, _, _, cx| {
-                                                                                            let preview = this
-                                                                                                .preview
-                                                                                                .entry(id.clone())
-                                                                                                .or_insert_with(|| PreviewValues::default());
-                                                                                            preview.increase_tempering(temper_limit, reverse_limit);
-
-                                                                                            cx.notify();
-                                                                                        }
-                                                                                    }),
-                                                                                    cx.listener({
-                                                                                        let id = id.clone();
-                                                                                        move |this, _, _, cx| {
-                                                                                            let preview = this
-                                                                                                .preview
-                                                                                                .entry(id.clone())
-                                                                                                .or_insert_with(|| PreviewValues::default());
-                                                                                            preview.decrease_reverse_tempering();
-                                                                                            cx.notify();
-                                                                                        }
-                                                                                    }),
-                                                                                    cx.listener({
-                                                                                        let id = id.clone();
-                                                                                        move |this, _, _, cx| {
-                                                                                            let preview = this
-                                                                                                .preview
-                                                                                                .entry(id.clone())
-                                                                                                .or_insert_with(|| PreviewValues::default());
-                                                                                            preview.increase_reverse_tempering(
-                                                                                                temper_limit,
-                                                                                                reverse_limit,
-                                                                                            );
-
-                                                                                            cx.notify();
-                                                                                        }
-                                                                                    }),
-                                                                                    cx.listener({
-                                                                                        let item_locale = item_locale.clone();
-                                                                                        move |_, _, window, cx| {
-                                                                                            cx.write_to_clipboard(ClipboardItem::new_string(
-                                                                                                item_locale.to_string(),
-                                                                                            ));
-                                                                                            window.push_notification(
-                                                                                                (NotificationType::Info, t("message-copy-item-name")),
-                                                                                                cx,
-                                                                                            );
-                                                                                        }
-                                                                                    }),
-                                                                                    cx.entity(),
-                                                                                    max_ep,
-                                                                                    random_box_group,
-                                                                                    package_contents,
                                                                                     cx,
                                                                                 ))
                                                                             }),
@@ -2756,7 +2475,7 @@ impl Render for GameDataView {
                                         Some(false) => this.icon(Icon::new(AppIcon::Square)).on_click(move |_, window, cx| {
                                             entity.update(cx, |this, cx| {
                                                 this.set_selected_indices(ItemType::iter().enumerate().map(|(i, _)| IndexPath::new(i)), window, cx);
-
+                                                cx.emit(ComboboxEvent::Change(this.selected_values()));
                                                 cx.notify();
                                             });
                                         }),
@@ -2808,7 +2527,7 @@ impl Render for GameDataView {
                                         Some(false) => this.icon(Icon::new(AppIcon::Square)).on_click(move |_, window, cx| {
                                             entity.update(cx, |this, cx| {
                                                 this.set_selected_indices(Grade::iter().enumerate().map(|(i, _)| IndexPath::new(i)), window, cx);
-
+                                                cx.emit(ComboboxEvent::Change(this.selected_values()));
                                                 cx.notify();
                                             });
                                         }),
@@ -2837,6 +2556,7 @@ impl Render for GameDataView {
                             .cleanable(true)
                             .placeholder(t("item-effects")),
                     )
+                    .left(Separator::vertical())
                     .right(
                         Button::new("button-export")
                             .ghost()
