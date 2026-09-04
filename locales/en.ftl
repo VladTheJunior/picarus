@@ -166,6 +166,11 @@ item-set-effects-count = Set Effects
 item-equipped-skill = [Equipped Skill]
 item-equipped-effects = Equipped Effects
 item-random-equipped-effects = Random Equipped Effects
+item-skill-effects = Effects
+item-skill-cooldown = Cooldown { $value } sec.
+item-skill-effect-time = Duration { $value } sec.
+item-skill-passive = (Passive)
+item-skill-active = (Active)
 
 item-effect-max-hp = Health { $value }
 item-effect-max-hp-percent = Health { $value }%

@@ -5,7 +5,7 @@ use crate::{
     game_data::{DataFormat, TagType, effects::ItemEffect, locale::Locale},
 };
 use anyhow::Result;
-use gpui::SharedString;
+use gpui_kit::SharedString;
 use indexmap::IndexMap;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use tracing::warn;

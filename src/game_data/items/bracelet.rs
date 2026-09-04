@@ -14,7 +14,7 @@ use indexmap::IndexMap;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use gpui::SharedString;
+use gpui_kit::SharedString;
 
 #[derive(Default, Clone)]
 pub struct Bracelet {
@@ -51,7 +51,7 @@ impl ReadableItem for Bracelet {
     ) -> Result<Self> {
         self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
-        for (tag_idx, tag) in definitions.keys().enumerate() {
+        for (tag_idx, (tag, tag_type)) in definitions.iter().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -63,7 +63,7 @@ impl ReadableItem for Bracelet {
                 }
             };
 
-            self.common.parse(tag, reader, Self::FORMAT).await?;
+            self.common.parse(tag, tag_type, reader, Self::FORMAT).await?;
 
             match tag_idx {
                 41 => self.max_gem_slots = reader.read_f32_le().await? as u8,

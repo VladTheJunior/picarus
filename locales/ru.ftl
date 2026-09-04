@@ -167,6 +167,11 @@ item-set-effects-count = Эффекты комплекта
 item-equipped-skill = [Активный навык]
 item-equipped-effects = Эффекты снаряжения
 item-random-equipped-effects = Случайные эффекты снаряжения
+item-skill-effects = Эффекты
+item-skill-cooldown = Перезарядка { $value } сек.
+item-skill-effect-time = Продолжительность { $value } сек.
+item-skill-passive = (Пассивный)
+item-skill-active = (Активный)
 
 item-effect-max-hp = Макс. здоровье { $value }
 item-effect-max-hp-percent = Макс. здоровье { $value }%

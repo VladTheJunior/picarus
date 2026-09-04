@@ -1,10 +1,5 @@
-use gpui::{
-    Action, App, AppContext, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight, ImageSource, InteractiveElement, IntoElement,
-    KeyBinding, ListSizingBehavior, ObjectFit, ParentElement, PathPromptOptions, ReadGlobal, Render, ScrollHandle, ScrollStrategy, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, UniformListScrollHandle, UpdateGlobal, Window, actions, div, img, prelude::FluentBuilder, px,
-    rems, rgb, uniform_list,
-};
-use gpui_component::{
+use gpui_kit::Div;
+use gpui_kit::component::{
     ActiveTheme, Disableable, Icon, IconName, IndexPath, Root, Sizable, StyledExt, TitleBar, WindowExt,
     button::{Button, ButtonCustomVariant, ButtonVariants},
     combobox::{Combobox, ComboboxEvent},
@@ -22,6 +17,12 @@ use gpui_component::{
     tab::{Tab, TabBar},
     tooltip::Tooltip,
     v_flex,
+};
+use gpui_kit::{
+    Action, App, AppContext, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight, ImageSource, InteractiveElement, IntoElement,
+    KeyBinding, ListSizingBehavior, ObjectFit, ParentElement, PathPromptOptions, ReadGlobal, Render, ScrollHandle, ScrollStrategy, SharedString,
+    StatefulInteractiveElement, Styled, StyledImage, UniformListScrollHandle, UpdateGlobal, Window, actions, div, img, prelude::FluentBuilder, px,
+    rems, rgb, uniform_list,
 };
 
 use indexmap::{IndexMap, IndexSet};
@@ -44,18 +45,14 @@ use crate::{
     game_data::{
         GameData,
         common::Common,
-        effects::ItemMinMaxEffect,
-        effects::ItemMinMaxNoStepEffect,
-        effects::ItemMinMaxStepEffect,
+        effects::{ItemMinMaxEffect, ItemMinMaxNoStepEffect, ItemMinMaxStepEffect},
         filters::{GameDataFilters, ItemEffectFilter},
         grade::Grade,
-        items::Item,
-        items::ItemTrait,
-        items::ItemType,
-        items::{package::PackageItem, recipe::RecipeType},
+        items::{Item, ItemTrait, ItemType, package::PackageItem, recipe::RecipeType},
         product::Product,
         quality::Quality,
         random_box_group::RandomBoxGroup,
+        skill::Skill,
     },
     language::{LanguageController, t, t_v},
     settings::Settings,
@@ -133,6 +130,8 @@ pub struct PreviewBuilderOptional {
 
     pub random_box_group: Option<Weak<RefCell<RandomBoxGroup>>>,
     pub package_contents: Option<IndexMap<usize, PackageItem>>,
+
+    pub skills: Vec<Skill>,
 }
 
 impl<'a> PreviewBuilder<'a> {
@@ -150,6 +149,11 @@ impl<'a> PreviewBuilder<'a> {
 
     pub fn temper_limit(mut self, value: u8) -> Self {
         self.optional.temper_limit = Some(value);
+        self
+    }
+
+    pub fn skills(mut self, value: Vec<Skill>) -> Self {
+        self.optional.skills = value;
         self
     }
 
@@ -381,6 +385,8 @@ pub enum GameDataLoadingStatus {
     FellowBook,
     Event,
     Elluns,
+    Fellow,
+    Skill,
 }
 
 impl GameDataLoadingStatus {
@@ -418,6 +424,8 @@ impl GameDataLoadingStatus {
             GameDataLoadingStatus::FellowBook => t("game-data-loading-fellow-book"),
             GameDataLoadingStatus::Event => t("game-data-loading-event"),
             GameDataLoadingStatus::Elluns => t("game-data-loading-elluns"),
+            GameDataLoadingStatus::Fellow => t("game-data-loading-fellow"),
+            GameDataLoadingStatus::Skill => t("game-data-loading-skill"),
         }
     }
 }
@@ -533,7 +541,7 @@ impl GameDataView {
         preview: &PreviewValues,
         items: &IndexMap<SharedString, Rc<RefCell<Item>>>,
         cx: &Context<'_, GameDataView>,
-    ) -> gpui::Div {
+    ) -> Div {
         v_flex()
             .items_start()
             .text_sm()
@@ -1645,6 +1653,62 @@ impl GameDataView {
                     }))
                 })
             })
+            .when(!preview_builder.optional.skills.is_empty(), |this| {
+                this.children(preview_builder.optional.skills.iter().map(|skill| {
+                    let last_level_skill_data = skill.skill_data.skill_level.last();
+                    v_flex()
+                        .mt_2()
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .items_start()
+                                .when_none(&skill.icon, |this| {
+                                    this.child(
+                                        div()
+                                            .size(px(64.))
+                                            //.when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color))
+                                            .border_2()
+                                            .border_color(cx.theme().border),
+                                    )
+                                })
+                                .when_some(skill.icon.as_ref(), |this, icon| {
+                                    this.child(
+                                        img(ImageSource::Image(icon.clone()))
+                                            .object_fit(ObjectFit::Cover)
+                                            .size(px(64.))
+                                            .border_2(), //  .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
+                                    )
+                                })
+                                .child(
+                                    v_flex()
+                                        .child(h_flex().gap_1().underline().font_bold().child(skill.get_localized_name()).when_else(
+                                            skill.passive_skill == 1,
+                                            |this| this.child(t("item-skill-passive")),
+                                            |this| this.child(t("item-skill-active")),
+                                        ))
+                                        .when(skill.cool_time != 0, |this| {
+                                            this.child(t_v("item-skill-cooldown", vec![("value", skill.cool_time / 1000)]))
+                                        })
+                                        .when_some(last_level_skill_data, |this, s| {
+                                            this.when(s.keep_buff_time > 0, |this| {
+                                                this.child(t_v("item-skill-effect-time", vec![("value", s.keep_buff_time / 1000)]))
+                                            })
+                                        }),
+                                ),
+                        )
+                        .when_some(last_level_skill_data, |this, s| {
+                            this.when_some(s.buff1.effect_pattern_list.as_ref(), |this, buff| {
+                                this.when_some(buff.effect_pattern.as_ref(), |this, effects| {
+                                    this.when(!effects.is_empty(), |this| {
+                                        this.child(div().text_color(cx.theme().yellow).mt_2().child(t("item-skill-effects")))
+                                            .children(effects.iter().map(|e| div().text_color(cx.theme().success).child(e.effect.get_locale())))
+                                    })
+                                })
+                            })
+                        })
+                        .when_some(skill.get_localized_description(), |this, description| this.child(div().mt_2().text_color(cx.theme().yellow).child(remove_html_tags_regex(&description))))
+                }))
+            })
     }
 }
 
@@ -1728,7 +1792,7 @@ impl GameDataView {
 }
 
 impl Focusable for GameDataView {
-    fn focus_handle(&self, _cx: &gpui::App) -> FocusHandle {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
@@ -2303,6 +2367,7 @@ impl Render for GameDataView {
                                                         crate::game_data::items::Item::Material(material) => material.build_preview(),
                                                         crate::game_data::items::Item::Recipe(recipe) => recipe.build_preview(),
                                                         crate::game_data::items::Item::Consume(consume) => consume.build_preview(),
+                                                        crate::game_data::items::Item::Fellow(fellow) => fellow.build_preview(),
                                                         crate::game_data::items::Item::Elluns(elluns) => elluns.build_preview(),
                                                         crate::game_data::items::Item::FellowConsume(fellow_consume) => {
                                                             fellow_consume.build_preview()

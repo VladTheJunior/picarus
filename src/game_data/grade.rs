@@ -1,4 +1,4 @@
-use gpui::{Hsla, SharedString, hsla};
+use gpui_kit::{Hsla, SharedString, hsla};
 use strum::EnumIter;
 use tracing::warn;
 
@@ -35,6 +35,24 @@ impl From<u8> for Grade {
             unk => {
                 warn!("Cannot convert {} grade", unk);
                 Self::Unknown(unk)
+            }
+        }
+    }
+}
+
+impl From<SharedString> for Grade {
+    fn from(value: SharedString) -> Self {
+        match value.as_str() {
+            "no" => Self::Common,
+            "el" => Self::Elite,
+            "he" => Self::Heroic,
+            "ld" => Self::Legendary,
+            "mt" => Self::LegendaryPlus,
+           // 6 => Self::Unique,
+           // 7 => Self::Mythical,
+            unk => {
+                warn!("Cannot convert {} grade", unk);
+                Self::Unknown(99)
             }
         }
     }

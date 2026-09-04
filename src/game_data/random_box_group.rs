@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 
 use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 
-use gpui::SharedString;
+use gpui_kit::SharedString;
 use tracing::warn;
 
 #[derive(Default, Clone)]

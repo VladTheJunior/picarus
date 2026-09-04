@@ -9,7 +9,7 @@ use crate::{
     game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
-use gpui::SharedString;
+use gpui_kit::SharedString;
 use indexmap::IndexMap;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
@@ -49,7 +49,7 @@ impl ReadableItem for FellowEquip {
         self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
         // Read all fields sequentially
-        for (tag_idx, tag) in definitions.keys().enumerate() {
+        for (tag_idx, (tag, tag_type)) in definitions.iter().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -60,7 +60,7 @@ impl ReadableItem for FellowEquip {
                     reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
                 }
             };
-            self.common.parse(tag, reader, Self::FORMAT).await?;
+            self.common.parse(tag, tag_type, reader, Self::FORMAT).await?;
             match tag_idx {
                 12 => {
                     let v = reader.read_f32_le().await?;

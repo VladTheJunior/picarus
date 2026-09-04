@@ -2,7 +2,7 @@ use std::io::SeekFrom;
 
 use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, effects::ItemEffect, items::ReadableItem};
 use anyhow::Result;
-use gpui::SharedString;
+use gpui_kit::SharedString;
 use indexmap::IndexMap;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 

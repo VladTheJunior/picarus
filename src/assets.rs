@@ -1,13 +1,14 @@
 use anyhow::Result;
 use anyhow::anyhow;
-use gpui::App;
-use gpui::IntoElement;
-use gpui::RenderOnce;
-use gpui::Window;
-use gpui::{AssetSource, SharedString};
-use gpui_component::Icon;
-use gpui_component::IconNamed;
-use gpui_component_macros::icon_named;
+use gpui_kit::App;
+use gpui_kit::IntoElement;
+use gpui_kit::RenderOnce;
+use gpui_kit::Window;
+use gpui_kit::component::icon_named;
+use gpui_kit::{AssetSource, SharedString};
+use gpui_kit::component::Icon;
+use gpui_kit::component::IconNamed;
+
 use rust_embed::Embed;
 use rust_embed::RustEmbed;
 use std::borrow::Cow;

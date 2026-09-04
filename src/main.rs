@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+//#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![deny(unused_crate_dependencies)]
 mod assets;
 
@@ -9,8 +9,9 @@ pub mod game_data_view;
 mod language;
 mod settings;
 
-use gpui::{AppContext, Bounds, Global, ReadGlobal, Size, TitlebarOptions, WindowBounds, WindowOptions, px};
-use gpui_component::{Root, Theme, ThemeConfig};
+use gpui_kit::{AppContext, Bounds, Global, ReadGlobal, Size, TitlebarOptions, WindowBounds, WindowOptions, px};
+use gpui_kit::component::{Root, Theme, ThemeConfig};
+
 
 use std::rc::Rc;
 use tracing::{Level, info};
@@ -52,7 +53,7 @@ fn main() {
     let dark_theme =
         Rc::new(serde_json::from_slice::<ThemeConfig>(include_bytes!("../assets/themes/dark.json")).expect("Failed to parse dark theme"));
 
-    let app = gpui_platform::application().with_assets(Assets);
+    let app = gpui_kit::application().with_assets(Assets);
     LanguageController::init();
     image_extras::register();
 
@@ -62,10 +63,10 @@ fn main() {
             .add_fonts(Fonts::iter().map(|f| Fonts::get(&f)).flatten().map(|f| f.data).collect())
             .expect("Failed to load embedded font");
         // This must be called before using any GPUI Component features.
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         game_data_view::init(cx);
         Theme::global_mut(cx).apply_config(&dark_theme);
-        Theme::global_mut(cx).scrollbar_mode = gpui_component::scroll::ScrollbarMode::Always;
+        Theme::global_mut(cx).scrollbar_mode = gpui_kit::component::scroll::ScrollbarMode::Always;
 
         LanguageController::switch(settings.language);
         cx.set_global(settings);

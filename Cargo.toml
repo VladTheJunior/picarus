@@ -9,18 +9,9 @@ OriginalFilename = "picarus.exe"
 LegalCopyright = "Copyright © VladTheJunior, 2026"
 FileDescription = "Interactive items viewer for Riders of Icarus"
 
-[dependencies.gpui]
-git = "https://github.com/zed-industries/zed"
-
-[dependencies.gpui_platform]
-git = "https://github.com/zed-industries/zed"
-
-[dependencies.gpui-component]
-git = "https://github.com/longbridge/gpui-component"
+[dependencies.gpui-kit]
+version = "=0.6.0"
 features = ["tree-sitter"]
-
-[dependencies.gpui-component-macros]
-git = "https://github.com/longbridge/gpui-component"
 
 [dependencies.image-extras]
 version = "=0.1.1"
@@ -37,10 +28,14 @@ version = "=0.3.13"
 [dependencies.itertools]
 version = "=0.15.0"
 
-[dependencies.lz4_flex ]
+[dependencies.lz4_flex]
 version = "=0.14.0"
 default-features = false
 features = ["alloc"]
+
+[dependencies.quick-xml]
+version = "=0.42.0"
+features = ["serialize", "encoding"]
 
 [dependencies.rust_xlsxwriter]
 version = "=0.99.0"
@@ -85,7 +80,7 @@ version = "=0.28.0"
 features = ["derive"]
 
 [dependencies.toml]
-version = "=1.1.4"
+version = "=1.1.5"
 
 [dependencies.encoding_rs]
 version = "=0.8.35"

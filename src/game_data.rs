@@ -16,11 +16,12 @@ pub mod filters;
 pub mod game_class;
 pub mod grade;
 pub mod quality;
+pub mod skill;
 use anyhow::Result;
 
 use encoding_rs::EUC_KR;
 
-use gpui::{AsyncWindowContext, Entity, Image, SharedString};
+use gpui_kit::{AsyncWindowContext, Entity, Image, SharedString};
 
 use image::{ImageReader, imageops::FilterType};
 use indexmap::IndexMap;
@@ -43,7 +44,7 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, BufReader},
     time::Instant,
 };
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 use zip::ZipArchive;
 
 use crate::{
@@ -57,9 +58,9 @@ use crate::{
         item_set::ItemSet,
         items::{
             Item, ItemTrait, ItemType, ReadableItem, accessory::Accessory, armor::Armor, bag::Bag, boost::Boost, bracelet::Bracelet,
-            consume::Consume, elluns::Elluns, event::Event, exchange::Exchange, fellow_book::FellowBook, fellow_consume::FellowConsume,
-            fellow_equip::FellowEquip, fellow_style::FellowStyle, gem::Gem, material::Material, package::Package, quest::Quest,
-            random_box::RandomBox, recipe::Recipe, relic::Relic, sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon,
+            consume::Consume, elluns::Elluns, event::Event, exchange::Exchange, fellow::Fellow, fellow_book::FellowBook,
+            fellow_consume::FellowConsume, fellow_equip::FellowEquip, fellow_style::FellowStyle, gem::Gem, material::Material, package::Package,
+            quest::Quest, random_box::RandomBox, recipe::Recipe, relic::Relic, sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon,
             skill_book::SkillBook, style::Style, weapon::Weapon,
         },
         locale::Locale,
@@ -67,6 +68,7 @@ use crate::{
         quality::Quality,
         random_box_group::RandomBoxGroup,
         random_box_probability::RandomBoxProbability,
+        skill::Skill,
         tempering::Tempering,
     },
     game_data_view::GameDataLoadingStatus,
@@ -104,6 +106,8 @@ pub struct GameData {
     unknown_ids: BTreeMap<SharedString, u32>,
     unknown_effects: BTreeMap<SharedString, BTreeSet<SharedString>>,
     unknown_icons: BTreeMap<SharedString, BTreeSet<SharedString>>,
+    unknown_skills: BTreeSet<SharedString>,
+    skills: HashMap<SharedString, Skill>
 }
 
 impl GameData {
@@ -201,7 +205,7 @@ impl GameData {
             .map(|f| (f.to_lowercase(), f.to_string()))
             .collect::<HashMap<_, _>>();
 
-        let item_set = Self::load_itemset(&mut gamedatas_zip, on_load, cx).await?;
+       /*  let item_set = Self::load_itemset(&mut gamedatas_zip, on_load, cx).await?;
 
         data.load_product_materials(&mut gamedatas_zip, on_load, cx).await?; // always first
         data.load_recipes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?; // always right after products
@@ -224,6 +228,7 @@ impl GameData {
         data.load_bags(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
         data.load_fellow_books(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
         data.load_skill_books(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
+
         data.load_events(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
         data.load_relics(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
         data.load_sealed_fellows(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx)
@@ -281,7 +286,16 @@ impl GameData {
             warn!(unknown_icons_len = data.unknown_icons.len(), unknown_icons = ?data.unknown_icons);
         }
 
-        data.validate_effects();
+        */
+        let skill_locales = data.load_skills(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
+        data.load_fellows(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &skill_locales,  on_load, cx)
+            .await?;
+
+        if !data.unknown_skills.is_empty() {
+            warn!(unknown_skills_len = data.unknown_skills.len(), unknown_skills = ?data.unknown_skills);
+        }
+
+data.validate_effects();
 
         data.elapsed = start.elapsed();
         Ok(data)
@@ -296,6 +310,43 @@ impl GameData {
 
     async fn load_itemres<R: Read + std::io::Seek>(gamedatas_zip: &mut ZipArchive<R>, itemres_path: &str) -> Result<HashMap<SharedString, ItemRes>> {
         ItemRes::read_all(gamedatas_zip, itemres_path).await
+    }
+
+    async fn load_skills<R: Read + std::io::Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+         gamelibs_zip: &mut ZipArchive<R>,
+         icons: &HashMap<String, String>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<HashMap<SharedString, Locale>> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::Skill;
+            cx.notify();
+        });
+        let mut locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_skill.sxb").await?;
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_skill_fellow.sxb").await?);
+        let paths = gamedatas_zip
+            .file_names()
+            .filter(|f| f.starts_with("gamedata/adataxml/skill/") && f.ends_with(".xml"))
+            .map(|f| f.to_string())
+            .collect::<Vec<_>>();
+
+        
+        for path in paths {
+            match Skill::load(gamedatas_zip, &path).await {
+                Ok(mut skill) => {
+                    skill.set_locale(&locales);
+                    skill.set_effects();
+                                skill
+                .set_icon(gamelibs_zip, icons, &mut self.icon_cache, &mut self.unknown_icons)
+                .await?;
+                    self.skills.insert(skill.recid.clone(), skill);
+                }
+                Err(e) => warn!(?e, ?path, "Failed to parse skill"),
+            }
+        }
+        Ok(locales)
     }
 
     async fn load_itemset<R: Read + std::io::Seek>(
@@ -683,6 +734,36 @@ impl GameData {
                 .await?;
 
             self.items.insert(item.key(), Rc::new(RefCell::new(Item::Boost(item))));
+        }
+
+        Ok(())
+    }
+
+    async fn load_fellows<R: Read + std::io::Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        gamelibs_zip: &mut ZipArchive<R>,
+        icons: &HashMap<String, String>,
+        skill_locales: &HashMap<SharedString, Locale>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<()> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::Fellow;
+            cx.notify();
+        });
+        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_fellow.sxb").await?;
+        let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\fellow_res.bin").await?;
+
+        let items = Fellow::read_all_vec(gamedatas_zip, r"gamedata\adatabin\fellow_state.bin").await?;
+        for mut item in items {
+            item.common.set_locale(&locales);
+            item.common.set_linked_recipes(&self.products);
+            item.common
+                .set_icon(&res, gamelibs_zip, icons, &mut self.icon_cache, &mut self.unknown_icons)
+                .await?;
+            item.set_skills(&self.skills, skill_locales, &mut self.unknown_skills)?;
+            self.items.insert(item.key(), Rc::new(RefCell::new(Item::Fellow(item))));
         }
 
         Ok(())
@@ -1301,7 +1382,7 @@ async fn dds_to_jpeg(bytes: Vec<u8>) -> Result<std::sync::Arc<Image>> {
     })
     .await??;
 
-    Ok(std::sync::Arc::new(Image::from_bytes(gpui::ImageFormat::Jpeg, data)))
+    Ok(std::sync::Arc::new(Image::from_bytes(gpui_kit::ImageFormat::Jpeg, data)))
 }
 
 pub trait AsyncBufReadExtReadString: AsyncBufReadExt + Unpin {

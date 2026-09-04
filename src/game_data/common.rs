@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::game_data::{
-    AsyncBufReadExtReadString, DataFormat,
+    AsyncBufReadExtReadString, DataFormat, TagType,
     binding::Binding,
     dds_to_jpeg,
     effects::{EffectKind, ItemEffect},
@@ -19,7 +19,7 @@ use crate::game_data::{
     product::Product,
 };
 use anyhow::Result;
-use gpui::{Image, SharedString};
+use gpui_kit::{Image, SharedString};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek};
 use tracing::{error, warn};
 
@@ -184,8 +184,16 @@ impl Common {
         Ok(())
     }
 
-    async fn parse_grade<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(&mut self, reader: &mut R) -> Result<()> {
-        self.grade = Grade::from(reader.read_f32_le().await? as u8);
+    async fn parse_grade<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+        &mut self,
+        reader: &mut R,
+        format: DataFormat,
+        tag_type: &TagType,
+    ) -> Result<()> {
+        self.grade = match tag_type {
+            TagType::String => Grade::from(reader.read_string(format).await?),
+            TagType::Float => Grade::from(reader.read_f32_le().await? as u8),
+        };
         Ok(())
     }
 
@@ -199,10 +207,16 @@ impl Common {
         Ok(())
     }
 
-    pub async fn parse<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(&mut self, key: &str, reader: &mut R, format: DataFormat) -> Result<()> {
-        match key {
+    pub async fn parse<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+        &mut self,
+        tag: &str,
+        tag_type: &TagType,
+        reader: &mut R,
+        format: DataFormat,
+    ) -> Result<()> {
+        match tag {
             "id" => self.parse_id(reader, format).await?,
-            "등급" => self.parse_grade(reader).await?,
+            "등급" => self.parse_grade(reader, format, tag_type).await?,
             "요구레벨" | "습득 필요 레벨" => self.parse_required_level(reader).await?,
             "아이템레벨" => self.parse_item_level(reader).await?,
             "파괴불능" => self.parse_no_destroy(reader).await?,

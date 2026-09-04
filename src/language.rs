@@ -7,7 +7,7 @@ use std::{
 };
 
 use fluent::{FluentArgs, FluentResource, FluentValue, concurrent::FluentBundle};
-use gpui::SharedString;
+use gpui_kit::SharedString;
 
 use unic_langid::langid;
 

@@ -24,6 +24,7 @@ pub mod sealed_fellow;
 pub mod secondary_weapon;
 pub mod skill_book;
 pub mod style;
+pub mod fellow;
 
 use std::{
     cell::RefCell,
@@ -35,18 +36,10 @@ use std::{
 
 use crate::{
     game_data::{
-        AsyncBufReadExtReadString,
-        common::Common,
-        grade::Grade,
-        items::{
-            accessory::Accessory, armor::Armor, bag::Bag, boost::Boost, bracelet::Bracelet, consume::Consume, elluns::Elluns, event::Event,
-            exchange::Exchange, fellow_book::FellowBook, fellow_consume::FellowConsume, fellow_equip::FellowEquip, fellow_style::FellowStyle,
-            gem::Gem, material::Material, package::Package, quest::Quest, random_box::RandomBox, recipe::Recipe, relic::Relic,
-            sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon, skill_book::SkillBook, style::Style, weapon::Weapon,
-        },
-        locale::Locale,
-    },
-    language::t,
+        AsyncBufReadExtReadString, common::Common, grade::Grade, items::{
+            accessory::Accessory, armor::Armor, bag::Bag, boost::Boost, bracelet::Bracelet, consume::Consume, elluns::Elluns, event::Event, exchange::Exchange, fellow::Fellow, fellow_book::FellowBook, fellow_consume::FellowConsume, fellow_equip::FellowEquip, fellow_style::FellowStyle, gem::Gem, material::Material, package::Package, quest::Quest, random_box::RandomBox, recipe::Recipe, relic::Relic, sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon, skill_book::SkillBook, style::Style, weapon::Weapon,
+        }, locale::Locale,
+    }, language::t,
 };
 use crate::{
     game_data::{DataFormat, DebugValue, TagType, effects::EffectKind, read_definitions, read_item_count, read_offsets},
@@ -54,10 +47,11 @@ use crate::{
 };
 use anyhow::Result;
 use enum_dispatch::enum_dispatch;
-use gpui::{Image, SharedString};
+use gpui_kit::{Image, SharedString};
 use indexmap::IndexMap;
 use strum::EnumIter;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt, BufReader};
+use tracing::debug;
 use zip::ZipArchive;
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum ArmorClassKind {
@@ -172,6 +166,7 @@ pub enum ItemType {
     FellowBook,
     Event,
     Elluns,
+    Fellow
 }
 
 impl ItemType {
@@ -202,6 +197,7 @@ impl ItemType {
             ItemType::FellowBook => t("item-type-fellow-book"),
             ItemType::Event => t("item-type-event"),
             ItemType::Elluns => t("item-type-elluns"),
+            ItemType::Fellow => t("item-type-fellow"),
         }
     }
 }
@@ -283,6 +279,7 @@ pub enum Item {
     FellowBook(FellowBook),
     Event(Event),
     Elluns(Elluns),
+    Fellow(Fellow)
 }
 
 impl Item {
@@ -313,6 +310,7 @@ impl Item {
             Self::FellowBook(_) => ItemType::FellowBook,
             Self::Event(_) => ItemType::Event,
             Self::Elluns(_) => ItemType::Elluns,
+            Self::Fellow(_) => ItemType::Fellow,
         }
     }
 
@@ -383,6 +381,7 @@ pub trait ReadableItem: Sized + Default {
         let mut reader = BufReader::new(Cursor::new(data.as_slice()));
 
         let definitions = read_definitions(&mut reader).await?;
+        debug!(?definitions);
         let item_count = read_item_count(&mut reader).await?;
         let offsets = read_offsets(&mut reader, item_count, definitions.len()).await?;
 

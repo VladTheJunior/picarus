@@ -1,4 +1,4 @@
-use gpui::SharedString;
+use gpui_kit::SharedString;
 
 use crate::language::t_v;
 
@@ -186,8 +186,8 @@ impl ItemMinMaxEffect {
 
 impl ItemEffect {
     pub fn matching(key: &str) -> Option<&str> {
-        match key {
-            "최대ep%" | "최대EP%" => Some("item-effect-max-ep-percent"),
+        match key.to_ascii_lowercase().as_str() {
+            "최대ep%" => Some("item-effect-max-ep-percent"),
             "생명력흡수성공확률+" | "생명력흡수성공확률%" => Some("item-effect-health-absorption-chance-percent"),
             "생명력흡수량+" => Some("item-effect-health-absorption-amount-percent"),
             "데미지감소%" => Some("item-effect-damage-reduction-percent"),
@@ -197,46 +197,46 @@ impl ItemEffect {
             "배후공격극대화확률+" => Some("item-effect-backstab-damage"),
             "회피력+" => Some("item-effect-evasion-power"),
             "회피율%" | "회피율+" => Some("item-effect-evasion-percent"), // хз, уклонение, проверить на Capital Guard Veiled Gloves
-            "최대MP+" => Some("item-effect-mana"),
-            "최대HP+" | "최대hp+" | "최대Hp+" => Some("item-effect-max-hp"),
-            "최대HP%" => Some("item-effect-max-hp-percent"),
+            "최대mp+" => Some("item-effect-mana"),
+            "최대hp+" => Some("item-effect-max-hp"),
+            "최대hp%" => Some("item-effect-max-hp-percent"),
             "무기물리방어력%" => Some("item-effect-physical-defense-percent"),
             "쿨타임%" => Some("item-effect-cooldown-percent"),
-            "PK방어력%" | "pk방어력%" => Some("item-effect-pvp-defense-percent"),
+            "pk방어력%" => Some("item-effect-pvp-defense-percent"),
             "모든공격력+" => Some("item-effect-attack"),
             "모든공격력%" => Some("item-effect-attack-percent"),
-            "allstatderest+" | "AllStatDerest+" => Some("item-effect-stat-limit-break"),
-            "allstatderest%" | "AllStatDerest%" => Some("item-effect-stat-limit-break-percent"),
-            "allstat+" | "AllStat+" => Some("item-effect-allstats"),
-            "allstat%" | "AllStat%" => Some("item-effect-allstats-percent"),
+            "allstatderest+" => Some("item-effect-stat-limit-break"),
+            "allstatderest%" => Some("item-effect-stat-limit-break-percent"),
+            "allstat+" => Some("item-effect-allstats"),
+            "allstat%" => Some("item-effect-allstats-percent"),
             "모든극대화확률+" => Some("item-effect-crit-damage-chance-percent"),
-            "PK육체계저항율+" | "pk육체계저항율+" => Some("item-effect-pvp-resist-percent"),
+            "pk육체계저항율+" => Some("item-effect-pvp-resist-percent"),
             "이동속도%" => Some("item-effect-speed-percent"),
             "탈것속도%" => Some("item-effect-mount-speed-percent"),
             "치명타피해감소+" => Some("item-effect-crit-defense"),
             "마법방어력%" => Some("item-effect-magic-defense-percent"),
-            "INTDerest+" | "intderest+" => Some("item-effect-intelligence-break-limit"),
-            "INTDerest%" | "intderest%" | "intDerest%" => Some("item-effect-intelligence-break-limit-percent"),
-            "VTLDerest+" | "vtlderest+" => Some("item-effect-vitality-break-limit"),
-            "VTLDerest%" | "vtlderest%" => Some("item-effect-vitality-break-limit-percent"),
-            "STRDerest+" | "strderest+" => Some("item-effect-strength-break-limit"),
-            "STRDerest%" | "strderest%" | "strDerest%" => Some("item-effect-strength-break-limit-percent"),
-            "DEXDerest+" | "dexderest+" => Some("item-effect-dexterity-break-limit"),
-            "DEXDerest%" | "dexderest%" => Some("item-effect-dexterity-break-limit-percent"),
-            "MTLDerest+" | "mtlderest+" => Some("item-effect-mentality-break-limit"),
-            "MTLDerest%" | "mtlderest%" => Some("item-effect-mentality-break-limit-percent"),
-            "INT%" | "int%" => Some("item-effect-intelligence-percent"),
-            "STR%" | "str%" => Some("item-effect-strength-percent"),
-            "VTL%" | "vtl%" => Some("item-effect-vitality-percent"),
-            "MTL%" | "mtl%" => Some("item-effect-mentality-percent"),
-            "DEX%" | "dex%" => Some("item-effect-dexterity-percent"),
-            "VTL+" | "vtl+" => Some("item-effect-vitality"),
-            "MTL+" | "mtl+" => Some("item-effect-mentality"),
-            "INT+" | "int+" | "Int+" => Some("item-effect-intelligence"),
-            "STR+" | "str+" | "Str+" => Some("item-effect-strength"),
-            "DEX+" | "dex+" => Some("item-effect-dexterity"),
+            "intderest+" => Some("item-effect-intelligence-break-limit"),
+            "intderest%" => Some("item-effect-intelligence-break-limit-percent"),
+            "vtlderest+" => Some("item-effect-vitality-break-limit"),
+            "vtlderest%" => Some("item-effect-vitality-break-limit-percent"),
+            "strderest+" => Some("item-effect-strength-break-limit"),
+            "strderest%" => Some("item-effect-strength-break-limit-percent"),
+            "dexderest+" => Some("item-effect-dexterity-break-limit"),
+            "dexderest%" => Some("item-effect-dexterity-break-limit-percent"),
+            "mtlderest+" => Some("item-effect-mentality-break-limit"),
+            "mtlderest%" => Some("item-effect-mentality-break-limit-percent"),
+            "int%" => Some("item-effect-intelligence-percent"),
+            "str%" => Some("item-effect-strength-percent"),
+            "vtl%" => Some("item-effect-vitality-percent"),
+            "mtl%" => Some("item-effect-mentality-percent"),
+            "dex%" => Some("item-effect-dexterity-percent"),
+            "vtl+" => Some("item-effect-vitality"),
+            "mtl+" => Some("item-effect-mentality"),
+            "int+" => Some("item-effect-intelligence"),
+            "str+" => Some("item-effect-strength"),
+            "dex+" => Some("item-effect-dexterity"),
 
-            "PK공격력%" | "pk공격력%" => Some("item-effect-pvp-attack-percent"),
+            "pk공격력%" => Some("item-effect-pvp-attack-percent"),
             "출혈관통률" => Some("item-effect-bleed-chance-percent"),
             "모든방어력%" => Some("item-effect-defense-percent"),
             "모든방어력+" => Some("item-effect-defense"),
@@ -271,18 +271,16 @@ impl ItemEffect {
             "도트데미지감소%" => Some("item-effect-bleed-damage-reduction-percent"), //idk
             "길들이기포인트감소%" => Some("item-effect-taming-points-percent"), // проверить потом на бафе зелек
             "고도+" => Some("item-effect-mount-altitude"),
-            "드랍Money변화율*" | "드랍money변화율*" => Some("item-effect-money-drop-increase-percent"),
-            "Money추가획득율%" => Some("item-effect-money-drop-increase"),
-            "공격자의치명타피해Plus효과감소%" | "공격자의치명타피해plus효과감소%" => {
-                Some("item-effect-critical-defense-percent")
-            }
-            "최대MP%" => Some("item-effect-mana-percent"),
+            "드랍money변화율*" => Some("item-effect-money-drop-increase-percent"),
+            "money추가획득율%" => Some("item-effect-money-drop-increase"),
+            "공격자의치명타피해plus효과감소%" => Some("item-effect-critical-defense-percent"),
+            "최대mp%" => Some("item-effect-mana-percent"),
             "플레이어경험치%" => Some("item-effect-obtained-character-exp-percent"),
 
             "배후공격데미지%" => Some("item-effect-backstab-rate-percent"),
-            "Hp힐량%" => Some("item-effect-health-regen-percent"),
+            "hp힐량%" => Some("item-effect-health-regen-percent"),
             "어그로%" => Some("item-effect-threat-percent"),
-            "hp회복력%" | "Hp회복력%" | "HP회복력%" => Some("item-effect-base-health-regen-percent"),
+            "hp회복력%" => Some("item-effect-base-health-regen-percent"),
             "마법물리방어력+" => Some("item-effect-magic-and-physical-defense"),
             "낚시시간감소" => Some("item-effect-fishing-time-sec"),
             "펫포획확률%" => Some("item-effect-capturing-chance-percent"),
@@ -300,6 +298,13 @@ impl ItemEffect {
         let mut e = Self::default();
         e.effect = effect;
         e.parse_effect();
+        e
+    }
+
+    pub fn from_effect_and_value(effect: &str, value: Option<&SharedString>) -> Self {
+        let mut e = Self::default();
+        e.effect = SharedString::new(effect);
+        e.parse_effect_with_value(effect, value);
         e
     }
 
@@ -333,6 +338,15 @@ impl ItemEffect {
     fn parse_effect(&mut self) {
         if let Some((effect_key, value)) = Self::parse_key_value(&self.effect) {
             self.intermediate_effect = Some(SharedString::new(effect_key));
+            if let Some(effect_key) = Self::matching(effect_key) {
+                self.parsed = Some((SharedString::new(effect_key), value));
+            }
+        }
+    }
+
+    fn parse_effect_with_value(&mut self, effect_key: &str, value_str: Option<&SharedString>) {
+        self.intermediate_effect = Some(SharedString::new(effect_key));
+        if let Some(value) = value_str.and_then(|f| f.trim_end_matches("%").parse::<f32>().ok()) {
             if let Some(effect_key) = Self::matching(effect_key) {
                 self.parsed = Some((SharedString::new(effect_key), value));
             }

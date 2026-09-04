@@ -5,14 +5,14 @@ use crate::{
     game_data_view::GameDataView,
     language::t_v,
 };
-use gpui::{AppContext, Context, Entity, SharedString, Window};
-use gpui_component::{
+use gpui_kit::{AppContext, Context, Entity, SharedString, Window};
+use gpui_kit::component::{
     IndexPath,
     combobox::ComboboxState,
     input::{InputEvent, InputState},
     select::SearchableVec,
 };
-use gpui_component::{combobox::*, searchable_list::SearchableListItem};
+use gpui_kit::component::{combobox::*, searchable_list::SearchableListItem};
 use strum::IntoEnumIterator;
 
 #[derive(Clone, Eq, PartialEq, Hash)]

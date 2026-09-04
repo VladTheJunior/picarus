@@ -10,7 +10,7 @@ use crate::{
     game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
-use gpui::SharedString;
+use gpui_kit::SharedString;
 use indexmap::IndexMap;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
@@ -85,7 +85,7 @@ impl ReadableItem for Armor {
         self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
         let tag_count = definitions.len();
 
-        for (tag_idx, tag) in definitions.keys().enumerate() {
+        for (tag_idx, (tag, tag_type)) in definitions.iter().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -96,7 +96,7 @@ impl ReadableItem for Armor {
                     reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
                 }
             };
-            self.common.parse(tag, reader, Self::FORMAT).await?;
+            self.common.parse(tag, tag_type, reader, Self::FORMAT).await?;
             match tag_idx {
                 10 => self.equip_slot = reader.read_string(Self::FORMAT).await?,
                 11 => self.armor_type = SharedString::new(reader.read_string(Self::FORMAT).await?.to_lowercase()),

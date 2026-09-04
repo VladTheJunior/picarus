@@ -8,7 +8,7 @@ use crate::game_data::{
 };
 use anyhow::Result;
 
-use gpui::SharedString;
+use gpui_kit::SharedString;
 use indexmap::IndexMap;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 

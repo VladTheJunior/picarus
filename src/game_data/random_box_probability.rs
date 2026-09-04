@@ -5,7 +5,7 @@ use anyhow::Result;
 use indexmap::IndexMap;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use gpui::SharedString;
+use gpui_kit::SharedString;
 
 #[derive(Default, Clone)]
 pub struct RandomBoxProbability {

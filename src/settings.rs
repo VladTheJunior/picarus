@@ -1,6 +1,6 @@
 pub mod config;
 
-use gpui::SharedString;
+use gpui_kit::SharedString;
 use serde::{Deserialize, Serialize};
 
 use strum::{EnumIter, FromRepr};
