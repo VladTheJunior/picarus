@@ -18,6 +18,21 @@ item-transcendence-limit = Просветление
 item-physical-defense = Физическая защита
 item-magic-defense = Магическая защита
 
+
+item-adventure-points = Очки приключений
+item-speed = Скорость
+item-max-level = Макс. уровень
+item-fly-mount = (Летающий)
+item-land-mount = (Наземный)
+item-fellow-people = {
+    $value ->
+   [one] { $value } человек
+   [few] { $value } человека
+   *[other] { $value } человек
+}
+item-pet = Питомец
+item-mount = Маунт
+
 item-linked-recipes = Связанные рецепты
 
 item-no-transcendence = Нет просветления
@@ -169,9 +184,9 @@ item-equipped-effects = Эффекты снаряжения
 item-random-equipped-effects = Случайные эффекты снаряжения
 item-skill-effects = Эффекты
 item-skill-cooldown = Перезарядка { $value } сек.
-item-skill-effect-time = Продолжительность { $value } сек.
-item-skill-passive = (Пассивный)
-item-skill-active = (Активный)
+item-skill-effect-with-duration = { $effect } на { $duration } сек.
+item-skill-passive = Пассивный
+item-skill-active = Активный
 
 item-effect-max-hp = Макс. здоровье { $value }
 item-effect-max-hp-percent = Макс. здоровье { $value }%
@@ -264,6 +279,7 @@ item-effect-backstab-rate-percent = Процент ударов в спину { 
 item-effect-health-regen-percent = Восстановление здоровья { $value }%
 item-effect-threat-percent = Агрессия { $value }%
 item-effect-base-health-regen-percent = Базовое восст. здоровья { $value }%
+item-effect-base-health-regen = Базовое восст. здоровья { $value }
 item-effect-magic-and-physical-defense = Магическая и физическая защита { $value }
 
 item-effect-auction-sales-fee-percent = Комиссия с продажи { $value }%
@@ -276,3 +292,8 @@ item-effect-fishing-rare-drop-percent = Шанс редкого улова { $va
 item-random-box-probability-percent = Шанс { $value }%
 
 item-effect-guild-points-percent = Очки гильдии { $value }%
+
+item-effect-physical-resistance-percent = Физ. сопротивление { $value }%
+item-effect-stun = Оглушение
+item-effect-base-mana-regen-percent = Базовое восст. маны { $value }%
+item-effect-base-mana-regen = Базовое восст. маны { $value }

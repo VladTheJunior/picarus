@@ -8,6 +8,7 @@ mod game_data;
 pub mod game_data_view;
 mod language;
 mod settings;
+pub mod rich_text;
 
 use gpui_kit::{AppContext, Bounds, Global, ReadGlobal, Size, TitlebarOptions, WindowBounds, WindowOptions, px};
 use gpui_kit::component::{Root, Theme, ThemeConfig};

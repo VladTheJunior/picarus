@@ -1,3 +1,4 @@
+use fluent::FluentValue;
 use gpui_kit::SharedString;
 
 use crate::language::t_v;
@@ -235,7 +236,9 @@ impl ItemEffect {
             "int+" => Some("item-effect-intelligence"),
             "str+" => Some("item-effect-strength"),
             "dex+" => Some("item-effect-dexterity"),
-
+            "bdy%" => Some("item-effect-physical-resistance-percent"),
+            "기절상태" => Some("item-effect-stun"),
+            // "신체독중독상태" => Some("item-effect-stun"),
             "pk공격력%" => Some("item-effect-pvp-attack-percent"),
             "출혈관통률" => Some("item-effect-bleed-chance-percent"),
             "모든방어력%" => Some("item-effect-defense-percent"),
@@ -281,6 +284,9 @@ impl ItemEffect {
             "hp힐량%" => Some("item-effect-health-regen-percent"),
             "어그로%" => Some("item-effect-threat-percent"),
             "hp회복력%" => Some("item-effect-base-health-regen-percent"),
+            "hp회복력+" => Some("item-effect-base-health-regen"),
+            "mp회복력%" => Some("item-effect-base-mana-regen-percent"),
+            "mp회복력+" => Some("item-effect-base-mana-regen"),
             "마법물리방어력+" => Some("item-effect-magic-and-physical-defense"),
             "낚시시간감소" => Some("item-effect-fishing-time-sec"),
             "펫포획확률%" => Some("item-effect-capturing-chance-percent"),
@@ -333,6 +339,38 @@ impl ItemEffect {
             })
             .and_then(|s| if s.is_empty() { None } else { Some(s) })
             .unwrap_or_else(|| self.effect.clone())
+    }
+
+    pub fn get_locale_with_duration(&self, duration: i32) -> SharedString {
+        if duration > 0 {
+            self.parsed
+                .as_ref()
+                .map(|(key, value)| {
+                    if key.ends_with("-minus-percent") {
+                        t_v(key, vec![("value", format!("{:.2}", value))])
+                    } else if key.ends_with("-percent") {
+                        t_v(key, vec![("value", format!("{:+.2}", value))])
+                    } else {
+                        t_v(key, vec![("value", format!("{:+.0}", value))])
+                    }
+                })
+                .and_then(|s| {
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(t_v(
+                            "item-skill-effect-with-duration",
+                            vec![
+                                ("effect", FluentValue::from(s.as_str())),
+                                ("duration", FluentValue::Number((duration / 1000).into())),
+                            ],
+                        ))
+                    }
+                })
+                .unwrap_or_else(|| self.effect.clone())
+        } else {
+            self.get_locale()
+        }
     }
 
     fn parse_effect(&mut self) {

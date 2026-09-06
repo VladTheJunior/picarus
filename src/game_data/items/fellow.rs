@@ -1,13 +1,19 @@
 use std::{
     collections::{BTreeSet, HashMap},
     io::SeekFrom,
-    rc::Rc,
 };
 
 use crate::{
     game_data::{
-        AsyncBufReadExtReadString, DataFormat, TagType, common::Common, effects::EffectKind, items::{ItemTrait, ReadableItem}, locale::Locale, skill::Skill,
-    }, game_data_view::PreviewBuilder,
+        AsyncBufReadExtReadString, DataFormat, TagType,
+        common::Common,
+        effects::EffectKind,
+        items::{ItemTrait, ReadableItem},
+        locale::Locale,
+        skill::Skill,
+    },
+    game_data_view::PreviewBuilder,
+    language::t,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -15,9 +21,47 @@ use indexmap::IndexMap;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui_kit::SharedString;
+use tracing::warn;
+
+#[derive(Clone, PartialEq)]
+pub enum FellowType {
+    Pet,
+    Mount,
+    Unknown(SharedString),
+}
+
+impl Default for FellowType {
+    fn default() -> Self {
+        Self::Unknown(SharedString::new("default"))
+    }
+}
+
+impl From<SharedString> for FellowType {
+    fn from(value: SharedString) -> Self {
+        match value.as_str() {
+            "Rd" => Self::Mount,
+            "bt" => Self::Pet,
+            unk => {
+                warn!("Cannot convert {} fellow type", unk);
+                Self::Unknown(value)
+            }
+        }
+    }
+}
+
+impl FellowType {
+    pub fn localized(&self) -> SharedString {
+        match self {
+            FellowType::Pet => t("item-pet"),
+            FellowType::Mount => t("item-mount"),
+            FellowType::Unknown(_) => t("item-unknown-fellow"),
+        }
+    }
+}
 
 #[derive(Default, Clone)]
 pub struct Fellow {
+    pub region_locale: Option<Locale>,
     pub skills: Vec<Skill>,
     pub debug: Vec<u8>,
     pub common: Common,
@@ -30,6 +74,7 @@ pub struct Fellow {
     pub max_level: u8,
     pub fellow_people: u8,
     pub skill: Option<SharedString>,
+    pub fellow_type: FellowType,
 }
 
 impl ReadableItem for Fellow {
@@ -86,6 +131,7 @@ impl ReadableItem for Fellow {
                 "비행뛰기속도" => self.flight_run_speed = reader.read_f32_le().await?,
                 "비행가능여부" => self.can_fly = reader.read_f32_le().await? != 0.0,
                 "최대성장레벨" => self.max_level = reader.read_f32_le().await? as u8,
+                "펠로우슬레이브타입" => self.fellow_type = FellowType::from(reader.read_string(Self::FORMAT).await?),
                 "fellowpeople" => self.fellow_people = reader.read_f32_le().await? as u8,
                 "skill" => {
                     let value = reader.read_string(Self::FORMAT).await?;
@@ -111,13 +157,19 @@ impl ItemTrait for Fellow {
     }
 
     fn build_preview(&self) -> PreviewBuilder<'_> {
-        PreviewBuilder::new(self.common()).skills(self.skills.clone())
+        PreviewBuilder::new(self.common())
+            .skills(self.skills.clone())
+            .fellow_speed(self.get_speed())
+            .fellow_adventure_points(self.adventure_points)
+            .fellow_type(self.fellow_type.clone())
+            .fellow_can_fly(self.can_fly)
+            .fellow_people(self.fellow_people)
+            .fellow_region(self.get_localized_region())
     }
 
     fn get_unique_effects(&self) -> Vec<EffectKind> {
-        let mut effects = Vec::new();
-
-        effects.extend(
+   
+     
             self.skills
                 .iter()
                 .flat_map(|f| f.skill_data.skill_level.iter())
@@ -127,21 +179,43 @@ impl ItemTrait for Fellow {
                 .map(|p| EffectKind::Common {
                     id: self.common.id.clone(),
                     effect: p.effect.clone(),
-                }),
-        );
+                }).collect()
 
-        effects
     }
 }
 
 impl Fellow {
-    pub fn set_skills(&mut self, skills: &HashMap<SharedString, Skill>, skill_locales: &HashMap<SharedString, Locale>, unknown_skills: &mut BTreeSet<SharedString>) -> Result<()> {
+    pub fn get_speed(&self) -> f32 {
+        if self.can_fly {
+            return self.flight_run_speed;
+        } else {
+            return self.run_speed;
+        }
+    }
+
+    pub fn set_region_locale(&mut self, locales: &HashMap<SharedString, Locale>) {
+        self.region_locale = self.region_id.as_ref().and_then(|region_id| locales.get(region_id)).cloned();
+    }
+
+    pub fn get_localized_region(&self) -> Option<SharedString> {
+        self.region_locale.as_ref().and_then(|f| f.locale())
+    }
+
+    pub fn set_skills(
+        &mut self,
+        skills: &HashMap<SharedString, Skill>,
+        skill_locales: &HashMap<SharedString, Locale>,
+        unknown_skills: &mut BTreeSet<SharedString>,
+    ) -> Result<()> {
         if let Some(skill) = self.skill.as_ref() {
-            for name in skill.split(",") {
+            for name in skill.split(",").filter(|s| !s.is_empty()) {
                 let clear_name = SharedString::new(name.split_once("_").map(|(a, _)| a).unwrap_or_else(|| name).trim().to_uppercase());
                 if let Some(skill) = skills.get(&clear_name) {
                     let mut skill = skill.clone();
-                    skill.description_locale = skill_locales.get(&SharedString::new(name.to_uppercase().replace("_", "_DESCRIPTION_"))).cloned();
+                    skill.max_item_level = self.max_level;
+                    skill.description_locale = skill_locales
+                        .get(&SharedString::new(name.to_uppercase().replace("_", "_DESCRIPTION_")))
+                        .cloned();
                     self.skills.push(skill);
                 } else {
                     unknown_skills.insert(SharedString::new(clear_name));

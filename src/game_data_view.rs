@@ -39,6 +39,7 @@ use std::{
     sync::LazyLock,
 };
 
+use crate::game_data::items::fellow::FellowType;
 use crate::{
     assets::AppIcon,
     extensions::EnumNameExt,
@@ -132,6 +133,12 @@ pub struct PreviewBuilderOptional {
     pub package_contents: Option<IndexMap<usize, PackageItem>>,
 
     pub skills: Vec<Skill>,
+    pub fellow_speed: Option<f32>,
+    pub fellow_adventure_points: Option<u16>,
+    pub fellow_type: Option<FellowType>,
+    pub fellow_can_fly: Option<bool>,
+    pub fellow_people: Option<u8>,
+    pub fellow_region: Option<SharedString>,
 }
 
 impl<'a> PreviewBuilder<'a> {
@@ -140,6 +147,35 @@ impl<'a> PreviewBuilder<'a> {
             common,
             optional: PreviewBuilderOptional::default(),
         }
+    }
+    pub fn fellow_type(mut self, value: FellowType) -> Self {
+        self.optional.fellow_type = Some(value);
+        self
+    }
+
+    pub fn fellow_can_fly(mut self, value: bool) -> Self {
+        self.optional.fellow_can_fly = Some(value);
+        self
+    }
+
+    pub fn fellow_people(mut self, value: u8) -> Self {
+        self.optional.fellow_people = Some(value);
+        self
+    }
+
+    pub fn fellow_speed(mut self, value: f32) -> Self {
+        self.optional.fellow_speed = Some(value);
+        self
+    }
+
+    pub fn fellow_adventure_points(mut self, value: u16) -> Self {
+        self.optional.fellow_adventure_points = Some(value);
+        self
+    }
+
+    pub fn fellow_region(mut self, value: Option<SharedString>) -> Self {
+        self.optional.fellow_region = value;
+        self
     }
 
     pub fn quality_effect(mut self, value: Option<f32>) -> Self {
@@ -537,6 +573,7 @@ impl GameDataView {
     }
 
     fn render_preview(
+        item_type: ItemType,
         preview_builder: PreviewBuilder,
         preview: &PreviewValues,
         items: &IndexMap<SharedString, Rc<RefCell<Item>>>,
@@ -681,6 +718,32 @@ impl GameDataView {
                             })
                             .when_some(preview_builder.optional.max_gem_slots, |this, max_gem_slots| {
                                 this.child(format!("{} {}", t("item-max-gem-slots"), max_gem_slots))
+                            })
+                            .when_some(preview_builder.optional.fellow_type, |this, fellow_type| {
+                                this.child(
+                                    h_flex()
+                                        .gap_1()
+                                        .child(fellow_type.localized())
+                                        .when(fellow_type == FellowType::Mount, |this| {
+                                            this.when_some(preview_builder.optional.fellow_can_fly, |this, can_fly| {
+                                                this.when_else(
+                                                    can_fly,
+                                                    |this| this.child(t("item-fly-mount")),
+                                                    |this| this.child(t("item-land-mount")),
+                                                )
+                                            })
+                                            .when_some(preview_builder.optional.fellow_people, |this, fellow_people| {
+                                                this.child(t_v("item-fellow-people", vec![("value", fellow_people)]))
+                                            })
+                                        }),
+                                )
+                            })
+                            .when_some(preview_builder.optional.fellow_region, |this, fellow_region| this.child(fellow_region))
+                            .when_some(preview_builder.optional.fellow_adventure_points, |this, fellow_adventure_points| {
+                                this.child(format!("{} {}", t("item-adventure-points"), fellow_adventure_points))
+                            })
+                            .when_some(preview_builder.optional.fellow_speed, |this, fellow_speed| {
+                                this.child(format!("{} {:.2}", t("item-speed"), fellow_speed))
                             }),
                     ),
             )
@@ -1230,6 +1293,56 @@ impl GameDataView {
                     )
                 },
             )
+            .when(!preview_builder.optional.skills.is_empty(), |this| {
+                this.children(preview_builder.optional.skills.iter().map(|skill| {
+                    let last_level_skill_data = if item_type == ItemType::Fellow {
+                        skill.skill_data.skill_level.iter().rev().find(|f| f.learn_level <= skill.max_item_level)
+                    } else {
+                        skill.skill_data.skill_level.iter().find(|f| f.level == skill.max_item_level)
+                    };
+                    v_flex()
+                        .mt_2()
+                        .when(item_type == ItemType::Fellow, |this| {
+                            this.child(
+                                h_flex()
+                                    .gap_2()
+                                    .items_start()
+                                    .when_some(skill.icon.as_ref(), |this, icon| {
+                                        this.child(img(ImageSource::Image(icon.clone())).object_fit(ObjectFit::Cover).size(px(64.)))
+                                    })
+                                    .child(
+                                        v_flex()
+                                            .child(div().font_bold().child(skill.get_localized_name()))
+                                            .when_else(
+                                                skill.passive_skill == 1,
+                                                |this| this.child(t("item-skill-passive")),
+                                                |this| this.child(t("item-skill-active")),
+                                            )
+                                            .when(skill.cool_time != 0, |this| {
+                                                this.child(t_v("item-skill-cooldown", vec![("value", skill.cool_time / 1000)]))
+                                            }),
+                                    ),
+                            )
+                            .when_some(skill.get_localized_description(), |this, description| {
+                                this.child(div().mt_2().text_color(cx.theme().yellow).child(remove_html_tags_regex(&description)))
+                            })
+                        })
+                        .when_some(last_level_skill_data, |this, s| {
+                            this.when_some(s.buff1.effect_pattern_list.as_ref(), |this, buff| {
+                                this.when_some(buff.effect_pattern.as_ref(), |this, effects| {
+                                    this.when(!effects.is_empty(), |this| {
+                                        this.child(div().text_color(cx.theme().yellow).mt_2().child(t("item-skill-effects")))
+                                            .children(effects.iter().map(|e| {
+                                                div()
+                                                    .text_color(cx.theme().success)
+                                                    .child(e.effect.get_locale_with_duration(s.keep_buff_time))
+                                            }))
+                                    })
+                                })
+                            })
+                        })
+                }))
+            })
             .when_some(preview_builder.optional.description_locale, |this, description_locale| {
                 this.child(
                     div()
@@ -1652,62 +1765,6 @@ impl GameDataView {
                         )
                     }))
                 })
-            })
-            .when(!preview_builder.optional.skills.is_empty(), |this| {
-                this.children(preview_builder.optional.skills.iter().map(|skill| {
-                    let last_level_skill_data = skill.skill_data.skill_level.last();
-                    v_flex()
-                        .mt_2()
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .items_start()
-                                .when_none(&skill.icon, |this| {
-                                    this.child(
-                                        div()
-                                            .size(px(64.))
-                                            //.when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color))
-                                            .border_2()
-                                            .border_color(cx.theme().border),
-                                    )
-                                })
-                                .when_some(skill.icon.as_ref(), |this, icon| {
-                                    this.child(
-                                        img(ImageSource::Image(icon.clone()))
-                                            .object_fit(ObjectFit::Cover)
-                                            .size(px(64.))
-                                            .border_2(), //  .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
-                                    )
-                                })
-                                .child(
-                                    v_flex()
-                                        .child(h_flex().gap_1().underline().font_bold().child(skill.get_localized_name()).when_else(
-                                            skill.passive_skill == 1,
-                                            |this| this.child(t("item-skill-passive")),
-                                            |this| this.child(t("item-skill-active")),
-                                        ))
-                                        .when(skill.cool_time != 0, |this| {
-                                            this.child(t_v("item-skill-cooldown", vec![("value", skill.cool_time / 1000)]))
-                                        })
-                                        .when_some(last_level_skill_data, |this, s| {
-                                            this.when(s.keep_buff_time > 0, |this| {
-                                                this.child(t_v("item-skill-effect-time", vec![("value", s.keep_buff_time / 1000)]))
-                                            })
-                                        }),
-                                ),
-                        )
-                        .when_some(last_level_skill_data, |this, s| {
-                            this.when_some(s.buff1.effect_pattern_list.as_ref(), |this, buff| {
-                                this.when_some(buff.effect_pattern.as_ref(), |this, effects| {
-                                    this.when(!effects.is_empty(), |this| {
-                                        this.child(div().text_color(cx.theme().yellow).mt_2().child(t("item-skill-effects")))
-                                            .children(effects.iter().map(|e| div().text_color(cx.theme().success).child(e.effect.get_locale())))
-                                    })
-                                })
-                            })
-                        })
-                        .when_some(skill.get_localized_description(), |this, description| this.child(div().mt_2().text_color(cx.theme().yellow).child(remove_html_tags_regex(&description))))
-                }))
             })
     }
 }
@@ -2464,6 +2521,7 @@ impl Render for GameDataView {
                                                                             .overflow_y_scrollbar()
                                                                             .map(|this| {
                                                                                 this.child(Self::render_preview(
+                                                                                    selected_item.item_type(),
                                                                                     preview_builder,
                                                                                     preview,
                                                                                     &self.game_data.items,

@@ -204,8 +204,8 @@ impl GameData {
             .filter(|f| f.starts_with("libs/ui/resources/textures/slot_icons/"))
             .map(|f| (f.to_lowercase(), f.to_string()))
             .collect::<HashMap<_, _>>();
-
-       /*  let item_set = Self::load_itemset(&mut gamedatas_zip, on_load, cx).await?;
+        let skill_locales = data.load_skills(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
+         let item_set = Self::load_itemset(&mut gamedatas_zip, on_load, cx).await?;
 
         data.load_product_materials(&mut gamedatas_zip, on_load, cx).await?; // always first
         data.load_recipes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?; // always right after products
@@ -215,7 +215,7 @@ impl GameData {
         data.load_boosts(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
         let item_set_fellow = Self::load_itemset_fellow(&mut gamedatas_zip, on_load, cx).await?;
 
-        data.load_consumes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
+        data.load_consumes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &skill_locales, on_load, cx).await?;
         data.load_fellow_consumes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx)
             .await?;
         data.load_fellow_equips(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &item_set_fellow, on_load, cx)
@@ -228,7 +228,8 @@ impl GameData {
         data.load_bags(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
         data.load_fellow_books(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
         data.load_skill_books(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-
+        data.load_fellows(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &skill_locales,  on_load, cx)
+            .await?;
         data.load_events(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
         data.load_relics(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
         data.load_sealed_fellows(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx)
@@ -286,10 +287,9 @@ impl GameData {
             warn!(unknown_icons_len = data.unknown_icons.len(), unknown_icons = ?data.unknown_icons);
         }
 
-        */
-        let skill_locales = data.load_skills(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        data.load_fellows(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &skill_locales,  on_load, cx)
-            .await?;
+       
+        
+
 
         if !data.unknown_skills.is_empty() {
             warn!(unknown_skills_len = data.unknown_skills.len(), unknown_skills = ?data.unknown_skills);
@@ -754,7 +754,7 @@ data.validate_effects();
         });
         let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_fellow.sxb").await?;
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\fellow_res.bin").await?;
-
+        let region_locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_map.sxb").await?;
         let items = Fellow::read_all_vec(gamedatas_zip, r"gamedata\adatabin\fellow_state.bin").await?;
         for mut item in items {
             item.common.set_locale(&locales);
@@ -763,6 +763,7 @@ data.validate_effects();
                 .set_icon(&res, gamelibs_zip, icons, &mut self.icon_cache, &mut self.unknown_icons)
                 .await?;
             item.set_skills(&self.skills, skill_locales, &mut self.unknown_skills)?;
+            item.set_region_locale(&region_locales);
             self.items.insert(item.key(), Rc::new(RefCell::new(Item::Fellow(item))));
         }
 
@@ -834,6 +835,7 @@ data.validate_effects();
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
         icons: &HashMap<String, String>,
+        skill_locales: &HashMap<SharedString, Locale>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
     ) -> Result<()> {
@@ -852,7 +854,7 @@ data.validate_effects();
             item.common
                 .set_icon(&res, gamelibs_zip, icons, &mut self.icon_cache, &mut self.unknown_icons)
                 .await?;
-
+            item.set_skills(&self.skills, skill_locales, &mut self.unknown_skills)?;
             self.items.insert(item.key(), Rc::new(RefCell::new(Item::Consume(item))));
         }
 

@@ -18,6 +18,15 @@ item-transcendence-limit = Transcendence Level
 item-physical-defense = Physical Defense
 item-magic-defense = Magic Defense
 
+item-adventure-points = Adventure Points
+item-speed = Speed
+item-max-level = Max Level
+item-fly-mount = (Fly)
+item-land-mount = (Land)
+item-fellow-people  = { $value } people
+item-pet = Pet
+item-mount = Mount
+
 item-quality-simple = (Normal)
 item-quality-good = (High)
 item-quality-perfect = (Very High)
@@ -168,9 +177,9 @@ item-equipped-effects = Equipped Effects
 item-random-equipped-effects = Random Equipped Effects
 item-skill-effects = Effects
 item-skill-cooldown = Cooldown { $value } sec.
-item-skill-effect-time = Duration { $value } sec.
-item-skill-passive = (Passive)
-item-skill-active = (Active)
+item-skill-effect-with-duration = { $effect } for { $duration } sec.
+item-skill-passive = Passive
+item-skill-active = Active
 
 item-effect-max-hp = Health { $value }
 item-effect-max-hp-percent = Health { $value }%
@@ -264,6 +273,7 @@ item-effect-backstab-rate-percent = Backstab Rate { $value }%
 item-effect-health-regen-percent = Health Regen { $value }%
 item-effect-threat-percent = Threat { $value }%
 item-effect-base-health-regen-percent = Base Health Regen { $value }%
+item-effect-base-health-regen = Base Health Regen { $value }
 item-effect-magic-and-physical-defense = Magic and Physical Defense { $value }
 
 item-effect-auction-sales-fee-percent = Marketplace Sales Fee { $value }%
@@ -276,3 +286,8 @@ item-effect-fishing-rare-drop-percent = Rare Catch Chance { $value }%
 item-random-box-probability-percent = Probability { $value }%
 
 item-effect-guild-points-percent = Guild Points Eearned { $value }%
+
+item-effect-physical-resistance-percent = Physical Resistance { $value }%
+item-effect-stun = Stun
+item-effect-base-mana-regen-percent = Base Mana Regen { $value }%
+item-effect-base-mana-regen = Base Mana Regen { $value }

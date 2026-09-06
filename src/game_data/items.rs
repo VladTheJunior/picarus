@@ -51,7 +51,6 @@ use gpui_kit::{Image, SharedString};
 use indexmap::IndexMap;
 use strum::EnumIter;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt, BufReader};
-use tracing::debug;
 use zip::ZipArchive;
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum ArmorClassKind {
@@ -381,7 +380,7 @@ pub trait ReadableItem: Sized + Default {
         let mut reader = BufReader::new(Cursor::new(data.as_slice()));
 
         let definitions = read_definitions(&mut reader).await?;
-        debug!(?definitions);
+        //debug!(?definitions);
         let item_count = read_item_count(&mut reader).await?;
         let offsets = read_offsets(&mut reader, item_count, definitions.len()).await?;
 

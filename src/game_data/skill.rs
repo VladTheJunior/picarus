@@ -1,20 +1,20 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     io::Read,
-    rc::Rc,
     sync::Arc,
 };
 
 use anyhow::Result;
-use encoding_rs::EUC_KR;
 use gpui_kit::{Image, SharedString};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize};
 use tracing::error;
 
 use crate::game_data::{dds_to_jpeg, effects::ItemEffect, locale::Locale};
 
 #[derive(Clone, Deserialize)]
 pub struct Skill {
+    #[serde(skip)]
+    pub max_item_level: u8,
     #[serde(skip)]
     pub description_locale: Option<Locale>,
     #[serde(skip)]
@@ -188,7 +188,7 @@ impl Skill {
             if let Some(patterns) = s.buff1.effect_pattern_list.as_mut().and_then(|f| f.effect_pattern.as_mut()) {
                 let mut i = 0;
                 while i < patterns.len() {
-                    if patterns[i].effect_pattern_enum == "특정스킬면역" || patterns[i].effect_pattern_enum == "조건부스킬발동"{
+                    if patterns[i].effect_pattern_enum != "지속효과적용"{
                         patterns.remove(i);
                     } else {
                         patterns[i].effect = ItemEffect::from_effect_and_value(&patterns[i].param1, patterns[i].param2.as_ref());
