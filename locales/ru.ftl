@@ -18,6 +18,33 @@ item-transcendence-limit = Просветление
 item-physical-defense = Физическая защита
 item-magic-defense = Магическая защита
 
+duration-days = {
+    $value ->
+   [one] { $value } день
+   [few] { $value } дня
+   *[other] { $value } дней
+}
+
+duration-hours = {
+    $value ->
+   [one] { $value } час
+   [few] { $value } часа
+   *[other] { $value } часов
+}
+
+duration-minutes = {
+    $value ->
+   [one] { $value } минута
+   [few] { $value } минуты
+   *[other] { $value } минут
+}
+
+duration-seconds = {
+    $value ->
+   [one] { $value } секунда
+   [few] { $value } секунды
+   *[other] { $value } секунд
+}
 
 item-adventure-points = Очки приключений
 item-speed = Скорость
@@ -34,6 +61,8 @@ item-pet = Питомец
 item-mount = Маунт
 
 item-linked-recipes = Связанные рецепты
+item-fishing-drop = Добыча с рыбалки
+item-skills = Скиллы
 
 item-no-transcendence = Нет просветления
 item-no-tempering = Нет закалки
@@ -57,6 +86,18 @@ item-unknown-grade = Неизвестное
 item-tempering-limit = Закалка
 item-reverse-tempering-limit = Ранг реверса
 item-sealed-stones-slots = Слоты печатей
+
+
+item-common-fishing-grade = Обычный улов
+item-rare-fishing-grade = Редкий улов
+item-very-rare-fishing-grade = Очень редкий улов
+
+filter-fishing = Рыбалка
+
+item-evolution = Эволюция
+filter-evolution = Эволюция
+item-synthesis = Синтез
+filter-synthesis = Синтез
 
 item-class-magician = Колдунья
 item-class-trickster = Фея
@@ -184,7 +225,7 @@ item-equipped-effects = Эффекты снаряжения
 item-random-equipped-effects = Случайные эффекты снаряжения
 item-skill-effects = Эффекты
 item-skill-cooldown = Перезарядка { $value } сек.
-item-skill-effect-with-duration = { $effect } на { $duration } сек.
+item-skill-effect-with-duration = { $effect } на { $duration }
 item-skill-passive = Пассивный
 item-skill-active = Активный
 
@@ -297,3 +338,11 @@ item-effect-physical-resistance-percent = Физ. сопротивление { $
 item-effect-stun = Оглушение
 item-effect-base-mana-regen-percent = Базовое восст. маны { $value }%
 item-effect-base-mana-regen = Базовое восст. маны { $value }
+
+item-effect-evolution-chance-percent = Шанс эволюции { $value }%
+item-effect-synthesis-chance-percent = Шанс синтеза { $value }%
+
+item-synthesis-chance = Может быть синтезирован с { $value }% шансом 
+
+item-effect-terror = Страх
+item-effect-accuracy-percent = Меткость { $value }%

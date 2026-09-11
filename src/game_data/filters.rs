@@ -1,11 +1,14 @@
 use std::collections::HashSet;
 
 use crate::{
-    game_data::{grade::Grade, items::Item, items::ItemType},
+    game_data::{
+        fishing::Fishing,
+        grade::Grade,
+        items::{Item, ItemType},
+    },
     game_data_view::GameDataView,
     language::t_v,
 };
-use gpui_kit::{AppContext, Context, Entity, SharedString, Window};
 use gpui_kit::component::{
     IndexPath,
     combobox::ComboboxState,
@@ -13,7 +16,15 @@ use gpui_kit::component::{
     select::SearchableVec,
 };
 use gpui_kit::component::{combobox::*, searchable_list::SearchableListItem};
+use gpui_kit::{AppContext, Context, Entity, SharedString, Window};
 use strum::IntoEnumIterator;
+
+#[derive(PartialEq)]
+pub enum AdditionalFilter{
+    Fishing(SharedString),
+    Evolution,
+    Synthesis
+}
 
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct ItemEffectFilter {
@@ -35,6 +46,7 @@ pub struct GameDataFilters {
     pub item_type: HashSet<ItemType>,
     pub grade: HashSet<Grade>,
     pub effects: Option<SharedString>,
+    pub additional_filter: Option<AdditionalFilter>,
 }
 
 impl SearchableListItem for ItemEffectFilter {
@@ -48,6 +60,7 @@ impl SearchableListItem for ItemEffectFilter {
         &self.key
     }
 }
+
 
 impl SearchableListItem for ItemType {
     type Value = ItemType;
@@ -149,6 +162,7 @@ impl GameDataFilters {
         })
         .detach();
 
+
         Self {
             search_state,
             item_type_state,
@@ -158,10 +172,11 @@ impl GameDataFilters {
             grade_state,
             effects_state,
             effects: None,
+            additional_filter: None,
         }
     }
 
     pub fn check_item(&self, item: &Item) -> bool {
-        item.matches(&self.input, &self.item_type, &self.grade, &self.effects)
+        item.matches(&self.input, &self.item_type, &self.grade, &self.effects, &self.additional_filter)
     }
 }

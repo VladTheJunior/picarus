@@ -1,8 +1,8 @@
-use gpui_kit::{Hsla, SharedString, hsla};
+use gpui_kit::{Hsla, SharedString};
 use strum::EnumIter;
 use tracing::warn;
 
-use crate::language::t;
+use crate::{colors::{BLUE, ORANGE, PURPLE, RED, YELLOW}, language::t};
 
 #[derive(Debug, EnumIter, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Grade {
@@ -72,14 +72,23 @@ impl Grade {
         }
     }
 
+        pub fn locale_fishing(&self) -> SharedString {
+        match self {
+            Grade::Common => t("item-common-fishing-grade"),
+            Grade::Elite => t("item-rare-fishing-grade"),
+            Grade::Heroic => t("item-very-rare-fishing-grade"),
+            _ => t("item-unknown-grade"),
+        }
+    }
+
     pub fn color(&self) -> Option<Hsla> {
         match self {
             Grade::Common => None,
-            Grade::Elite => Some(hsla(210.0 / 360.0, 0.55, 0.67, 1.0)),
-            Grade::Heroic => Some(hsla(25.0 / 360.0, 0.55, 0.67, 1.0)),
-            Grade::Legendary | Grade::LegendaryPlus => Some(hsla(270.0 / 360.0, 0.55, 0.67, 1.0)),
-            Grade::Unique => Some(hsla(8.0 / 360.0, 0.55, 0.67, 1.0)),
-            Grade::Mythical => Some(hsla(8.0 / 360.0, 0.55, 0.45, 1.0)),
+            Grade::Elite => Some(BLUE),
+            Grade::Heroic => Some(YELLOW),
+            Grade::Legendary | Grade::LegendaryPlus => Some(PURPLE),
+            Grade::Unique => Some(ORANGE),
+            Grade::Mythical => Some(RED),
             Grade::Unknown(_) => None,
         }
     }

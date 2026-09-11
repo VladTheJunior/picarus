@@ -150,6 +150,9 @@ impl Skill {
         unknown_icons: &mut BTreeMap<SharedString, BTreeSet<SharedString>>,
     ) -> Result<()> {
         let icon_key = self.clt_icon.to_lowercase();
+        if icon_key.is_empty(){
+            return Ok(());
+        }
         if let Some(icon) = icon_cache.get(&icon_key) {
             self.icon = Some(icon.clone());
             return Ok(());

@@ -1,7 +1,6 @@
-use fluent::FluentValue;
 use gpui_kit::SharedString;
 
-use crate::language::t_v;
+use crate::language::{format_duration, t_v};
 
 pub enum EffectKind {
     Common { id: SharedString, effect: ItemEffect },
@@ -294,6 +293,8 @@ impl ItemEffect {
             "모든낚시확률증가%" => Some("item-effect-fishing-drop-percent"),
             "준척확률증가%" => Some("item-effect-fishing-rare-drop-percent"),
             "길드포인트%" => Some("item-effect-guild-points-percent"),
+            "공포상태" => Some("item-effect-terror"),
+            "무기명중률+" => Some("item-effect-accuracy-percent"),
             _ => {
                 return None;
             }
@@ -360,10 +361,7 @@ impl ItemEffect {
                     } else {
                         Some(t_v(
                             "item-skill-effect-with-duration",
-                            vec![
-                                ("effect", FluentValue::from(s.as_str())),
-                                ("duration", FluentValue::Number((duration / 1000).into())),
-                            ],
+                            vec![("effect", s.as_str()), ("duration", format_duration(duration / 1000).as_str())],
                         ))
                     }
                 })

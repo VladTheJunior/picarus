@@ -139,7 +139,9 @@ impl ItemTrait for SecondaryWeapon {
     fn common(&self) -> &Common {
         &self.common
     }
-
+        fn common_mut(&mut self) -> &mut Common {
+        &mut self.common
+    }
     fn debug(&self) -> &[u8] {
         &self.debug
     }

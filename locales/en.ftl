@@ -54,6 +54,13 @@ item-tempering-limit = Tempering
 item-reverse-tempering-limit = Reverse Tempering
 item-sealed-stones-slots = Sealed Stones Slots
 
+item-common-fishing-grade = Common Catch
+item-rare-fishing-grade = Rare Catch
+item-very-rare-fishing-grade = Very Rare Catch
+
+filter-fishing = Fishing
+
+
 item-class-magician = Magician
 item-class-trickster = Trickster
 item-class-ranger = Ranger
@@ -100,6 +107,12 @@ item-type-event = Event Item
 item-type-elluns = Elluns
 
 item-linked-recipes = Linked Recipes
+item-fishing-drop = Fishing Drop
+item-evolution = Evolution
+filter-evolution = Evolution
+item-skills = Skills
+item-synthesis = Synthesis
+filter-synthesis = Synthesis
 
 item-tag-no-trade = Untradable
 item-tag-no-sell = Unsellable
@@ -171,13 +184,37 @@ message-copy-item-name = Item name copied to clipboard
 
 tooltip-debug-switch = Debug view switcher
 
+duration-days = {
+    $value ->
+   [one] { $value } day
+   *[other] { $value } days
+}
+
+duration-hours = {
+    $value ->
+   [one] { $value } hour
+   *[other] { $value } hours
+}
+
+duration-minutes = {
+    $value ->
+   [one] { $value } minite
+   *[other] { $value } minites
+}
+
+duration-seconds = {
+    $value ->
+   [one] { $value } second
+   *[other] { $value } seconds
+}
+
 item-set-effects-count = Set Effects
 item-equipped-skill = [Equipped Skill]
 item-equipped-effects = Equipped Effects
 item-random-equipped-effects = Random Equipped Effects
 item-skill-effects = Effects
 item-skill-cooldown = Cooldown { $value } sec.
-item-skill-effect-with-duration = { $effect } for { $duration } sec.
+item-skill-effect-with-duration = { $effect } for { $duration }
 item-skill-passive = Passive
 item-skill-active = Active
 
@@ -291,3 +328,10 @@ item-effect-physical-resistance-percent = Physical Resistance { $value }%
 item-effect-stun = Stun
 item-effect-base-mana-regen-percent = Base Mana Regen { $value }%
 item-effect-base-mana-regen = Base Mana Regen { $value }
+
+item-effect-evolution-chance-percent = Evolution Chance { $value }%
+item-effect-synthesis-chance-percent = Synthesis Chance { $value }%
+
+item-synthesis-chance = Can be synthesized with a { $value }% chance 
+item-effect-terror = Terror
+item-effect-accuracy-percent = Accuracy { $value }%

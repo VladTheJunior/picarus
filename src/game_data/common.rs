@@ -11,12 +11,16 @@ use crate::game_data::{
     binding::Binding,
     dds_to_jpeg,
     effects::{EffectKind, ItemEffect},
+    evolution::Evolution,
+    fishing::{Fishing, FishingDrop},
     game_class::GameClass,
     grade::Grade,
     item_res::ItemRes,
     item_set::ItemSet,
     locale::Locale,
     product::Product,
+    synthesis_fellows::{SynthesisFellow, SynthesisFellows},
+    synthesis_parts::SynthesisParts,
 };
 use anyhow::Result;
 use gpui_kit::{Image, SharedString};
@@ -26,6 +30,10 @@ use tracing::{error, warn};
 #[derive(Default, Clone)]
 pub struct Common {
     pub linked_recipes: BTreeSet<SharedString>,
+    pub fishing: Vec<FishingDrop>,
+    pub evolution: Vec<Evolution>,
+    pub synthesis_parts: Vec<SynthesisParts>,
+    pub synthesis_fellows: Vec<SynthesisFellow>,
     pub item_set: Option<ItemSet>,
     pub locale: Option<Locale>,
     pub skill_locale: Option<Locale>,
@@ -77,6 +85,38 @@ impl Common {
 
     pub fn set_item_set(&mut self, item_set: &Vec<ItemSet>) {
         self.item_set = item_set.iter().find(|f| f.items.contains(&self.id)).cloned();
+    }
+
+    pub fn set_fishing_drop(&mut self, fishing: &Vec<Fishing>) {
+        self.fishing = fishing
+            .iter()
+            .filter_map(|f| {
+                f.rewards.iter().find(|(_, r)| r.id == self.id).map(|(_, rew)| FishingDrop {
+                    area_locale: f.area_locale.clone(),
+                    map_locale: f.map_locale.clone(),
+                    area: f.area.clone(),
+                    map: f.map.clone(),
+                    probability: rew.rate,
+                    grade: f.groupno,
+                })
+            })
+            .collect();
+    }
+
+    pub fn set_evolution(&mut self, evolution: &Vec<Evolution>) {
+        self.evolution = evolution.iter().filter(|f| f.resultfellow == self.id).cloned().collect();
+    }
+
+    pub fn set_synthesis_parts(&mut self, synthesis_parts: &Vec<SynthesisParts>) {
+        self.synthesis_parts = synthesis_parts.iter().filter(|f| f.resultid == self.id).cloned().collect();
+    }
+
+    pub fn set_synthesis_fellows(&mut self, synthesis_fellows: &Vec<SynthesisFellows>) {
+        self.synthesis_fellows = synthesis_fellows
+            .iter()
+            .filter_map(|f| f.fellows.iter().find_map(|(_, f)| (f.id == self.id).then(|| f)))
+            .cloned()
+            .collect();
     }
 
     pub fn set_linked_recipes(&mut self, products: &Vec<Rc<RefCell<Product>>>) {

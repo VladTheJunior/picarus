@@ -80,3 +80,31 @@ impl LanguageController {
         LANGUAGE.store(language.into(), Ordering::Release);
     }
 }
+
+
+pub fn format_duration(seconds: i32) -> SharedString {
+    let minutes = seconds / 60;
+    let hours = minutes / 60;
+    let days = hours / 24;
+    
+    let remaining_seconds = seconds % 60;
+    let remaining_minutes = minutes % 60;
+    let remaining_hours = hours % 24;
+    
+    let mut parts = Vec::new();
+    
+    if days > 0 {
+        parts.push(t_v("duration-days", vec![("value", days)]));
+    }
+    if remaining_hours > 0 {
+        parts.push(t_v("duration-hours", vec![("value", remaining_hours)]));
+    }
+    if remaining_minutes > 0 {
+        parts.push(t_v("duration-minutes", vec![("value", remaining_minutes)]));
+    }
+    if remaining_seconds > 0 || parts.is_empty() {
+        parts.push(t_v("duration-seconds", vec![("value", remaining_seconds)]));
+    }
+    
+    SharedString::new(parts.join(" "))
+}

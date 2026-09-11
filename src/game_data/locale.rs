@@ -10,7 +10,7 @@ use gpui_kit::SharedString;
 use indexmap::IndexMap;
 use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Locale {
     pub key: SharedString,
     pub eng: SharedString,

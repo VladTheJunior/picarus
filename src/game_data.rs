@@ -12,11 +12,15 @@ pub mod tempering;
 pub mod binding;
 pub mod common;
 pub mod effects;
+pub mod evolution;
 pub mod filters;
+pub mod fishing;
 pub mod game_class;
 pub mod grade;
 pub mod quality;
 pub mod skill;
+pub mod synthesis_parts;
+pub mod synthesis_fellows;
 use anyhow::Result;
 
 use encoding_rs::EUC_KR;
@@ -49,29 +53,14 @@ use zip::ZipArchive;
 
 use crate::{
     game_data::{
-        effects::{EffectKind, ItemMinMaxEffect},
-        game_class::GameClass,
-        grade::Grade,
-        item_option::ItemOption,
-        item_quality::ItemQuality,
-        item_res::ItemRes,
-        item_set::ItemSet,
-        items::{
+        effects::{EffectKind, ItemMinMaxEffect}, evolution::Evolution, fishing::Fishing, game_class::GameClass, grade::Grade, item_option::ItemOption, item_quality::ItemQuality, item_res::ItemRes, item_set::ItemSet, items::{
             Item, ItemTrait, ItemType, ReadableItem, accessory::Accessory, armor::Armor, bag::Bag, boost::Boost, bracelet::Bracelet,
             consume::Consume, elluns::Elluns, event::Event, exchange::Exchange, fellow::Fellow, fellow_book::FellowBook,
             fellow_consume::FellowConsume, fellow_equip::FellowEquip, fellow_style::FellowStyle, gem::Gem, material::Material, package::Package,
             quest::Quest, random_box::RandomBox, recipe::Recipe, relic::Relic, sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon,
             skill_book::SkillBook, style::Style, weapon::Weapon,
-        },
-        locale::Locale,
-        product::Product,
-        quality::Quality,
-        random_box_group::RandomBoxGroup,
-        random_box_probability::RandomBoxProbability,
-        skill::Skill,
-        tempering::Tempering,
-    },
-    game_data_view::GameDataLoadingStatus,
+        }, locale::Locale, product::Product, quality::Quality, random_box_group::RandomBoxGroup, random_box_probability::RandomBoxProbability, skill::Skill, synthesis_fellows::SynthesisFellows, synthesis_parts::SynthesisParts, tempering::Tempering,
+    }, game_data_view::GameDataLoadingStatus,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -107,7 +96,8 @@ pub struct GameData {
     unknown_effects: BTreeMap<SharedString, BTreeSet<SharedString>>,
     unknown_icons: BTreeMap<SharedString, BTreeSet<SharedString>>,
     unknown_skills: BTreeSet<SharedString>,
-    skills: HashMap<SharedString, Skill>
+    skills: HashMap<SharedString, Skill>,
+    pub fishing: Vec<Fishing>,
 }
 
 impl GameData {
@@ -199,13 +189,18 @@ impl GameData {
         let mut gamedatas_zip = ZipArchive::new(gamedatas)?;
         let mut gamelibs_zip = ZipArchive::new(gamelibs)?;
         let mut data = Self::default();
-        let icons = gamelibs_zip
+
+        
+
+        data.load_fishing(&mut gamedatas_zip, on_load, cx).await?;
+
+       let icons = gamelibs_zip
             .file_names()
             .filter(|f| f.starts_with("libs/ui/resources/textures/slot_icons/"))
             .map(|f| (f.to_lowercase(), f.to_string()))
             .collect::<HashMap<_, _>>();
         let skill_locales = data.load_skills(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-         let item_set = Self::load_itemset(&mut gamedatas_zip, on_load, cx).await?;
+        let item_set = Self::load_itemset(&mut gamedatas_zip, on_load, cx).await?;
 
         data.load_product_materials(&mut gamedatas_zip, on_load, cx).await?; // always first
         data.load_recipes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?; // always right after products
@@ -215,7 +210,8 @@ impl GameData {
         data.load_boosts(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
         let item_set_fellow = Self::load_itemset_fellow(&mut gamedatas_zip, on_load, cx).await?;
 
-        data.load_consumes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &skill_locales, on_load, cx).await?;
+        data.load_consumes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &skill_locales, on_load, cx)
+            .await?;
         data.load_fellow_consumes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx)
             .await?;
         data.load_fellow_equips(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &item_set_fellow, on_load, cx)
@@ -228,7 +224,7 @@ impl GameData {
         data.load_bags(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
         data.load_fellow_books(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
         data.load_skill_books(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        data.load_fellows(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &skill_locales,  on_load, cx)
+        data.load_fellows(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &skill_locales, on_load, cx)
             .await?;
         data.load_events(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
         data.load_relics(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
@@ -266,11 +262,17 @@ impl GameData {
         .await?;
         data.load_random_boxes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
         data.load_packages(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-
-        for (_, item) in data.items.iter().filter(|(_, item)| item.borrow().item_type() == ItemType::Package) {
+        let evolution = data.load_evolutuion(&mut gamedatas_zip, on_load, cx).await?; // always last
+        let synthesis_parts = data.load_synthesis_parts(&mut gamedatas_zip, on_load, cx).await?;// always last
+        let synthesis_fellows = data.load_synthesis_fellows(&mut gamedatas_zip, on_load, cx).await?;
+        for (_, item) in data.items.iter() {
             if let Item::Package(package) = &mut *item.borrow_mut() {
                 package.set_package_contents(&data.items, &mut data.unknown_ids);
             }
+            item.borrow_mut().set_fishing_drop(&data.fishing);
+            item.borrow_mut().set_evolution(&evolution);
+            item.borrow_mut().set_synthesis_parts(&synthesis_parts);
+            item.borrow_mut().set_synthesis_fellows(&synthesis_fellows);
         }
         for item in &data.products {
             item.borrow_mut().set_materials(&data.items, &mut data.unknown_ids);
@@ -279,6 +281,7 @@ impl GameData {
         for (_, item) in &data.random_box_groups {
             item.borrow_mut().set_items(&data.items, &random_box_probabilities, &mut data.unknown_ids);
         }
+
         if !data.unknown_ids.is_empty() {
             warn!(unknown_ids_len = data.unknown_ids.len(), unknown_ids = ?data.unknown_ids);
         }
@@ -287,15 +290,11 @@ impl GameData {
             warn!(unknown_icons_len = data.unknown_icons.len(), unknown_icons = ?data.unknown_icons);
         }
 
-       
-        
-
-
         if !data.unknown_skills.is_empty() {
             warn!(unknown_skills_len = data.unknown_skills.len(), unknown_skills = ?data.unknown_skills);
         }
 
-data.validate_effects();
+        data.validate_effects();
 
         data.elapsed = start.elapsed();
         Ok(data)
@@ -315,8 +314,8 @@ data.validate_effects();
     async fn load_skills<R: Read + std::io::Seek>(
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
-         gamelibs_zip: &mut ZipArchive<R>,
-         icons: &HashMap<String, String>,
+        gamelibs_zip: &mut ZipArchive<R>,
+        icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
     ) -> Result<HashMap<SharedString, Locale>> {
@@ -332,15 +331,12 @@ data.validate_effects();
             .map(|f| f.to_string())
             .collect::<Vec<_>>();
 
-        
         for path in paths {
             match Skill::load(gamedatas_zip, &path).await {
                 Ok(mut skill) => {
                     skill.set_locale(&locales);
                     skill.set_effects();
-                                skill
-                .set_icon(gamelibs_zip, icons, &mut self.icon_cache, &mut self.unknown_icons)
-                .await?;
+                    skill.set_icon(gamelibs_zip, icons, &mut self.icon_cache, &mut self.unknown_icons).await?;
                     self.skills.insert(skill.recid.clone(), skill);
                 }
                 Err(e) => warn!(?e, ?path, "Failed to parse skill"),
@@ -366,6 +362,72 @@ data.validate_effects();
             item.set_effects_skill_locale(&skill_locales);
         }
         Ok(items)
+    }
+
+    async fn load_fishing<R: Read + std::io::Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<()> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::Fishing;
+            cx.notify();
+        });
+        let map_locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_map.sxb").await?;
+        let mut items = Fishing::read_all_vec(gamedatas_zip, r"gamedata\adatabin\fishing_timegroup.bin").await?;
+        for item in items.iter_mut() {
+            item.set_map_locale(&map_locales);
+        }
+        self.fishing = items;
+        Ok(())
+    }
+
+    async fn load_evolutuion<R: Read + std::io::Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<Vec<Evolution>> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::Evolution;
+            cx.notify();
+        });
+        let mut items = Evolution::read_all_vec(gamedatas_zip, r"gamedata\adatabin\fellowcompose_evolvegroup.bin").await?;
+        for item in items.iter_mut() {
+            item.set_fellows(&self.items, &mut self.unknown_ids);
+        }
+        Ok(items)
+    }
+
+        async fn load_synthesis_parts<R: Read + std::io::Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<Vec<SynthesisParts>> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::Synthesis;
+            cx.notify();
+        });
+        let mut items = SynthesisParts::read_all_vec(gamedatas_zip, r"gamedata\adatabin\fellowcompose_hopecompose.bin").await?;
+        for item in items.iter_mut() {
+            item.set_parts(&self.items, &mut self.unknown_ids);
+        }
+        Ok(items)
+    }
+    
+        async fn load_synthesis_fellows<R: Read + std::io::Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<Vec<SynthesisFellows>> {
+        on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::Synthesis;
+            cx.notify();
+        });
+        SynthesisFellows::read_all_vec(gamedatas_zip, r"gamedata\adatabin\fellowcompose_graderesult.bin").await
     }
 
     async fn load_product_materials<R: Read + Seek>(

@@ -13,6 +13,7 @@ pub mod weapon;
 pub mod bracelet;
 pub mod elluns;
 pub mod event;
+pub mod fellow;
 pub mod fellow_book;
 pub mod fellow_consume;
 pub mod fellow_style;
@@ -24,7 +25,6 @@ pub mod sealed_fellow;
 pub mod secondary_weapon;
 pub mod skill_book;
 pub mod style;
-pub mod fellow;
 
 use std::{
     cell::RefCell,
@@ -36,10 +36,23 @@ use std::{
 
 use crate::{
     game_data::{
-        AsyncBufReadExtReadString, common::Common, grade::Grade, items::{
-            accessory::Accessory, armor::Armor, bag::Bag, boost::Boost, bracelet::Bracelet, consume::Consume, elluns::Elluns, event::Event, exchange::Exchange, fellow::Fellow, fellow_book::FellowBook, fellow_consume::FellowConsume, fellow_equip::FellowEquip, fellow_style::FellowStyle, gem::Gem, material::Material, package::Package, quest::Quest, random_box::RandomBox, recipe::Recipe, relic::Relic, sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon, skill_book::SkillBook, style::Style, weapon::Weapon,
-        }, locale::Locale,
-    }, language::t,
+        AsyncBufReadExtReadString,
+        common::Common,
+        evolution::Evolution,
+        filters::AdditionalFilter,
+        fishing::Fishing,
+        grade::Grade,
+        items::{
+            accessory::Accessory, armor::Armor, bag::Bag, boost::Boost, bracelet::Bracelet, consume::Consume, elluns::Elluns, event::Event,
+            exchange::Exchange, fellow::Fellow, fellow_book::FellowBook, fellow_consume::FellowConsume, fellow_equip::FellowEquip,
+            fellow_style::FellowStyle, gem::Gem, material::Material, package::Package, quest::Quest, random_box::RandomBox, recipe::Recipe,
+            relic::Relic, sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon, skill_book::SkillBook, style::Style, weapon::Weapon,
+        },
+        locale::Locale,
+        synthesis_fellows::SynthesisFellows,
+        synthesis_parts::SynthesisParts,
+    },
+    language::t,
 };
 use crate::{
     game_data::{DataFormat, DebugValue, TagType, effects::EffectKind, read_definitions, read_item_count, read_offsets},
@@ -165,7 +178,7 @@ pub enum ItemType {
     FellowBook,
     Event,
     Elluns,
-    Fellow
+    Fellow,
 }
 
 impl ItemType {
@@ -204,6 +217,7 @@ impl ItemType {
 #[enum_dispatch]
 pub trait ItemTrait {
     fn common(&self) -> &Common;
+    fn common_mut(&mut self) -> &mut Common;
 
     fn debug(&self) -> &[u8];
 
@@ -239,6 +253,22 @@ pub trait ItemTrait {
 
     fn get_full_type(&self) -> Option<SharedString> {
         None
+    }
+
+    fn set_fishing_drop(&mut self, fishing: &Vec<Fishing>) {
+        self.common_mut().set_fishing_drop(fishing);
+    }
+
+    fn set_evolution(&mut self, evolution: &Vec<Evolution>) {
+        self.common_mut().set_evolution(evolution);
+    }
+
+    fn set_synthesis_parts(&mut self, synthesis_parts: &Vec<SynthesisParts>) {
+        self.common_mut().set_synthesis_parts(synthesis_parts);
+    }
+
+    fn set_synthesis_fellows(&mut self, synthesis_fellows: &Vec<SynthesisFellows>) {
+        self.common_mut().set_synthesis_fellows(synthesis_fellows);
     }
 
     fn build_preview(&self) -> PreviewBuilder<'_>;
@@ -278,7 +308,7 @@ pub enum Item {
     FellowBook(FellowBook),
     Event(Event),
     Elluns(Elluns),
-    Fellow(Fellow)
+    Fellow(Fellow),
 }
 
 impl Item {
@@ -313,6 +343,18 @@ impl Item {
         }
     }
 
+    pub fn filter_fishing(&self, filter: &SharedString) -> bool {
+        return self.common().fishing.iter().any(|f| f.area == *filter);
+    }
+
+    pub fn filter_evolution(&self) -> bool {
+        return !self.common().evolution.is_empty();
+    }
+
+    pub fn filter_synthesis(&self) -> bool {
+        return !self.common().synthesis_fellows.is_empty() || !self.common().synthesis_parts.is_empty();
+    }
+
     pub fn filter_effect(&self, filter: &Option<SharedString>) -> bool {
         if let Some(filter) = filter {
             let effects = self
@@ -329,7 +371,14 @@ impl Item {
         return true;
     }
 
-    pub fn matches(&self, input: &str, types: &HashSet<ItemType>, grades: &HashSet<Grade>, effect: &Option<SharedString>) -> bool {
+    pub fn matches(
+        &self,
+        input: &str,
+        types: &HashSet<ItemType>,
+        grades: &HashSet<Grade>,
+        effect: &Option<SharedString>,
+        additional_filter: &Option<AdditionalFilter>,
+    ) -> bool {
         let include = types.contains(&self.item_type());
 
         if !include {
@@ -338,6 +387,25 @@ impl Item {
 
         if !self.filter_effect(effect) {
             return false;
+        }
+
+        match additional_filter {
+            Some(AdditionalFilter::Evolution) => {
+                if !self.filter_evolution() {
+                    return false;
+                }
+            }
+            Some(AdditionalFilter::Synthesis) => {
+                if !self.filter_synthesis() {
+                    return false;
+                }
+            }
+            Some(AdditionalFilter::Fishing(fishing)) => {
+                if !self.filter_fishing(fishing) {
+                    return false;
+                }
+            }
+            None => {}
         }
 
         let grade = self.get_grade();

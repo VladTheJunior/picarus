@@ -26,7 +26,9 @@ use gpui_kit::{
 };
 
 use indexmap::{IndexMap, IndexSet};
-use regex::Regex;
+
+use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use serde::Deserialize;
 use strum::IntoEnumIterator;
 
@@ -36,10 +38,11 @@ use std::{
     ops::Range,
     path::Path,
     rc::{Rc, Weak},
-    sync::LazyLock,
 };
 
+use crate::game_data::filters::AdditionalFilter;
 use crate::game_data::items::fellow::FellowType;
+use crate::rich_text::RichText;
 use crate::{
     assets::AppIcon,
     extensions::EnumNameExt,
@@ -79,12 +82,6 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("up", SelectionMove::Up, Some(CONTEXT)),
         KeyBinding::new("down", SelectionMove::Down, Some(CONTEXT)),
     ]);
-}
-
-static TAGS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
-
-fn remove_html_tags_regex(text: &str) -> String {
-    TAGS_RE.replace_all(&text.replace("<br>", "\n").replace("<br />", "\n"), "").to_string()
 }
 
 pub enum GameDataViewEvent {
@@ -423,6 +420,9 @@ pub enum GameDataLoadingStatus {
     Elluns,
     Fellow,
     Skill,
+    Fishing,
+    Evolution,
+    Synthesis,
 }
 
 impl GameDataLoadingStatus {
@@ -462,6 +462,9 @@ impl GameDataLoadingStatus {
             GameDataLoadingStatus::Elluns => t("game-data-loading-elluns"),
             GameDataLoadingStatus::Fellow => t("game-data-loading-fellow"),
             GameDataLoadingStatus::Skill => t("game-data-loading-skill"),
+            GameDataLoadingStatus::Fishing => t("game-data-loading-fishing"),
+            GameDataLoadingStatus::Evolution => t("game-data-loading-evolution"),
+            GameDataLoadingStatus::Synthesis => t("game-data-loading-synthesis"),
         }
     }
 }
@@ -550,6 +553,15 @@ impl GameDataView {
                                     window.push_notification((NotificationType::Error, t("message-export-error")), cx);
                                 }
                             }
+                            let _ = this.update(cx, |this, cx| {
+                                this.is_exporting = false;
+                                cx.notify();
+                            });
+                        }
+                    });
+                } else {
+                    let _ = cx.update({
+                        move |window, cx| {
                             let _ = this.update(cx, |this, cx| {
                                 this.is_exporting = false;
                                 cx.notify();
@@ -966,7 +978,184 @@ impl GameDataView {
             })
             .when_some(preview_builder.optional.skill_locale, |this, skill_locale| {
                 this.child(div().mt_2().text_color(cx.theme().success).child(t("item-equipped-skill")))
-                    .child(div().text_color(cx.theme().yellow).child(remove_html_tags_regex(&skill_locale)))
+                    .child(RichText::parse(&skill_locale, cx.theme().yellow))
+            })
+            .when(!preview_builder.common.evolution.is_empty(), {
+                move |this| {
+                    this.child(div().mt_2().text_color(cx.theme().success).child(t("item-evolution")))
+                        .child(v_flex().gap_1().children(preview_builder.common.evolution.iter().enumerate().map({
+                            move |(index, evolution)| {
+                                let (is_present, chance, node_id, count, grade, icon, name) = (
+                                    evolution.material_fellow.item.is_some(),
+                                    evolution.successrate,
+                                    evolution.material_fellow.id.clone(),
+                                    evolution.material_count,
+                                    evolution
+                                        .material_fellow
+                                        .item
+                                        .as_ref()
+                                        .and_then(|f| f.upgrade())
+                                        .map(|m| m.borrow().get_grade()),
+                                    evolution
+                                        .material_fellow
+                                        .item
+                                        .as_ref()
+                                        .and_then(|f| f.upgrade())
+                                        .and_then(|m| m.borrow().get_icon()),
+                                    evolution
+                                        .material_fellow
+                                        .item
+                                        .as_ref()
+                                        .and_then(|f| f.upgrade())
+                                        .map(|m| m.borrow().get_localized_name())
+                                        .unwrap_or_else(|| evolution.material_fellow.id.clone()),
+                                );
+
+                                h_flex()
+                                    .gap_2()
+                                    .child(
+                                        h_flex()
+                                            .relative()
+                                            .id(format!("icon-evolution-{index}"))
+                                            .when_none(&icon, |this| {
+                                                this.child(
+                                                    div()
+                                                        .size(px(40.))
+                                                        .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color))
+                                                        .border_2(),
+                                                )
+                                            })
+                                            .when_some(icon, |this, icon| {
+                                                this.child(
+                                                    img(ImageSource::Image(icon))
+                                                        .object_fit(ObjectFit::Cover)
+                                                        .size(px(40.))
+                                                        .border_2()
+                                                        .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
+                                                )
+                                            }),
+                                    )
+                                    .child(
+                                        v_flex()
+                                            .items_start()
+                                            .child(
+                                                Button::new(format!("button-{}", node_id))
+                                                    .label(format!("x{count} {}", name))
+                                                    .link()
+                                                    .small()
+                                                    .mb_1()
+                                                    .text_color(cx.theme().foreground)
+                                                    .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
+                                                    .when(is_present, |this| {
+                                                        this.on_click(cx.listener({
+                                                            move |this, _, window, cx| {
+                                                                this.tabs.insert(node_id.clone());
+                                                                this.set_selected_item(Some(node_id.clone()), window, cx);
+                                                                cx.notify();
+                                                            }
+                                                        }))
+                                                    }),
+                                            )
+                                            .child(t_v("item-effect-evolution-chance-percent", vec![("value", format!("{:.0}", chance))])),
+                                    )
+                            }
+                        })))
+                }
+            })
+            .when(!preview_builder.common.synthesis_fellows.is_empty(), {
+                move |this| {
+                    this.child(
+                        v_flex()
+                            .gap_1()
+                            .children(preview_builder.common.synthesis_fellows.iter().enumerate().map(|(_, f)| {
+                                div()
+                                    .text_color(cx.theme().success)
+                                    .child(t_v("item-synthesis-chance", vec![("value", Decimal::from_f32(f.rate).unwrap().to_string())]))
+                            })),
+                    )
+                }
+            })
+            .when(!preview_builder.common.synthesis_parts.is_empty(), {
+                move |this| {
+                    this.child(div().mt_2().text_color(cx.theme().success).child(t("item-synthesis")))
+                        .child(v_flex().gap_1().children(preview_builder.common.synthesis_parts.iter().enumerate().map({
+                            move |(index, synthesis_parts)| {
+                                let (is_present, chance, node_id, count, grade, icon, name) = (
+                                    synthesis_parts.itemid.item.is_some(),
+                                    synthesis_parts.successrate,
+                                    synthesis_parts.itemid.id.clone(),
+                                    synthesis_parts.itemcnt,
+                                    synthesis_parts
+                                        .itemid
+                                        .item
+                                        .as_ref()
+                                        .and_then(|f| f.upgrade())
+                                        .map(|m| m.borrow().get_grade()),
+                                    synthesis_parts
+                                        .itemid
+                                        .item
+                                        .as_ref()
+                                        .and_then(|f| f.upgrade())
+                                        .and_then(|m| m.borrow().get_icon()),
+                                    synthesis_parts
+                                        .itemid
+                                        .item
+                                        .as_ref()
+                                        .and_then(|f| f.upgrade())
+                                        .map(|m| m.borrow().get_localized_name())
+                                        .unwrap_or_else(|| synthesis_parts.itemid.id.clone()),
+                                );
+
+                                h_flex()
+                                    .gap_2()
+                                    .child(
+                                        h_flex()
+                                            .relative()
+                                            .id(format!("icon-synthesis-parts-{index}"))
+                                            .when_none(&icon, |this| {
+                                                this.child(
+                                                    div()
+                                                        .size(px(40.))
+                                                        .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color))
+                                                        .border_2(),
+                                                )
+                                            })
+                                            .when_some(icon, |this, icon| {
+                                                this.child(
+                                                    img(ImageSource::Image(icon))
+                                                        .object_fit(ObjectFit::Cover)
+                                                        .size(px(40.))
+                                                        .border_2()
+                                                        .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
+                                                )
+                                            }),
+                                    )
+                                    .child(
+                                        v_flex()
+                                            .items_start()
+                                            .child(
+                                                Button::new(format!("button-{}", node_id))
+                                                    .label(format!("x{count} {}", name))
+                                                    .link()
+                                                    .small()
+                                                    .mb_1()
+                                                    .text_color(cx.theme().foreground)
+                                                    .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
+                                                    .when(is_present, |this| {
+                                                        this.on_click(cx.listener({
+                                                            move |this, _, window, cx| {
+                                                                this.tabs.insert(node_id.clone());
+                                                                this.set_selected_item(Some(node_id.clone()), window, cx);
+                                                                cx.notify();
+                                                            }
+                                                        }))
+                                                    }),
+                                            )
+                                            .child(t_v("item-effect-synthesis-chance-percent", vec![("value", format!("{:.0}", chance))])),
+                                    )
+                            }
+                        })))
+                }
             })
             .when(preview_builder.optional.max_random_effects > 0, {
                 let id = preview_builder.common.id.clone();
@@ -984,6 +1173,7 @@ impl GameDataView {
                             Button::new(format!("random-effects-dropdown-{}", i))
                                 .small()
                                 .text()
+                                .my_1()
                                 .cursor_pointer()
                                 .child(
                                     h_flex()
@@ -1104,7 +1294,9 @@ impl GameDataView {
                                         .gap_x_2()
                                         .children(set_effect.seteffect_effects.iter().map(|effect| div().child(effect.get_locale()))),
                                 )
-                                .when_some(set_effect.get_localized_name(), |this, skill| this.child(remove_html_tags_regex(&skill)))
+                                .when_some(set_effect.get_localized_name(), |this, skill| {
+                                    this.child(RichText::parse(&skill, cx.theme().yellow))
+                                })
                         })))
                     })
             })
@@ -1294,7 +1486,10 @@ impl GameDataView {
                 },
             )
             .when(!preview_builder.optional.skills.is_empty(), |this| {
-                this.children(preview_builder.optional.skills.iter().map(|skill| {
+                this.when(item_type == ItemType::Fellow, |this| {
+                    this.child(div().mt_2().text_color(cx.theme().success).child(t("item-skills")))
+                })
+                .children(preview_builder.optional.skills.iter().map(|skill| {
                     let last_level_skill_data = if item_type == ItemType::Fellow {
                         skill.skill_data.skill_level.iter().rev().find(|f| f.learn_level <= skill.max_item_level)
                     } else {
@@ -1324,7 +1519,7 @@ impl GameDataView {
                                     ),
                             )
                             .when_some(skill.get_localized_description(), |this, description| {
-                                this.child(div().mt_2().text_color(cx.theme().yellow).child(remove_html_tags_regex(&description)))
+                                this.child(div().mt_2().child(RichText::parse(&description, cx.theme().yellow)))
                             })
                         })
                         .when_some(last_level_skill_data, |this, s| {
@@ -1344,12 +1539,7 @@ impl GameDataView {
                 }))
             })
             .when_some(preview_builder.optional.description_locale, |this, description_locale| {
-                this.child(
-                    div()
-                        .mt_2()
-                        .text_color(cx.theme().yellow)
-                        .child(remove_html_tags_regex(&description_locale)),
-                )
+                this.child(div().mt_2().child(RichText::parse(&description_locale, cx.theme().yellow)))
             })
             .when_some(preview_builder.optional.product.and_then(|f| f.upgrade()).map(|f| f.borrow().clone()), {
                 let id = preview_builder.common.id.clone();
@@ -1716,6 +1906,25 @@ impl GameDataView {
                             })),
                     )
                 }
+            })
+            .when(!preview_builder.common.fishing.is_empty(), |this| {
+                this.child(div().mt_2().text_color(cx.theme().success).child(t("item-fishing-drop")))
+                    .children(preview_builder.common.fishing.iter().map(|fishing_drop| {
+                        let color = fishing_drop.grade.color();
+                        v_flex().items_start().gap_1().child(
+                            h_flex()
+                                .gap_1()
+                                .when_some(color, |this, color| this.text_color(color))
+                                .child(fishing_drop.get_localized_fishing_map())
+                                .child("-")
+                                .child(fishing_drop.grade.locale_fishing())
+                                .child("-")
+                                .child(format!(
+                                    "{}%",
+                                    Decimal::from_f32(fishing_drop.probability).unwrap().round_dp(5).normalize()
+                                )),
+                        )
+                    }))
             })
             .when(!preview_builder.common.linked_recipes.is_empty(), move |this| {
                 this.child(
@@ -2680,6 +2889,89 @@ impl Render for GameDataView {
                             .placeholder(t("item-effects")),
                     )
                     .left(Separator::vertical())
+                    .left(
+                        Button::new("filter-additional")
+                            .ghost()
+                            .xsmall()
+                            .disabled(self.is_reading)
+                            .icon(AppIcon::EllipsisVertical)
+                            .dropdown_menu({
+                                let entity = cx.entity();
+                                move |mut menu, window, cx| {
+                                    menu = menu.submenu(t("filter-fishing"), window, cx, {
+                                        let entity = entity.clone();
+                                        move |mut menu, window, cx| {
+                                            let fishing = entity
+                                                .read(cx)
+                                                .game_data
+                                                .fishing
+                                                .iter()
+                                                .map(|f| (f.area.clone(), f.get_localized_fishing_map()))
+                                                .collect::<IndexMap<_, _>>();
+
+                                            for (area_id, area) in fishing {
+                                                let is_checked = entity
+                                                    .read(cx)
+                                                    .filters
+                                                    .additional_filter
+                                                    .as_ref()
+                                                    .is_some_and(|x| *x == AdditionalFilter::Fishing(area_id.clone()));
+
+                                                menu = menu.item(PopupMenuItem::new(area).checked(is_checked).on_click({
+                                                    window.listener_for(&entity, move |this, _, _, cx| {
+                                                        if is_checked {
+                                                            this.filters.additional_filter = None;
+                                                        } else {
+                                                            this.filters.additional_filter = Some(AdditionalFilter::Fishing(area_id.clone()));
+                                                        }
+                                                        this.apply_filter_and_resort();
+                                                        cx.notify();
+                                                    })
+                                                }))
+                                            }
+                                            menu
+                                        }
+                                    });
+
+                                    let is_evolution_checked = entity
+                                        .read(cx)
+                                        .filters
+                                        .additional_filter
+                                        .as_ref()
+                                        .is_some_and(|x| *x == AdditionalFilter::Evolution);
+                                    let is_synthesis_checked = entity
+                                        .read(cx)
+                                        .filters
+                                        .additional_filter
+                                        .as_ref()
+                                        .is_some_and(|x| *x == AdditionalFilter::Synthesis);
+                                    menu.item(PopupMenuItem::new(t("filter-evolution")).checked(is_evolution_checked).on_click({
+                                        window.listener_for(&entity, move |this, _, _, cx| {
+                                            if is_evolution_checked {
+                                                this.filters.additional_filter = None;
+                                            } else {
+                                                this.filters.additional_filter = Some(AdditionalFilter::Evolution);
+                                            }
+                                            this.apply_filter_and_resort();
+                                            cx.notify();
+                                        })
+                                    }))
+                                    .item(
+                                        PopupMenuItem::new(t("filter-synthesis")).checked(is_synthesis_checked).on_click({
+                                            window.listener_for(&entity, move |this, _, _, cx| {
+                                                if is_synthesis_checked {
+                                                    this.filters.additional_filter = None;
+                                                } else {
+                                                    this.filters.additional_filter = Some(AdditionalFilter::Synthesis);
+                                                }
+                                                this.apply_filter_and_resort();
+                                                cx.notify();
+                                            })
+                                        }),
+                                    )
+                                }
+                            }),
+                    )
                     .right(
                         Button::new("button-export")
                             .ghost()

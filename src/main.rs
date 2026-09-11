@@ -9,13 +9,15 @@ pub mod game_data_view;
 mod language;
 mod settings;
 pub mod rich_text;
+pub mod colors;
 
 use gpui_kit::{AppContext, Bounds, Global, ReadGlobal, Size, TitlebarOptions, WindowBounds, WindowOptions, px};
 use gpui_kit::component::{Root, Theme, ThemeConfig};
+use tracing_subscriber::EnvFilter;
 
 
 use std::rc::Rc;
-use tracing::{Level, info};
+use tracing::{info};
 
 use crate::{
     assets::{Assets, Fonts},
@@ -34,7 +36,10 @@ fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
     let _guard = rt.enter();
 
-    tracing_subscriber::fmt().with_max_level(Level::DEBUG).init();
+let filter = EnvFilter::try_from_default_env()
+    .unwrap_or_else(|_| EnvFilter::new("debug,html5ever=off"));
+
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     if let Some(timestamp) = option_env!("VERGEN_BUILD_TIMESTAMP") {
         info!("build timestamp: {timestamp}");
