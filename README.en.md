@@ -59,8 +59,10 @@ Interactive Item Viewer for Riders of Icarus is a desktop application that allow
 - **Item Quality Selection:** Simulation of item quality and its impact on stats
 
 ## Planned Features
-- Mounts support
 - Drop list support (with drop chance)
+- Taming chances
+- Transdense chances
+- Familiar farm buffs
 
 ## Known Limitations
 - Some character equipments stats (phys. defense, attack) may different from what game shows
