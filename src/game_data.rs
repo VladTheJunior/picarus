@@ -19,8 +19,8 @@ pub mod game_class;
 pub mod grade;
 pub mod quality;
 pub mod skill;
-pub mod synthesis_parts;
 pub mod synthesis_fellows;
+pub mod synthesis_parts;
 use anyhow::Result;
 
 use encoding_rs::EUC_KR;
@@ -48,19 +48,38 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, BufReader},
     time::Instant,
 };
-use tracing::{debug, error, warn};
+use tracing::{error, warn};
 use zip::ZipArchive;
 
 use crate::{
     game_data::{
-        effects::{EffectKind, ItemMinMaxEffect}, evolution::Evolution, fishing::Fishing, game_class::GameClass, grade::Grade, item_option::ItemOption, item_quality::ItemQuality, item_res::ItemRes, item_set::ItemSet, items::{
+        effects::{EffectKind, ItemMinMaxEffect},
+        evolution::Evolution,
+        fishing::Fishing,
+        game_class::GameClass,
+        grade::Grade,
+        item_option::ItemOption,
+        item_quality::ItemQuality,
+        item_res::ItemRes,
+        item_set::ItemSet,
+        items::{
             Item, ItemTrait, ItemType, ReadableItem, accessory::Accessory, armor::Armor, bag::Bag, boost::Boost, bracelet::Bracelet,
             consume::Consume, elluns::Elluns, event::Event, exchange::Exchange, fellow::Fellow, fellow_book::FellowBook,
             fellow_consume::FellowConsume, fellow_equip::FellowEquip, fellow_style::FellowStyle, gem::Gem, material::Material, package::Package,
             quest::Quest, random_box::RandomBox, recipe::Recipe, relic::Relic, sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon,
             skill_book::SkillBook, style::Style, weapon::Weapon,
-        }, locale::Locale, product::Product, quality::Quality, random_box_group::RandomBoxGroup, random_box_probability::RandomBoxProbability, skill::Skill, synthesis_fellows::SynthesisFellows, synthesis_parts::SynthesisParts, tempering::Tempering,
-    }, game_data_view::GameDataLoadingStatus,
+        },
+        locale::Locale,
+        product::Product,
+        quality::Quality,
+        random_box_group::RandomBoxGroup,
+        random_box_probability::RandomBoxProbability,
+        skill::Skill,
+        synthesis_fellows::SynthesisFellows,
+        synthesis_parts::SynthesisParts,
+        tempering::Tempering,
+    },
+    game_data_view::GameDataLoadingStatus,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -190,59 +209,73 @@ impl GameData {
         let mut gamelibs_zip = ZipArchive::new(gamelibs)?;
         let mut data = Self::default();
 
-        
+        let locales = Self::load_all_locales(&mut gamedatas_zip, on_load, cx).await?;
 
-        data.load_fishing(&mut gamedatas_zip, on_load, cx).await?;
+        data.load_fishing(&mut gamedatas_zip, &locales, on_load, cx).await?;
 
-       let icons = gamelibs_zip
+        let icons = gamelibs_zip
             .file_names()
             .filter(|f| f.starts_with("libs/ui/resources/textures/slot_icons/"))
             .map(|f| (f.to_lowercase(), f.to_string()))
             .collect::<HashMap<_, _>>();
-        let skill_locales = data.load_skills(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        let item_set = Self::load_itemset(&mut gamedatas_zip, on_load, cx).await?;
+        data.load_skills(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
+            .await?;
+        let item_set = Self::load_itemset(&mut gamedatas_zip, &locales, on_load, cx).await?;
 
         data.load_product_materials(&mut gamedatas_zip, on_load, cx).await?; // always first
-        data.load_recipes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?; // always right after products
+        data.load_recipes(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
+            .await?; // always right after products
 
         let random_box_probabilities = Self::load_random_box_probabilities(&mut gamedatas_zip, on_load, cx).await?;
         data.load_random_box_groups(&mut gamedatas_zip, on_load, cx).await?;
-        data.load_boosts(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        let item_set_fellow = Self::load_itemset_fellow(&mut gamedatas_zip, on_load, cx).await?;
+        data.load_boosts(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
+            .await?;
+        let item_set_fellow = Self::load_itemset_fellow(&mut gamedatas_zip, &locales, on_load, cx).await?;
 
-        data.load_consumes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &skill_locales, on_load, cx)
+        data.load_consumes(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
             .await?;
-        data.load_fellow_consumes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx)
+        data.load_fellow_consumes(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
             .await?;
-        data.load_fellow_equips(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &item_set_fellow, on_load, cx)
+        data.load_fellow_equips(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, &item_set_fellow, on_load, cx)
             .await?;
-        data.load_elluns(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        data.load_exchanges(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        data.load_quests(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        data.load_braceletes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        data.load_gems(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        data.load_bags(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        data.load_fellow_books(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        data.load_skill_books(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        data.load_fellows(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &skill_locales, on_load, cx)
+        data.load_elluns(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
             .await?;
-        data.load_events(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        data.load_relics(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        data.load_sealed_fellows(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx)
+        data.load_exchanges(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
             .await?;
-        data.load_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &item_set, on_load, cx)
+        data.load_quests(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
             .await?;
-        data.load_accessory(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &item_set, on_load, cx)
+        data.load_braceletes(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
             .await?;
-        data.load_secondary_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &item_set, on_load, cx)
+        data.load_gems(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
             .await?;
-        data.load_armors(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &item_set, on_load, cx)
+        data.load_bags(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
             .await?;
-        data.load_styles(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &item_set, on_load, cx)
+        data.load_fellow_books(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
             .await?;
-        data.load_fellow_styles(&mut gamedatas_zip, &mut gamelibs_zip, &icons, &item_set, on_load, cx)
+        data.load_skill_books(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
             .await?;
-        data.load_materials(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
+        data.load_fellows(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
+            .await?;
+        data.load_events(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
+            .await?;
+        data.load_relics(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
+            .await?;
+        data.load_sealed_fellows(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
+            .await?;
+        data.load_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, &item_set, on_load, cx)
+            .await?;
+        data.load_accessory(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, &item_set, on_load, cx)
+            .await?;
+        data.load_secondary_weapons(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, &item_set, on_load, cx)
+            .await?;
+        data.load_armors(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, &item_set, on_load, cx)
+            .await?;
+        data.load_styles(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, &item_set, on_load, cx)
+            .await?;
+        data.load_fellow_styles(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, &item_set, on_load, cx)
+            .await?;
+        data.load_materials(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
+            .await?;
 
         data.load_temperings(
             data.items.iter().filter_map(|(_, item)| item.borrow().get_full_type()).collect(),
@@ -260,10 +293,12 @@ impl GameData {
             cx,
         )
         .await?;
-        data.load_random_boxes(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
-        data.load_packages(&mut gamedatas_zip, &mut gamelibs_zip, &icons, on_load, cx).await?;
+        data.load_random_boxes(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
+            .await?;
+        data.load_packages(&mut gamedatas_zip, &mut gamelibs_zip, &locales, &icons, on_load, cx)
+            .await?;
         let evolution = data.load_evolutuion(&mut gamedatas_zip, on_load, cx).await?; // always last
-        let synthesis_parts = data.load_synthesis_parts(&mut gamedatas_zip, on_load, cx).await?;// always last
+        let synthesis_parts = data.load_synthesis_parts(&mut gamedatas_zip, on_load, cx).await?; // always last
         let synthesis_fellows = data.load_synthesis_fellows(&mut gamedatas_zip, on_load, cx).await?;
         for (_, item) in data.items.iter() {
             if let Item::Package(package) = &mut *item.borrow_mut() {
@@ -311,20 +346,63 @@ impl GameData {
         ItemRes::read_all(gamedatas_zip, itemres_path).await
     }
 
-    async fn load_skills<R: Read + std::io::Seek>(
-        &mut self,
+    async fn load_all_locales<R: Read + std::io::Seek>(
         gamedatas_zip: &mut ZipArchive<R>,
-        gamelibs_zip: &mut ZipArchive<R>,
-        icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
     ) -> Result<HashMap<SharedString, Locale>> {
         on_load.update(cx, |this, cx| {
+            *this = GameDataLoadingStatus::Locales;
+            cx.notify();
+        });
+        let mut locales = HashMap::new();
+
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_skill.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_skill_fellow.sxb").await?);
+
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_map.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_setitem.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_armor.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_weapon.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_accessory.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_style.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_fellowstyle.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_subitem.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_fellowequip.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_package.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_randombox.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_boost.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_fellow.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_material.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_fellowconsume.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_consume.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_fellowbook.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_event.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_bag.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_exchange.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_relic.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_quest.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_sealedfellow.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_enchantstone.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_skillbook.sxb").await?);
+        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_recipe.sxb").await?);
+        Ok(locales)
+    }
+
+    async fn load_skills<R: Read + std::io::Seek>(
+        &mut self,
+        gamedatas_zip: &mut ZipArchive<R>,
+        gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
+        icons: &HashMap<String, String>,
+        on_load: &Entity<GameDataLoadingStatus>,
+        cx: &mut AsyncWindowContext,
+    ) -> Result<()> {
+        on_load.update(cx, |this, cx| {
             *this = GameDataLoadingStatus::Skill;
             cx.notify();
         });
-        let mut locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_skill.sxb").await?;
-        locales.extend(Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_skill_fellow.sxb").await?);
+
         let paths = gamedatas_zip
             .file_names()
             .filter(|f| f.starts_with("gamedata/adataxml/skill/") && f.ends_with(".xml"))
@@ -342,11 +420,12 @@ impl GameData {
                 Err(e) => warn!(?e, ?path, "Failed to parse skill"),
             }
         }
-        Ok(locales)
+        Ok(())
     }
 
     async fn load_itemset<R: Read + std::io::Seek>(
         gamedatas_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
     ) -> Result<Vec<ItemSet>> {
@@ -354,12 +433,11 @@ impl GameData {
             *this = GameDataLoadingStatus::ItemSet;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_setitem.sxb").await?;
-        let skill_locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_skill.sxb").await?;
+
         let mut items = ItemSet::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemset_setcharacter.bin").await?;
         for item in items.iter_mut() {
             item.set_locale(&locales);
-            item.set_effects_skill_locale(&skill_locales);
+            item.set_effects_skill_locale(&locales);
         }
         Ok(items)
     }
@@ -367,6 +445,7 @@ impl GameData {
     async fn load_fishing<R: Read + std::io::Seek>(
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
     ) -> Result<()> {
@@ -374,10 +453,10 @@ impl GameData {
             *this = GameDataLoadingStatus::Fishing;
             cx.notify();
         });
-        let map_locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_map.sxb").await?;
+
         let mut items = Fishing::read_all_vec(gamedatas_zip, r"gamedata\adatabin\fishing_timegroup.bin").await?;
         for item in items.iter_mut() {
-            item.set_map_locale(&map_locales);
+            item.set_map_locale(locales);
         }
         self.fishing = items;
         Ok(())
@@ -400,7 +479,7 @@ impl GameData {
         Ok(items)
     }
 
-        async fn load_synthesis_parts<R: Read + std::io::Seek>(
+    async fn load_synthesis_parts<R: Read + std::io::Seek>(
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         on_load: &Entity<GameDataLoadingStatus>,
@@ -416,8 +495,8 @@ impl GameData {
         }
         Ok(items)
     }
-    
-        async fn load_synthesis_fellows<R: Read + std::io::Seek>(
+
+    async fn load_synthesis_fellows<R: Read + std::io::Seek>(
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         on_load: &Entity<GameDataLoadingStatus>,
@@ -474,6 +553,7 @@ impl GameData {
 
     async fn load_itemset_fellow<R: Read + std::io::Seek>(
         gamedatas_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
     ) -> Result<Vec<ItemSet>> {
@@ -481,12 +561,11 @@ impl GameData {
             *this = GameDataLoadingStatus::ItemSet;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_setitem.sxb").await?;
-        let skill_locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_skill.sxb").await?;
+
         let mut items = ItemSet::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemset_setfellow.bin").await?;
         for item in items.iter_mut() {
             item.set_locale(&locales);
-            item.set_effects_skill_locale(&skill_locales);
+            item.set_effects_skill_locale(&locales);
         }
         Ok(items)
     }
@@ -495,6 +574,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         item_set: &Vec<ItemSet>,
         on_load: &Entity<GameDataLoadingStatus>,
@@ -504,15 +584,14 @@ impl GameData {
             *this = GameDataLoadingStatus::Armor;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_armor.sxb").await?;
-        let skill_locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_skill.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_armor.bin").await?;
 
         let items = Armor::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_armor.bin").await?;
         for mut item in items {
             item.common.set_locale(&locales);
             item.common.set_linked_recipes(&self.products);
-            item.set_skill_locale(&skill_locales);
+            item.set_skill_locale(&locales);
             item.common
                 .set_icon(&res, gamelibs_zip, icons, &mut self.icon_cache, &mut self.unknown_icons)
                 .await?;
@@ -527,6 +606,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         item_set: &Vec<ItemSet>,
         on_load: &Entity<GameDataLoadingStatus>,
@@ -536,15 +616,14 @@ impl GameData {
             *this = GameDataLoadingStatus::Weapon;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_weapon.sxb").await?;
-        let skill_locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_skill.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_weapon.bin").await?;
 
         let items = Weapon::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_weapon.bin").await?;
         for mut item in items {
             item.common.set_locale(&locales);
             item.common.set_linked_recipes(&self.products);
-            item.set_skill_locale(&skill_locales);
+            item.set_skill_locale(&locales);
             item.common
                 .set_icon(&res, gamelibs_zip, icons, &mut self.icon_cache, &mut self.unknown_icons)
                 .await?;
@@ -559,6 +638,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         item_set: &Vec<ItemSet>,
         on_load: &Entity<GameDataLoadingStatus>,
@@ -568,15 +648,14 @@ impl GameData {
             *this = GameDataLoadingStatus::Accessory;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_accessory.sxb").await?;
-        let skill_locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_skill.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_accessory.bin").await?;
 
         let items = Accessory::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_accessory.bin").await?;
         for mut item in items {
             item.common.set_locale(&locales);
             item.common.set_linked_recipes(&self.products);
-            item.set_skill_locale(&skill_locales);
+            item.set_skill_locale(&locales);
             item.common
                 .set_icon(&res, gamelibs_zip, icons, &mut self.icon_cache, &mut self.unknown_icons)
                 .await?;
@@ -591,6 +670,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         item_set: &Vec<ItemSet>,
         on_load: &Entity<GameDataLoadingStatus>,
@@ -600,15 +680,14 @@ impl GameData {
             *this = GameDataLoadingStatus::Style;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_style.sxb").await?;
-        let skill_locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_skill.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_style.bin").await?;
 
         let items = Style::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_style.bin").await?;
         for mut item in items {
             item.common.set_locale(&locales);
             item.common.set_linked_recipes(&self.products);
-            item.set_skill_locale(&skill_locales);
+            item.set_skill_locale(&locales);
             item.common
                 .set_icon(&res, gamelibs_zip, icons, &mut self.icon_cache, &mut self.unknown_icons)
                 .await?;
@@ -623,6 +702,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         item_set: &Vec<ItemSet>,
         on_load: &Entity<GameDataLoadingStatus>,
@@ -632,7 +712,7 @@ impl GameData {
             *this = GameDataLoadingStatus::FellowStyle;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_fellowstyle.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_fellowstyle.bin").await?;
 
         let items = FellowStyle::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_fellowstyle.bin").await?;
@@ -653,6 +733,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         item_set: &Vec<ItemSet>,
         on_load: &Entity<GameDataLoadingStatus>,
@@ -662,15 +743,14 @@ impl GameData {
             *this = GameDataLoadingStatus::SecondaryWeapon;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_subitem.sxb").await?;
-        let skill_locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_skill.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_sub.bin").await?;
 
         let items = SecondaryWeapon::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_sub.bin").await?;
         for mut item in items {
             item.common.set_locale(&locales);
             item.common.set_linked_recipes(&self.products);
-            item.set_skill_locale(&skill_locales);
+            item.set_skill_locale(&locales);
             item.common
                 .set_icon(&res, gamelibs_zip, icons, &mut self.icon_cache, &mut self.unknown_icons)
                 .await?;
@@ -685,6 +765,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         item_set: &Vec<ItemSet>,
         on_load: &Entity<GameDataLoadingStatus>,
@@ -694,7 +775,7 @@ impl GameData {
             *this = GameDataLoadingStatus::FellowEquip;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_fellowequip.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_fellowequip.bin").await?;
 
         let items = FellowEquip::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_fellowequip.bin").await?;
@@ -715,6 +796,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -723,7 +805,7 @@ impl GameData {
             *this = GameDataLoadingStatus::Package;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_package.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_package.bin").await?;
 
         let items = Package::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_package.bin").await?;
@@ -745,6 +827,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -753,7 +836,7 @@ impl GameData {
             *this = GameDataLoadingStatus::RandomBox;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_randombox.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_randombox.bin").await?;
 
         let items = RandomBox::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_randombox.bin").await?;
@@ -775,6 +858,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -783,7 +867,7 @@ impl GameData {
             *this = GameDataLoadingStatus::Boost;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_boost.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_boost.bin").await?;
 
         let items = Boost::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_boost.bin").await?;
@@ -805,8 +889,8 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
-        skill_locales: &HashMap<SharedString, Locale>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
     ) -> Result<()> {
@@ -814,9 +898,9 @@ impl GameData {
             *this = GameDataLoadingStatus::Fellow;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_fellow.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\fellow_res.bin").await?;
-        let region_locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_map.sxb").await?;
+
         let items = Fellow::read_all_vec(gamedatas_zip, r"gamedata\adatabin\fellow_state.bin").await?;
         for mut item in items {
             item.common.set_locale(&locales);
@@ -824,8 +908,8 @@ impl GameData {
             item.common
                 .set_icon(&res, gamelibs_zip, icons, &mut self.icon_cache, &mut self.unknown_icons)
                 .await?;
-            item.set_skills(&self.skills, skill_locales, &mut self.unknown_skills)?;
-            item.set_region_locale(&region_locales);
+            item.set_skills(&self.skills, locales, &mut self.unknown_skills)?;
+            item.set_region_locale(&locales);
             self.items.insert(item.key(), Rc::new(RefCell::new(Item::Fellow(item))));
         }
 
@@ -836,6 +920,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -844,7 +929,7 @@ impl GameData {
             *this = GameDataLoadingStatus::Material;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_material.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_material.bin").await?;
 
         let items = Material::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_material.bin").await?;
@@ -866,6 +951,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -874,7 +960,7 @@ impl GameData {
             *this = GameDataLoadingStatus::FellowConsume;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_fellowconsume.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_fellowconsume.bin").await?;
 
         let items = FellowConsume::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_fellowconsume.bin").await?;
@@ -896,8 +982,8 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
-        skill_locales: &HashMap<SharedString, Locale>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
     ) -> Result<()> {
@@ -905,7 +991,7 @@ impl GameData {
             *this = GameDataLoadingStatus::Consume;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_consume.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_consume.bin").await?;
 
         let items = Consume::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_consume.bin").await?;
@@ -916,7 +1002,7 @@ impl GameData {
             item.common
                 .set_icon(&res, gamelibs_zip, icons, &mut self.icon_cache, &mut self.unknown_icons)
                 .await?;
-            item.set_skills(&self.skills, skill_locales, &mut self.unknown_skills)?;
+            item.set_skills(&self.skills, locales, &mut self.unknown_skills)?;
             self.items.insert(item.key(), Rc::new(RefCell::new(Item::Consume(item))));
         }
 
@@ -927,6 +1013,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -935,7 +1022,7 @@ impl GameData {
             *this = GameDataLoadingStatus::FellowBook;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_fellowbook.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_fellowbook.bin").await?;
 
         let items = FellowBook::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_fellowbook.bin").await?;
@@ -957,6 +1044,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -965,7 +1053,7 @@ impl GameData {
             *this = GameDataLoadingStatus::Event;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_event.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_event.bin").await?;
 
         let items = Event::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_event.bin").await?;
@@ -987,6 +1075,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -995,7 +1084,7 @@ impl GameData {
             *this = GameDataLoadingStatus::Elluns;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_consume.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_ruby.bin").await?;
 
         let items = Elluns::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_ruby.bin").await?;
@@ -1017,6 +1106,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -1025,7 +1115,7 @@ impl GameData {
             *this = GameDataLoadingStatus::Bag;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_bag.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_bag.bin").await?;
 
         let items = Bag::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_bag.bin").await?;
@@ -1047,6 +1137,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -1055,7 +1146,7 @@ impl GameData {
             *this = GameDataLoadingStatus::Exchange;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_exchange.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_exchange.bin").await?;
 
         let items = Exchange::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_exchange.bin").await?;
@@ -1077,6 +1168,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -1085,7 +1177,7 @@ impl GameData {
             *this = GameDataLoadingStatus::Relic;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_relic.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_relic.bin").await?;
 
         let items = Relic::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_relic.bin").await?;
@@ -1106,6 +1198,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -1114,7 +1207,7 @@ impl GameData {
             *this = GameDataLoadingStatus::Bracelet;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_randombox.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_bracelet.bin").await?;
 
         let items = Bracelet::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_bracelet.bin").await?;
@@ -1136,6 +1229,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -1144,7 +1238,7 @@ impl GameData {
             *this = GameDataLoadingStatus::Quest;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_quest.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_quest.bin").await?;
 
         let items = Quest::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_quest.bin").await?;
@@ -1166,6 +1260,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -1174,7 +1269,7 @@ impl GameData {
             *this = GameDataLoadingStatus::SealedFellow;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_sealedfellow.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_sealedfellow.bin").await?;
 
         let items = SealedFellow::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_sealedfellow.bin").await?;
@@ -1195,6 +1290,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -1203,7 +1299,7 @@ impl GameData {
             *this = GameDataLoadingStatus::Gem;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_enchantstone.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_enchantstone.bin").await?;
 
         let items = Gem::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_enchantstone.bin").await?;
@@ -1224,6 +1320,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -1232,7 +1329,7 @@ impl GameData {
             *this = GameDataLoadingStatus::SkillBook;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_skillbook.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_skillbook.bin").await?;
 
         let items = SkillBook::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_skillbook.bin").await?;
@@ -1253,6 +1350,7 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         gamelibs_zip: &mut ZipArchive<R>,
+        locales: &HashMap<SharedString, Locale>,
         icons: &HashMap<String, String>,
         on_load: &Entity<GameDataLoadingStatus>,
         cx: &mut AsyncWindowContext,
@@ -1261,7 +1359,7 @@ impl GameData {
             *this = GameDataLoadingStatus::Recipe;
             cx.notify();
         });
-        let locales = Self::load_locales(gamedatas_zip, r"gamedata\localized\localstringdata_item_recipe.sxb").await?;
+
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_recipe.bin").await?;
 
         let items = Recipe::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemdata_recipe.bin").await?;

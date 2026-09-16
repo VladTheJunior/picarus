@@ -36,6 +36,7 @@ Interactive Item Viewer for Riders of Icarus is a desktop application that allow
   - Quest Items
   - Bracelets
   - Relics
+  - Familiars
 - Detailed Information:
   - Basic stats (attack, defense, etc.)
   - Item grade and quality
@@ -47,6 +48,9 @@ Interactive Item Viewer for Riders of Icarus is a desktop application that allow
   - Grade type filter
   - Item type filter
   - Specific effect filter
+  - Drop chance from fishing
+  - Evolution chances
+  - Synthesis chances
 
 ## Interactive Systems
 - **Random Effects Selection:** Browse and select from all possible random effects that can roll on items

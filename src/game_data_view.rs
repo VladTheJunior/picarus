@@ -423,6 +423,7 @@ pub enum GameDataLoadingStatus {
     Fishing,
     Evolution,
     Synthesis,
+    Locales
 }
 
 impl GameDataLoadingStatus {
@@ -465,6 +466,7 @@ impl GameDataLoadingStatus {
             GameDataLoadingStatus::Fishing => t("game-data-loading-fishing"),
             GameDataLoadingStatus::Evolution => t("game-data-loading-evolution"),
             GameDataLoadingStatus::Synthesis => t("game-data-loading-synthesis"),
+            GameDataLoadingStatus::Locales => t("game-data-loading-locales"),
         }
     }
 }
@@ -561,7 +563,7 @@ impl GameDataView {
                     });
                 } else {
                     let _ = cx.update({
-                        move |window, cx| {
+                        move |_, cx| {
                             let _ = this.update(cx, |this, cx| {
                                 this.is_exporting = false;
                                 cx.notify();
@@ -1064,13 +1066,14 @@ impl GameDataView {
             })
             .when(!preview_builder.common.synthesis_fellows.is_empty(), {
                 move |this| {
-                    this.child(
+                    this.child(div().mt_2().text_color(cx.theme().success).child(t("item-synthesis"))).child(
                         v_flex()
                             .gap_1()
                             .children(preview_builder.common.synthesis_fellows.iter().enumerate().map(|(_, f)| {
-                                div()
-                                    .text_color(cx.theme().success)
-                                    .child(t_v("item-synthesis-chance", vec![("value", Decimal::from_f32(f.rate).unwrap().to_string())]))
+                                div().child(t_v(
+                                    "item-effect-synthesis-chance-percent",
+                                    vec![("value", Decimal::from_f32(f.rate).unwrap().to_string())],
+                                ))
                             })),
                     )
                 }

@@ -41,7 +41,7 @@ version = "=0.42.0"
 features = ["serialize", "encoding"]
 
 [dependencies.rust_xlsxwriter]
-version = "=0.99.0"
+version = "=0.99.1"
 features = ["serde", "zlib", "zmij"]
 
 [dependencies.rust-embed]

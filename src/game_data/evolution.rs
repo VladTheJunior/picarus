@@ -1,15 +1,8 @@
-use std::{
-    cell::RefCell,
-    collections::{BTreeMap, HashMap},
-    io::SeekFrom,
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::BTreeMap, io::SeekFrom, rc::Rc};
 
 use crate::game_data::{
     AsyncBufReadExtReadString, DataFormat, TagType,
-    grade::Grade,
     items::{Item, ItemNode, ReadableItem},
-    locale::Locale,
 };
 use anyhow::Result;
 use gpui_kit::SharedString;

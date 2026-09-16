@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Result;
 use gpui_kit::{Image, SharedString};
-use serde::{Deserialize};
+use serde::Deserialize;
 use tracing::error;
 
 use crate::game_data::{dds_to_jpeg, effects::ItemEffect, locale::Locale};
@@ -138,9 +138,7 @@ impl Skill {
 
     pub fn set_locale(&mut self, locales: &HashMap<SharedString, Locale>) {
         self.locale = locales.get(&self.recid).cloned();
-       
     }
-
 
     pub async fn set_icon<R: std::io::Read + std::io::Seek>(
         &mut self,
@@ -150,7 +148,7 @@ impl Skill {
         unknown_icons: &mut BTreeMap<SharedString, BTreeSet<SharedString>>,
     ) -> Result<()> {
         let icon_key = self.clt_icon.to_lowercase();
-        if icon_key.is_empty(){
+        if icon_key.is_empty() {
             return Ok(());
         }
         if let Some(icon) = icon_cache.get(&icon_key) {
@@ -191,7 +189,7 @@ impl Skill {
             if let Some(patterns) = s.buff1.effect_pattern_list.as_mut().and_then(|f| f.effect_pattern.as_mut()) {
                 let mut i = 0;
                 while i < patterns.len() {
-                    if patterns[i].effect_pattern_enum != "지속효과적용"{
+                    if patterns[i].effect_pattern_enum != "지속효과적용" {
                         patterns.remove(i);
                     } else {
                         patterns[i].effect = ItemEffect::from_effect_and_value(&patterns[i].param1, patterns[i].param2.as_ref());

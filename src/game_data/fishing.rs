@@ -13,10 +13,10 @@ pub struct FishingDrop {
     pub area: SharedString,
     pub map: SharedString,
     pub probability: f32,
-    pub grade: Grade
+    pub grade: Grade,
 }
 
-#[derive(Default,Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Fishing {
     pub area_locale: Option<Locale>,
     pub map_locale: Option<Locale>,
@@ -99,16 +99,16 @@ impl ReadableItem for Fishing {
                 "probability" => self.probability = reader.read_f32_le().await?,
                 "autorate" => self.autorate = reader.read_f32_le().await?,
 
-                "reward1" => reward_ids[0] =reader.read_string(Self::FORMAT).await?,
+                "reward1" => reward_ids[0] = reader.read_string(Self::FORMAT).await?,
                 "reward2" => reward_ids[1] = reader.read_string(Self::FORMAT).await?,
                 "reward3" => reward_ids[2] = reader.read_string(Self::FORMAT).await?,
                 "reward4" => reward_ids[3] = reader.read_string(Self::FORMAT).await?,
                 "reward5" => reward_ids[4] = reader.read_string(Self::FORMAT).await?,
                 "reward6" => reward_ids[5] = reader.read_string(Self::FORMAT).await?,
-                "reward7" => reward_ids[6] =reader.read_string(Self::FORMAT).await?,
+                "reward7" => reward_ids[6] = reader.read_string(Self::FORMAT).await?,
                 "reward8" => reward_ids[7] = reader.read_string(Self::FORMAT).await?,
                 "reward9" => reward_ids[8] = reader.read_string(Self::FORMAT).await?,
-                "reward10" => reward_ids[9] =reader.read_string(Self::FORMAT).await?,
+                "reward10" => reward_ids[9] = reader.read_string(Self::FORMAT).await?,
                 "reward11" => reward_ids[10] = reader.read_string(Self::FORMAT).await?,
                 "reward12" => reward_ids[11] = reader.read_string(Self::FORMAT).await?,
                 "reward13" => reward_ids[12] = reader.read_string(Self::FORMAT).await?,
@@ -215,7 +215,7 @@ impl Fishing {
         self.area_locale = locales.get(&self.area).cloned();
     }
 
-        pub fn get_localized_fishing_area(&self) -> SharedString {
+    pub fn get_localized_fishing_area(&self) -> SharedString {
         self.area_locale.as_ref().and_then(|f| f.locale()).unwrap_or_else(|| self.area.clone())
     }
 

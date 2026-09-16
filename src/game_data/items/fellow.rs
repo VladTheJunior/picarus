@@ -151,7 +151,7 @@ impl ItemTrait for Fellow {
     fn common(&self) -> &Common {
         &self.common
     }
-        fn common_mut(&mut self) -> &mut Common {
+    fn common_mut(&mut self) -> &mut Common {
         &mut self.common
     }
     fn debug(&self) -> &[u8] {
@@ -170,19 +170,17 @@ impl ItemTrait for Fellow {
     }
 
     fn get_unique_effects(&self) -> Vec<EffectKind> {
-   
-     
-            self.skills
-                .iter()
-                .flat_map(|f| f.skill_data.skill_level.iter())
-                .filter_map(|f| f.buff1.effect_pattern_list.as_ref())
-                .filter_map(|f| f.effect_pattern.as_ref())
-                .flat_map(|f| f)
-                .map(|p| EffectKind::Common {
-                    id: self.common.id.clone(),
-                    effect: p.effect.clone(),
-                }).collect()
-
+        self.skills
+            .iter()
+            .flat_map(|f| f.skill_data.skill_level.iter())
+            .filter_map(|f| f.buff1.effect_pattern_list.as_ref())
+            .filter_map(|f| f.effect_pattern.as_ref())
+            .flat_map(|f| f)
+            .map(|p| EffectKind::Common {
+                id: self.common.id.clone(),
+                effect: p.effect.clone(),
+            })
+            .collect()
     }
 }
 

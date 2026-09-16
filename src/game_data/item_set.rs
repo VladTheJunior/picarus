@@ -8,7 +8,6 @@ use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
-use tracing::warn;
 
 #[derive(Default, Clone)]
 pub struct ItemSetEffects {
@@ -42,9 +41,6 @@ impl ItemSet {
         for effect in self.effects.iter_mut() {
             if let Some(skill) = effect.seteffect_skill.as_ref() {
                 effect.locale = skill_locales.get(skill).cloned();
-                if effect.locale.is_none() {
-                    warn!(?skill, "Can not find locale for skill");
-                }
             }
         }
     }

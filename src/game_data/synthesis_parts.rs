@@ -1,15 +1,8 @@
-use std::{
-    cell::RefCell,
-    collections::{BTreeMap, HashMap},
-    io::SeekFrom,
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::BTreeMap, io::SeekFrom, rc::Rc};
 
 use crate::game_data::{
     AsyncBufReadExtReadString, DataFormat, TagType,
-    grade::Grade,
     items::{Item, ItemNode, ReadableItem},
-    locale::Locale,
 };
 use anyhow::Result;
 use gpui_kit::SharedString;
@@ -18,7 +11,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 #[derive(Default, Clone)]
 pub struct SynthesisParts {
-  pub itemid: ItemNode,
+    pub itemid: ItemNode,
     pub itemcnt: u16,
     pub resultid: SharedString,
     pub cost: f32,
@@ -65,7 +58,7 @@ impl ReadableItem for SynthesisParts {
                 }
             };
 
-         match tag.as_str() {
+            match tag.as_str() {
                 "itemid" => self.itemid.id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
                 "itemcnt" => self.itemcnt = reader.read_f32_le().await? as u16,
                 "resultid" => self.resultid = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
@@ -73,9 +66,7 @@ impl ReadableItem for SynthesisParts {
                 "successrate" => self.successrate = reader.read_f32_le().await?,
                 "delblock_max" => self.delblock_max = reader.read_f32_le().await?,
 
-                _ => {
-                  
-                }
+                _ => {}
             }
         }
 
@@ -87,10 +78,7 @@ impl SynthesisParts {
     pub fn set_parts(&mut self, items: &IndexMap<SharedString, Rc<RefCell<Item>>>, unknown_ids: &mut BTreeMap<SharedString, u32>) {
         self.itemid.item = items.get(&self.itemid.id).map(|f| Rc::downgrade(f));
         if self.itemid.item.is_none() {
-            unknown_ids
-                .entry(self.itemid.id.clone())
-                .and_modify(|count| *count += 1)
-                .or_insert(1);
+            unknown_ids.entry(self.itemid.id.clone()).and_modify(|count| *count += 1).or_insert(1);
         }
     }
 }

@@ -91,7 +91,7 @@ impl ItemTrait for RandomBox {
     fn common(&self) -> &Common {
         &self.common
     }
-        fn common_mut(&mut self) -> &mut Common {
+    fn common_mut(&mut self) -> &mut Common {
         &mut self.common
     }
     fn debug(&self) -> &[u8] {

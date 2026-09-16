@@ -15,7 +15,6 @@ use gpui_kit::SharedString;
 use indexmap::IndexMap;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
-use tracing::warn;
 
 #[derive(Default, Clone)]
 pub struct SecondaryWeapon {
@@ -116,9 +115,6 @@ impl SecondaryWeapon {
     pub fn set_skill_locale(&mut self, skill_locales: &HashMap<SharedString, Locale>) {
         if let Some(skill) = self.skill_effect.as_ref() {
             self.skill_locale = skill_locales.get(skill).cloned();
-            if self.skill_locale.is_none() {
-                warn!(?skill, "Can not find locale for skill");
-            }
         }
     }
 
@@ -139,7 +135,7 @@ impl ItemTrait for SecondaryWeapon {
     fn common(&self) -> &Common {
         &self.common
     }
-        fn common_mut(&mut self) -> &mut Common {
+    fn common_mut(&mut self) -> &mut Common {
         &mut self.common
     }
     fn debug(&self) -> &[u8] {

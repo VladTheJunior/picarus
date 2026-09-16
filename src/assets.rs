@@ -4,10 +4,10 @@ use gpui_kit::App;
 use gpui_kit::IntoElement;
 use gpui_kit::RenderOnce;
 use gpui_kit::Window;
-use gpui_kit::component::icon_named;
-use gpui_kit::{AssetSource, SharedString};
 use gpui_kit::component::Icon;
 use gpui_kit::component::IconNamed;
+use gpui_kit::component::icon_named;
+use gpui_kit::{AssetSource, SharedString};
 
 use rust_embed::Embed;
 use rust_embed::RustEmbed;

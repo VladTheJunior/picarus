@@ -1,16 +1,6 @@
-use std::{
-    cell::RefCell,
-    collections::{BTreeMap, HashMap},
-    io::SeekFrom,
-    rc::Rc,
-};
+use std::io::SeekFrom;
 
-use crate::game_data::{
-    AsyncBufReadExtReadString, DataFormat, TagType,
-    grade::Grade,
-    items::{Item, ItemNode, ReadableItem},
-    locale::Locale,
-};
+use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, items::ReadableItem};
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
@@ -135,10 +125,8 @@ impl ReadableItem for SynthesisFellows {
                 _ => {}
             }
         }
-       let mut s = 0.0;
         for i in 0..30 {
             if fellow_ids[i] != "*" && !fellow_ids[i].is_empty() {
-                s += fellow_rates[i];
                 self.fellows.insert(
                     i as u8,
                     SynthesisFellow {
@@ -148,7 +136,6 @@ impl ReadableItem for SynthesisFellows {
                 );
             }
         }
-        println!("{}", s);
         Ok(self)
     }
 }

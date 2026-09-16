@@ -2,7 +2,10 @@ use gpui_kit::{Hsla, SharedString};
 use strum::EnumIter;
 use tracing::warn;
 
-use crate::{colors::{BLUE, ORANGE, PURPLE, RED, YELLOW}, language::t};
+use crate::{
+    colors::{BLUE, ORANGE, PURPLE, RED, YELLOW},
+    language::t,
+};
 
 #[derive(Debug, EnumIter, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Grade {
@@ -48,8 +51,8 @@ impl From<SharedString> for Grade {
             "he" => Self::Heroic,
             "ld" => Self::Legendary,
             "mt" => Self::LegendaryPlus,
-           // 6 => Self::Unique,
-           // 7 => Self::Mythical,
+            // 6 => Self::Unique,
+            // 7 => Self::Mythical,
             unk => {
                 warn!("Cannot convert {} grade", unk);
                 Self::Unknown(99)
@@ -72,7 +75,7 @@ impl Grade {
         }
     }
 
-        pub fn locale_fishing(&self) -> SharedString {
+    pub fn locale_fishing(&self) -> SharedString {
         match self {
             Grade::Common => t("item-common-fishing-grade"),
             Grade::Elite => t("item-rare-fishing-grade"),

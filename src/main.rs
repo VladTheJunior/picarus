@@ -4,20 +4,19 @@ mod assets;
 
 mod extensions;
 
+pub mod colors;
 mod game_data;
 pub mod game_data_view;
 mod language;
-mod settings;
 pub mod rich_text;
-pub mod colors;
+mod settings;
 
-use gpui_kit::{AppContext, Bounds, Global, ReadGlobal, Size, TitlebarOptions, WindowBounds, WindowOptions, px};
 use gpui_kit::component::{Root, Theme, ThemeConfig};
+use gpui_kit::{AppContext, Bounds, Global, ReadGlobal, Size, TitlebarOptions, WindowBounds, WindowOptions, px};
 use tracing_subscriber::EnvFilter;
 
-
 use std::rc::Rc;
-use tracing::{info};
+use tracing::info;
 
 use crate::{
     assets::{Assets, Fonts},
@@ -36,8 +35,7 @@ fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
     let _guard = rt.enter();
 
-let filter = EnvFilter::try_from_default_env()
-    .unwrap_or_else(|_| EnvFilter::new("debug,html5ever=off"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug,html5ever=off"));
 
     tracing_subscriber::fmt().with_env_filter(filter).init();
 

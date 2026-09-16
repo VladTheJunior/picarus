@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use crate::{
     game_data::{
-        fishing::Fishing,
         grade::Grade,
         items::{Item, ItemType},
     },
@@ -20,10 +19,10 @@ use gpui_kit::{AppContext, Context, Entity, SharedString, Window};
 use strum::IntoEnumIterator;
 
 #[derive(PartialEq)]
-pub enum AdditionalFilter{
+pub enum AdditionalFilter {
     Fishing(SharedString),
     Evolution,
-    Synthesis
+    Synthesis,
 }
 
 #[derive(Clone, Eq, PartialEq, Hash)]
@@ -60,7 +59,6 @@ impl SearchableListItem for ItemEffectFilter {
         &self.key
     }
 }
-
 
 impl SearchableListItem for ItemType {
     type Value = ItemType;
@@ -161,7 +159,6 @@ impl GameDataFilters {
             ComboboxEvent::Confirm(_) => {}
         })
         .detach();
-
 
         Self {
             search_state,
