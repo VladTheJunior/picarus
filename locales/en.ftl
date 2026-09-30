@@ -114,6 +114,8 @@ filter-evolution = Evolution
 item-skills = Skills
 item-synthesis = Synthesis
 filter-synthesis = Synthesis
+filter-fellow-combination = Familiar Farm Buffs
+item-fellow-combinations = Familiar Farm Buffs
 
 item-tag-no-trade = Untradable
 item-tag-no-sell = Unsellable
@@ -332,6 +334,9 @@ item-random-box-probability-percent = Probability { $value }%
 item-effect-guild-points-percent = Guild Points Eearned { $value }%
 
 item-effect-physical-resistance-percent = Physical Resistance { $value }%
+item-effect-physical-resistance = Physical Resistance { $value }
+item-effect-magic-resistance = Magic Resistance { $value }
+item-effect-magic-resistance-percent = Magic Resistance { $value }%
 item-effect-stun = Stun
 item-effect-base-mana-regen-percent = Base Mana Regen { $value }%
 item-effect-base-mana-regen = Base Mana Regen { $value }
@@ -342,3 +347,12 @@ item-effect-synthesis-chance-percent = Synthesis Chance { $value }%
 item-synthesis-chance = Can be synthesized with a { $value }% chance 
 item-effect-terror = Terror
 item-effect-accuracy-percent = Accuracy { $value }%
+
+item-effect-stamina-percent = Stamina Recovery { $value }%
+item-effect-chaos-percent = Chaos Recovery { $value }%
+item-effect-energy-percent = EP Recovery { $value }%
+item-effect-rage = Rage { $value }
+item-effect-magic-resistance-2 = Magic Resistance { $value }
+item-effect-magic-resistance-2-percent = Magic Resistance { $value }%
+item-effect-invincibility = Invincibility
+item-effect-physical-poison-addiction = Physical Poison Addiction

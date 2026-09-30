@@ -199,47 +199,4 @@ impl Skill {
             }
         }
     }
-
-    /*
-    pub fn parse<R: std::io::Read + std::io::Seek>(
-        zip: &mut zip::ZipArchive<R>,
-        skill: &str,
-        skills: &HashMap<String, String>,
-        skill_cache: &mut HashMap<String, Rc<Skill>>,
-        unknown_skills: &mut BTreeSet<SharedString>,
-    ) -> Result<Vec<Rc<Self>>> {
-        let mut result = vec![];
-
-        for name in skill.split(",") {
-            let name = name.strip_suffix("_1").unwrap_or_else(|| name).to_lowercase();
-            if let Some(skill) = skill_cache.get(&name) {
-                result.push(skill.clone());
-            }
-
-            if let Some(skill_path) = skills.get(&format!("gamedata/adataxml/skill/{}.xml", name)) {
-                match Self::load(zip.skill_path) {
-                    Ok(mut file) => {
-                        let mut buf = Vec::with_capacity(file.size() as usize);
-                        file.read_to_end(&mut buf)?;
-
-                        match quick_xml::de::from_reader(buf.as_ref()) {
-                            Ok(skill) => {
-                                let skill: Rc<Skill> = Rc::new(skill);
-                                skill_cache.insert(name, skill.clone());
-                                result.push(skill);
-                            }
-                            Err(e) => error!(?e, ?name, "Failed to deserialize skill"),
-                        }
-                    }
-                    Err(e) => {
-                        error!(?e, ?name, "Failed to load skill");
-                    }
-                }
-            } else {
-                unknown_skills.insert(SharedString::new(name));
-            }
-        }
-
-        Ok(result)
-    }*/
 }

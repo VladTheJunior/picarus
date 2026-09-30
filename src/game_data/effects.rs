@@ -202,7 +202,7 @@ impl ItemEffect {
             "최대hp%" => Some("item-effect-max-hp-percent"),
             "무기물리방어력%" => Some("item-effect-physical-defense-percent"),
             "쿨타임%" => Some("item-effect-cooldown-percent"),
-            "pk방어력%" => Some("item-effect-pvp-defense-percent"),
+            "pk방어력%" | "pk방어력%%" => Some("item-effect-pvp-defense-percent"),
             "모든공격력+" => Some("item-effect-attack"),
             "모든공격력%" => Some("item-effect-attack-percent"),
             "allstatderest+" => Some("item-effect-stat-limit-break"),
@@ -236,6 +236,9 @@ impl ItemEffect {
             "str+" => Some("item-effect-strength"),
             "dex+" => Some("item-effect-dexterity"),
             "bdy%" => Some("item-effect-physical-resistance-percent"),
+            "bdy+" => Some("item-effect-physical-resistance"),
+            "mnd%" => Some("item-effect-magic-resistance-percent"),
+            "mnd+" => Some("item-effect-magic-resistance"),
             "기절상태" => Some("item-effect-stun"),
             // "신체독중독상태" => Some("item-effect-stun"),
             "pk공격력%" => Some("item-effect-pvp-attack-percent"),
@@ -295,6 +298,14 @@ impl ItemEffect {
             "길드포인트%" => Some("item-effect-guild-points-percent"),
             "공포상태" => Some("item-effect-terror"),
             "무기명중률+" => Some("item-effect-accuracy-percent"),
+            "tp회복력%" => Some("item-effect-stamina-percent"),
+            "cp회복력%" => Some("item-effect-chaos-percent"),
+            "ep회복력%" => Some("item-effect-energy-percent"),
+            "공격시분노생성+"=> Some("item-effect-rage"),
+            "마법저항력+"=> Some("item-effect-magic-resistance-2"),
+            "마법저항력%"=> Some("item-effect-magic-resistance-2-percent"),
+            "무적상태"=> Some("item-effect-invincibility"),
+            "신체독중독상태"=> Some("item-effect-physical-poison-addiction"),
             _ => {
                 return None;
             }

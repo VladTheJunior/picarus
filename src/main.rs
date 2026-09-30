@@ -1,7 +1,5 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+//#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![deny(unused_crate_dependencies)]
-mod assets;
-
 mod extensions;
 
 pub mod colors;
@@ -11,15 +9,17 @@ mod language;
 pub mod rich_text;
 mod settings;
 
+use gpui_kit::assets::AllAssets;
 use gpui_kit::component::{Root, Theme, ThemeConfig};
 use gpui_kit::{AppContext, Bounds, Global, ReadGlobal, Size, TitlebarOptions, WindowBounds, WindowOptions, px};
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::field::MakeExt;
 
+use std::borrow::Cow;
 use std::rc::Rc;
 use tracing::info;
 
 use crate::{
-    assets::{Assets, Fonts},
     game_data_view::GameDataView,
     language::LanguageController,
     settings::{Settings, config::Config},
@@ -37,7 +37,7 @@ fn main() {
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug,html5ever=off"));
 
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    tracing_subscriber::fmt().map_fmt_fields(|f| f.debug_alt()).with_env_filter(filter).init();
 
     if let Some(timestamp) = option_env!("VERGEN_BUILD_TIMESTAMP") {
         info!("build timestamp: {timestamp}");
@@ -57,55 +57,55 @@ fn main() {
     let dark_theme =
         Rc::new(serde_json::from_slice::<ThemeConfig>(include_bytes!("../assets/themes/dark.json")).expect("Failed to parse dark theme"));
 
-    let app = gpui_kit::application().with_assets(Assets);
     LanguageController::init();
     image_extras::register();
 
-    app.run(move |cx| {
+    gpui_kit::application().with_assets(AllAssets).run(move |cx| {
         let (settings, _) = Settings::try_load();
         cx.text_system()
-            .add_fonts(Fonts::iter().map(|f| Fonts::get(&f)).flatten().map(|f| f.data).collect())
+            .add_fonts(vec![
+                Cow::Borrowed(include_bytes!("../assets/fonts/RobotoCondensed-Regular.ttf").as_slice()),
+                Cow::Borrowed(include_bytes!("../assets/fonts/RobotoCondensed-Bold.ttf").as_slice()),
+            ])
             .expect("Failed to load embedded font");
+
         // This must be called before using any GPUI Component features.
         gpui_kit::init(cx);
         game_data_view::init(cx);
         Theme::global_mut(cx).apply_config(&dark_theme);
         Theme::global_mut(cx).scrollbar_mode = gpui_kit::component::scroll::ScrollbarMode::Always;
-
+        Theme::sync_base(cx);
         LanguageController::switch(settings.language);
         cx.set_global(settings);
 
-        let bounds = Bounds::centered(None, Size::new(px(1340.0), px(700.0)), cx);
-        cx.spawn(async move |cx| {
-            cx.open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    titlebar: Some(TitlebarOptions {
-                        title: Some("picarus".into()),
-                        appears_transparent: true,
-                        ..Default::default()
-                    }),
-                    window_min_size: Some(Size::new(px(800.0), px(400.0))),
+
+        gpui_kit::open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, Size::new(px(1340.0), px(700.0)), cx))),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("picarus".into()),
+                    appears_transparent: true,
                     ..Default::default()
-                },
-                |window, cx| {
-                    cx.on_app_quit({
-                        move |cx| {
-                            Settings::global(cx).try_save();
+                }),
+                window_min_size: Some(Size::new(px(800.0), px(400.0))),
+                ..Default::default()
+            },
+            cx,
+            |window, cx| {
+                cx.on_app_quit({
+                    move |cx| {
+                        Settings::global(cx).try_save();
 
-                            async move {}
-                        }
-                    })
-                    .detach();
+                        async move {}
+                    }
+                })
+                .detach();
 
-                    let main_view = cx.new(|cx| GameDataView::new(window, cx));
+                cx.new(|cx| GameDataView::new(window, cx))
 
-                    cx.new(|cx| Root::new(main_view, window, cx))
-                },
-            )?;
-
-            Ok::<_, anyhow::Error>(())
-        })
-        .detach();
+                // cx.new(|_| HelloWorld)
+            },
+        )
+        .expect("Failed to open window");
     });
 }

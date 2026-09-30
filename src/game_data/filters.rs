@@ -23,6 +23,7 @@ pub enum AdditionalFilter {
     Fishing(SharedString),
     Evolution,
     Synthesis,
+    FellowCombination
 }
 
 #[derive(Clone, Eq, PartialEq, Hash)]

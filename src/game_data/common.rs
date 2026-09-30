@@ -12,6 +12,7 @@ use crate::game_data::{
     dds_to_jpeg,
     effects::{EffectKind, ItemEffect},
     evolution::Evolution,
+    fellow_combination::FellowCombination,
     fishing::{Fishing, FishingDrop},
     game_class::GameClass,
     grade::Grade,
@@ -31,6 +32,7 @@ use tracing::{error, warn};
 pub struct Common {
     pub linked_recipes: BTreeSet<SharedString>,
     pub fishing: Vec<FishingDrop>,
+    pub fellow_combinations: Vec<FellowCombination>,
     pub evolution: Vec<Evolution>,
     pub synthesis_parts: Vec<SynthesisParts>,
     pub synthesis_fellows: Vec<SynthesisFellow>,
@@ -72,6 +74,20 @@ impl Common {
             );
         }
 
+        effects.extend(
+            self.fellow_combinations
+                .iter()
+                .flat_map(|f| f.skills.iter())
+                .flat_map(|f| f.skill_data.skill_level.iter())
+                .filter_map(|f| f.buff1.effect_pattern_list.as_ref())
+                .filter_map(|f| f.effect_pattern.as_ref())
+                .flat_map(|f| f)
+                .map(|p| EffectKind::Common {
+                    id: self.id.clone(),
+                    effect: p.effect.clone(),
+                }),
+        );
+
         effects
     }
 
@@ -100,6 +116,19 @@ impl Common {
                     grade: f.groupno,
                 })
             })
+            .collect();
+    }
+
+    pub fn set_fellow_combinations(&mut self, fellow_combinations: &Vec<FellowCombination>) {
+        self.fellow_combinations = fellow_combinations
+            .iter()
+            .filter(|f| {
+                f.entries
+                    .iter()
+                    .find(|(_, r)| r.reqfellow.as_ref().is_some_and(|f| f.id == self.id) || r.reqpet.as_ref().is_some_and(|f| f.id == self.id))
+                    .is_some()
+            })
+            .cloned()
             .collect();
     }
 

@@ -34,14 +34,14 @@ duration-hours = {
 
 duration-minutes = {
     $value ->
-   [one] { $value } минута
+   [one] { $value } минуту
    [few] { $value } минуты
    *[other] { $value } минут
 }
 
 duration-seconds = {
     $value ->
-   [one] { $value } секунда
+   [one] { $value } секунду
    [few] { $value } секунды
    *[other] { $value } секунд
 }
@@ -98,6 +98,8 @@ item-evolution = Эволюция
 filter-evolution = Эволюция
 item-synthesis = Синтез
 filter-synthesis = Синтез
+filter-fellow-combination = Бафы зверофермы
+item-fellow-combinations = Бафы зверофермы
 
 item-class-magician = Колдунья
 item-class-trickster = Фея
@@ -342,6 +344,9 @@ item-random-box-probability-percent = Шанс { $value }%
 item-effect-guild-points-percent = Очки гильдии { $value }%
 
 item-effect-physical-resistance-percent = Физ. сопротивление { $value }%
+item-effect-physical-resistance = Физ. сопротивление { $value }
+item-effect-magic-resistance = Маг. сопротивление { $value }
+item-effect-magic-resistance-percent = Маг. сопротивление { $value }%
 item-effect-stun = Оглушение
 item-effect-base-mana-regen-percent = Базовое восст. маны { $value }%
 item-effect-base-mana-regen = Базовое восст. маны { $value }
@@ -353,3 +358,11 @@ item-synthesis-chance = Может быть синтезирован с { $value
 
 item-effect-terror = Страх
 item-effect-accuracy-percent = Меткость { $value }%
+item-effect-stamina-percent = Восст. выносливости { $value }%
+item-effect-chaos-percent = Восст. хаоса { $value }%
+item-effect-energy-percent = Восст. энергии { $value }%
+item-effect-rage = Гнев { $value }
+item-effect-magic-resistance-2 = Сопротивление магии { $value }
+item-effect-magic-resistance-2-percent = Сопротивление магии { $value }%
+item-effect-invincibility = Неуязвимость
+item-effect-physical-poison-addiction = Отравление парализующим ядом

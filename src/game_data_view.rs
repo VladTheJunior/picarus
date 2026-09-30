@@ -1,6 +1,7 @@
 use gpui_kit::Div;
+use gpui_kit::assets::IconName;
 use gpui_kit::component::{
-    ActiveTheme, Disableable, Icon, IconName, IndexPath, Root, Sizable, StyledExt, TitleBar, WindowExt,
+    ActiveTheme, Disableable, Icon, IndexPath, Root, Sizable, StyledExt, TitleBar, WindowExt,
     button::{Button, ButtonCustomVariant, ButtonVariants},
     combobox::{Combobox, ComboboxEvent},
     h_flex,
@@ -44,7 +45,6 @@ use crate::game_data::filters::AdditionalFilter;
 use crate::game_data::items::fellow::FellowType;
 use crate::rich_text::RichText;
 use crate::{
-    assets::AppIcon,
     extensions::EnumNameExt,
     game_data::{
         GameData,
@@ -423,7 +423,9 @@ pub enum GameDataLoadingStatus {
     Fishing,
     Evolution,
     Synthesis,
-    Locales
+    Locales,
+    FellowCombination,
+    Monster
 }
 
 impl GameDataLoadingStatus {
@@ -467,6 +469,8 @@ impl GameDataLoadingStatus {
             GameDataLoadingStatus::Evolution => t("game-data-loading-evolution"),
             GameDataLoadingStatus::Synthesis => t("game-data-loading-synthesis"),
             GameDataLoadingStatus::Locales => t("game-data-loading-locales"),
+            GameDataLoadingStatus::FellowCombination => t("game-data-loading-fellow-combination"),
+            GameDataLoadingStatus::Monster => t("game-data-loading-monster"),
         }
     }
 }
@@ -982,6 +986,93 @@ impl GameDataView {
                 this.child(div().mt_2().text_color(cx.theme().success).child(t("item-equipped-skill")))
                     .child(RichText::parse(&skill_locale, cx.theme().yellow))
             })
+            .when(!preview_builder.common.fellow_combinations.is_empty(), {
+                move |this| {
+                    this.child(div().mt_2().mb_1().text_color(cx.theme().success).child(t("item-fellow-combinations")))
+                        .child(
+                            v_flex()
+                                .gap_2()
+                                .children(preview_builder.common.fellow_combinations.iter().enumerate().map({
+                                    move |(index, fellow_combination)| {
+                                        let mut content = h_flex().gap_1();
+                                        for (_, entry) in &fellow_combination.entries {
+                                            let node = entry.reqpet.as_ref().or(entry.reqfellow.as_ref()).unwrap();
+
+                                            let (is_present, node_id, grade, icon, name) = (
+                                                node.item.is_some(),
+                                                node.id.clone(),
+                                                node.item.as_ref().and_then(|f| f.upgrade()).map(|m| m.borrow().get_grade()),
+                                                node.item.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.borrow().get_icon()),
+                                                node.item
+                                                    .as_ref()
+                                                    .and_then(|f| f.upgrade())
+                                                    .map(|m| m.borrow().get_localized_name())
+                                                    .unwrap_or_else(|| node.id.clone()),
+                                            );
+                                            content = content.child(
+                                                h_flex()
+                                                    .id(format!("button-{}-{}", index, node_id))
+                                                    .relative()
+                                                    .when_none(&icon, |this| {
+                                                        this.child(
+                                                            div()
+                                                                .size(px(40.))
+                                                                .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color))
+                                                                .border_2(),
+                                                        )
+                                                    })
+                                                    .when_some(icon, |this, icon| {
+                                                        this.child(
+                                                            img(ImageSource::Image(icon))
+                                                                .object_fit(ObjectFit::Cover)
+                                                                .size(px(40.))
+                                                                .border_2()
+                                                                .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
+                                                        )
+                                                    })
+                                                    .tooltip(move |window, cx| Tooltip::new(name.clone()).build(window, cx))
+                                                    .when(is_present, |this| {
+                                                        this.on_click(cx.listener({
+                                                            move |this, _, window, cx| {
+                                                                this.tabs.insert(node_id.clone());
+                                                                this.set_selected_item(Some(node_id.clone()), window, cx);
+                                                                cx.notify();
+                                                            }
+                                                        }))
+                                                    }),
+                                            )
+                                        }
+                                        v_flex().gap_1().child(content).when(!fellow_combination.skills.is_empty(), |this| {
+                                            this
+                                                .children(fellow_combination.skills.iter().map(|skill| {
+                                                    let last_level_skill_data =
+                                                        skill.skill_data.skill_level.iter().last();
+                                                    
+                                                    v_flex()
+                                                    
+                                                        .when_some(last_level_skill_data, |this, s| {
+                                                            this.when_some(s.buff1.effect_pattern_list.as_ref(), |this, buff| {
+                                                                this.when_some(buff.effect_pattern.as_ref(), |this, effects| {
+                                                                    this.when(!effects.is_empty(), |this| {
+                                                                        this.child(
+                                                                            div().text_color(cx.theme().yellow).mt_2().child(t("item-skill-effects")),
+                                                                        )
+                                                                        .children(effects.iter().map(|e| {
+                                                                            div()
+                                                                                .text_color(cx.theme().success)
+                                                                                .child(e.effect.get_locale_with_duration(s.keep_buff_time))
+                                                                        }))
+                                                                    })
+                                                                })
+                                                            })
+                                                        })
+                                                }))
+                                        })
+                                    }
+                                })),
+                        )
+                }
+            })
             .when(!preview_builder.common.evolution.is_empty(), {
                 move |this| {
                     this.child(div().mt_2().text_color(cx.theme().success).child(t("item-evolution")))
@@ -1066,16 +1157,17 @@ impl GameDataView {
             })
             .when(!preview_builder.common.synthesis_fellows.is_empty(), {
                 move |this| {
-                    this.child(div().mt_2().text_color(cx.theme().success).child(t("item-synthesis"))).child(
-                        v_flex()
-                            .gap_1()
-                            .children(preview_builder.common.synthesis_fellows.iter().enumerate().map(|(_, f)| {
-                                div().child(t_v(
-                                    "item-effect-synthesis-chance-percent",
-                                    vec![("value", Decimal::from_f32(f.rate).unwrap().to_string())],
-                                ))
-                            })),
-                    )
+                    this.child(div().mt_2().text_color(cx.theme().success).child(t("item-synthesis")))
+                        .child(
+                            v_flex()
+                                .gap_1()
+                                .children(preview_builder.common.synthesis_fellows.iter().enumerate().map(|(_, f)| {
+                                    div().child(t_v(
+                                        "item-effect-synthesis-chance-percent",
+                                        vec![("value", Decimal::from_f32(f.rate).unwrap().to_string())],
+                                    ))
+                                })),
+                        )
                 }
             })
             .when(!preview_builder.common.synthesis_parts.is_empty(), {
@@ -1715,7 +1807,7 @@ impl GameDataView {
                                                                 .right(px(0.0))
                                                                 .size(px(16.0))
                                                                 .absolute()
-                                                                .child(Icon::new(AppIcon::Repeat).text_color(rgb(0xffffff))),
+                                                                .child(Icon::new(IconName::Repeat).text_color(rgb(0xffffff))),
                                                         )
                                                         .on_click(cx.listener({
                                                             move |this, _, _, cx| {
@@ -2644,6 +2736,7 @@ impl Render for GameDataView {
                                                         crate::game_data::items::Item::SkillBook(skill_book) => skill_book.build_preview(),
                                                         crate::game_data::items::Item::SealedFellow(sealed_fellow) => sealed_fellow.build_preview(),
                                                         crate::game_data::items::Item::Boost(boost) => boost.build_preview(),
+                                                        crate::game_data::items::Item::Monster(monster) => monster.build_preview(),
                                                         crate::game_data::items::Item::Relic(relic) => {
                                                             let quality_effect = self.game_data.get_quality_effect(
                                                                 relic.get_type(),
@@ -2801,20 +2894,20 @@ impl Render for GameDataView {
                                 Button::new("check-selection-grade")
                                     .ghost()
                                     .map(move |this| match status {
-                                        Some(true) => this.icon(Icon::new(AppIcon::SquareCheckBig)).on_click(move |_, _, cx| {
+                                        Some(true) => this.icon(Icon::new(IconName::SquareCheckBig)).on_click(move |_, _, cx| {
                                             entity.update(cx, |this, cx| {
                                                 this.clear_selection(cx);
                                                 cx.notify();
                                             });
                                         }),
-                                        Some(false) => this.icon(Icon::new(AppIcon::Square)).on_click(move |_, window, cx| {
+                                        Some(false) => this.icon(Icon::new(IconName::Square)).on_click(move |_, window, cx| {
                                             entity.update(cx, |this, cx| {
                                                 this.set_selected_indices(ItemType::iter().enumerate().map(|(i, _)| IndexPath::new(i)), window, cx);
                                                 cx.emit(ComboboxEvent::Change(this.selected_values()));
                                                 cx.notify();
                                             });
                                         }),
-                                        None => this.icon(Icon::new(AppIcon::SquareMinus)).on_click(move |_, _, cx| {
+                                        None => this.icon(Icon::new(IconName::SquareMinus)).on_click(move |_, _, cx| {
                                             entity.update(cx, |this, cx| {
                                                 this.clear_selection(cx);
                                                 cx.notify();
@@ -2853,20 +2946,20 @@ impl Render for GameDataView {
                                 Button::new("check-selection-grade")
                                     .ghost()
                                     .map(move |this| match status {
-                                        Some(true) => this.icon(Icon::new(AppIcon::SquareCheckBig)).on_click(move |_, _, cx| {
+                                        Some(true) => this.icon(Icon::new(IconName::SquareCheckBig)).on_click(move |_, _, cx| {
                                             entity.update(cx, |this, cx| {
                                                 this.clear_selection(cx);
                                                 cx.notify();
                                             });
                                         }),
-                                        Some(false) => this.icon(Icon::new(AppIcon::Square)).on_click(move |_, window, cx| {
+                                        Some(false) => this.icon(Icon::new(IconName::Square)).on_click(move |_, window, cx| {
                                             entity.update(cx, |this, cx| {
                                                 this.set_selected_indices(Grade::iter().enumerate().map(|(i, _)| IndexPath::new(i)), window, cx);
                                                 cx.emit(ComboboxEvent::Change(this.selected_values()));
                                                 cx.notify();
                                             });
                                         }),
-                                        None => this.icon(Icon::new(AppIcon::SquareMinus)).on_click(move |_, _, cx| {
+                                        None => this.icon(Icon::new(IconName::SquareMinus)).on_click(move |_, _, cx| {
                                             entity.update(cx, |this, cx| {
                                                 this.clear_selection(cx);
                                                 cx.notify();
@@ -2897,7 +2990,7 @@ impl Render for GameDataView {
                             .ghost()
                             .xsmall()
                             .disabled(self.is_reading)
-                            .icon(AppIcon::EllipsisVertical)
+                            .icon(IconName::EllipsisVertical)
                             .dropdown_menu({
                                 let entity = cx.entity();
                                 move |mut menu, window, cx| {
@@ -2948,6 +3041,12 @@ impl Render for GameDataView {
                                         .additional_filter
                                         .as_ref()
                                         .is_some_and(|x| *x == AdditionalFilter::Synthesis);
+                                                                        let is_fellow_combination_checked = entity
+                                        .read(cx)
+                                        .filters
+                                        .additional_filter
+                                        .as_ref()
+                                        .is_some_and(|x| *x == AdditionalFilter::FellowCombination);
                                     menu.item(PopupMenuItem::new(t("filter-evolution")).checked(is_evolution_checked).on_click({
                                         window.listener_for(&entity, move |this, _, _, cx| {
                                             if is_evolution_checked {
@@ -2971,6 +3070,18 @@ impl Render for GameDataView {
                                                 cx.notify();
                                             })
                                         }),
+                                    ) .item(
+                                        PopupMenuItem::new(t("filter-fellow-combination")).checked(is_fellow_combination_checked).on_click({
+                                            window.listener_for(&entity, move |this, _, _, cx| {
+                                                if is_fellow_combination_checked {
+                                                    this.filters.additional_filter = None;
+                                                } else {
+                                                    this.filters.additional_filter = Some(AdditionalFilter::FellowCombination);
+                                                }
+                                                this.apply_filter_and_resort();
+                                                cx.notify();
+                                            })
+                                        }),
                                     )
                                 }
                             }),
@@ -2979,7 +3090,7 @@ impl Render for GameDataView {
                         Button::new("button-export")
                             .ghost()
                             .xsmall()
-                            .icon(AppIcon::Upload)
+                            .icon(IconName::Upload)
                             .loading(self.is_exporting)
                             .cursor_pointer()
                             .disabled(self.is_reading)
@@ -2991,7 +3102,7 @@ impl Render for GameDataView {
                     .right(Separator::vertical())
                     .right(
                         Button::new("lang-switcher")
-                            .icon(AppIcon::Languages)
+                            .icon(IconName::Languages)
                             .ghost()
                             .xsmall()
                             .w(px(70.))
@@ -3012,8 +3123,5 @@ impl Render for GameDataView {
                             })),
                     ),
             )
-            .children(Root::render_sheet_layer(window, cx))
-            .children(Root::render_dialog_layer(window, cx))
-            .children(Root::render_notification_layer(window, cx))
     }
 }

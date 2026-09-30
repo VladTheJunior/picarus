@@ -25,6 +25,7 @@ pub mod sealed_fellow;
 pub mod secondary_weapon;
 pub mod skill_book;
 pub mod style;
+pub mod monster;
 
 use std::{
     cell::RefCell,
@@ -36,23 +37,10 @@ use std::{
 
 use crate::{
     game_data::{
-        AsyncBufReadExtReadString,
-        common::Common,
-        evolution::Evolution,
-        filters::AdditionalFilter,
-        fishing::Fishing,
-        grade::Grade,
-        items::{
-            accessory::Accessory, armor::Armor, bag::Bag, boost::Boost, bracelet::Bracelet, consume::Consume, elluns::Elluns, event::Event,
-            exchange::Exchange, fellow::Fellow, fellow_book::FellowBook, fellow_consume::FellowConsume, fellow_equip::FellowEquip,
-            fellow_style::FellowStyle, gem::Gem, material::Material, package::Package, quest::Quest, random_box::RandomBox, recipe::Recipe,
-            relic::Relic, sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon, skill_book::SkillBook, style::Style, weapon::Weapon,
-        },
-        locale::Locale,
-        synthesis_fellows::SynthesisFellows,
-        synthesis_parts::SynthesisParts,
-    },
-    language::t,
+        AsyncBufReadExtReadString, common::Common, evolution::Evolution, fellow_combination::FellowCombination, filters::AdditionalFilter, fishing::Fishing, grade::Grade, items::{
+            accessory::Accessory, armor::Armor, bag::Bag, boost::Boost, bracelet::Bracelet, consume::Consume, elluns::Elluns, event::Event, exchange::Exchange, fellow::Fellow, fellow_book::FellowBook, fellow_consume::FellowConsume, fellow_equip::FellowEquip, fellow_style::FellowStyle, gem::Gem, material::Material, monster::Monster, package::Package, quest::Quest, random_box::RandomBox, recipe::Recipe, relic::Relic, sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon, skill_book::SkillBook, style::Style, weapon::Weapon,
+        }, locale::Locale, synthesis_fellows::SynthesisFellows, synthesis_parts::SynthesisParts,
+    }, language::t,
 };
 use crate::{
     game_data::{DataFormat, DebugValue, TagType, effects::EffectKind, read_definitions, read_item_count, read_offsets},
@@ -179,6 +167,7 @@ pub enum ItemType {
     Event,
     Elluns,
     Fellow,
+    Monster
 }
 
 impl ItemType {
@@ -210,6 +199,7 @@ impl ItemType {
             ItemType::Event => t("item-type-event"),
             ItemType::Elluns => t("item-type-elluns"),
             ItemType::Fellow => t("item-type-fellow"),
+            ItemType::Monster => t("item-type-monster"),
         }
     }
 }
@@ -257,6 +247,10 @@ pub trait ItemTrait {
 
     fn set_fishing_drop(&mut self, fishing: &Vec<Fishing>) {
         self.common_mut().set_fishing_drop(fishing);
+    }
+
+    fn set_fellow_combinations(&mut self, fellow_combinations: &Vec<FellowCombination>) {
+        self.common_mut().set_fellow_combinations(fellow_combinations);
     }
 
     fn set_evolution(&mut self, evolution: &Vec<Evolution>) {
@@ -309,6 +303,7 @@ pub enum Item {
     Event(Event),
     Elluns(Elluns),
     Fellow(Fellow),
+    Monster(Monster),
 }
 
 impl Item {
@@ -340,6 +335,7 @@ impl Item {
             Self::Event(_) => ItemType::Event,
             Self::Elluns(_) => ItemType::Elluns,
             Self::Fellow(_) => ItemType::Fellow,
+            Self::Monster(_) => ItemType::Monster,
         }
     }
 
@@ -353,6 +349,10 @@ impl Item {
 
     pub fn filter_synthesis(&self) -> bool {
         return !self.common().synthesis_fellows.is_empty() || !self.common().synthesis_parts.is_empty();
+    }
+
+    pub fn filter_fellow_combination(&self) -> bool {
+        return !self.common().fellow_combinations.is_empty();
     }
 
     pub fn filter_effect(&self, filter: &Option<SharedString>) -> bool {
@@ -397,6 +397,11 @@ impl Item {
             }
             Some(AdditionalFilter::Synthesis) => {
                 if !self.filter_synthesis() {
+                    return false;
+                }
+            }
+            Some(AdditionalFilter::FellowCombination) => {
+                if !self.filter_fellow_combination() {
                     return false;
                 }
             }

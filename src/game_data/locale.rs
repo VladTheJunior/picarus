@@ -59,7 +59,7 @@ impl ReadableItem for Locale {
         global_offset: u64,
     ) -> Result<Self> {
         let tag_count = definitions.len();
-        for tag_idx in 0..tag_count {
+        for (tag_idx, (tag, _)) in definitions.iter().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
@@ -71,15 +71,15 @@ impl ReadableItem for Locale {
                 }
             };
 
-            match tag_idx {
-                2 => {
+            match tag.as_str() {
+                "key" => {
                     self.key = {
                         let key = reader.read_string(Self::FORMAT).await?.to_uppercase();
                         SharedString::new(key.strip_suffix("_NAME").unwrap_or(&key))
                     }
                 }
-                6 => self.eng = reader.read_string(Self::FORMAT).await?,
-                7 => self.rus = reader.read_string(Self::FORMAT).await?,
+                "eng" => self.eng = reader.read_string(Self::FORMAT).await?,
+                "rus" => self.rus = reader.read_string(Self::FORMAT).await?,
                 _ => {}
             }
         }
