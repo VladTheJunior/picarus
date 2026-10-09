@@ -1,29 +1,22 @@
 use std::{
-    collections::{BTreeSet, HashMap},
-    io::SeekFrom,
+    collections::{BTreeSet, HashMap}, io::{BufRead, Seek, SeekFrom},
 };
 
 use crate::{
     game_data::{
-        AsyncBufReadExtReadString, DataFormat, TagType,
-        common::Common,
-        effects::EffectKind,
-        items::{ItemTrait, ReadableItem},
-        locale::Locale,
-        skill::Skill,
-    },
-    game_data_view::PreviewBuilder,
+         DataFormat, ReadExt, TagType, common::Common, effects::EffectKind, items::{ItemTrait, ReadableItem}, locale::Locale, reverse_tempering_rate::ReverseTemperingRate, skill::Skill,
+    }, game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
 
-use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui_kit::SharedString;
 
 #[derive(Default, Clone)]
 pub struct Consume {
     pub skills: Vec<Skill>,
+    pub reverse_tempering_rates: Option<ReverseTemperingRate>,
     pub debug: Vec<u8>,
     pub description_locale: Option<Locale>,
     pub common: Common,
@@ -47,7 +40,7 @@ impl ReadableItem for Consume {
         &mut self.debug
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -55,25 +48,25 @@ impl ReadableItem for Consume {
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
     ) -> Result<Self> {
-        self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
+        self.parse_debug(reader, offsets, item_idx, definitions, global_offset)?;
         let tag_count = definitions.len();
         for (tag_idx, (tag, tag_type)) in definitions.iter().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
 
-            self.common.parse(tag, tag_type, reader, Self::FORMAT).await?;
+            self.common.parse(tag, tag_type, reader, Self::FORMAT)?;
 
             match tag.as_str() {
                 "스킬효과" => {
-                    let value = reader.read_string(Self::FORMAT).await?;
+                    let value = reader.read_string(Self::FORMAT)?;
                     if value != "*" {
                         self.skill_effect = Some(value);
                     }
@@ -131,7 +124,8 @@ impl ItemTrait for Consume {
     }
 
     fn get_unique_effects(&self) -> Vec<EffectKind> {
-        self.skills
+        let mut effects = self
+            .skills
             .iter()
             .flat_map(|f| f.skill_data.skill_level.iter())
             .filter_map(|f| f.buff1.effect_pattern_list.as_ref())
@@ -141,12 +135,15 @@ impl ItemTrait for Consume {
                 id: self.common.id.clone(),
                 effect: p.effect.clone(),
             })
-            .collect()
+            .collect::<Vec<_>>();
+        effects.extend(self.common.get_unique_effects());
+        effects
     }
 
     fn build_preview(&self) -> PreviewBuilder<'_> {
         PreviewBuilder::new(self.common())
             .description_locale(self.description_locale.as_ref().and_then(|f| f.locale()))
             .skills(self.skills.clone())
+            .reverse_tempering_rates(self.reverse_tempering_rates.clone())
     }
 }

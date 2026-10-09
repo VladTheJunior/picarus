@@ -1,13 +1,13 @@
-use std::{cell::RefCell, collections::BTreeMap, io::SeekFrom, rc::Rc};
+use std::{ collections::BTreeMap, io::{BufRead, Seek, SeekFrom}, sync::Arc};
 
 use crate::game_data::{
-    AsyncBufReadExtReadString, DataFormat, TagType,
-    items::{Item, ItemNode, ReadableItem},
+     DataFormat, ReadExt, TagType, items::{Item, ItemNode, ReadableItem},
 };
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+use parking_lot::Mutex;
+
 
 #[derive(Default, Clone)]
 pub struct SynthesisParts {
@@ -36,7 +36,7 @@ impl ReadableItem for SynthesisParts {
         unimplemented!()
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -51,20 +51,20 @@ impl ReadableItem for SynthesisParts {
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
 
             match tag.as_str() {
-                "itemid" => self.itemid.id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
-                "itemcnt" => self.itemcnt = reader.read_f32_le().await? as u16,
-                "resultid" => self.resultid = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
-                "cost" => self.cost = reader.read_f32_le().await?,
-                "successrate" => self.successrate = reader.read_f32_le().await?,
-                "delblock_max" => self.delblock_max = reader.read_f32_le().await?,
+                "itemid" => self.itemid.id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
+                "itemcnt" => self.itemcnt = reader.read_f32_le()? as u16,
+                "resultid" => self.resultid = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
+                "cost" => self.cost = reader.read_f32_le()?,
+                "successrate" => self.successrate = reader.read_f32_le()?,
+                "delblock_max" => self.delblock_max = reader.read_f32_le()?,
 
                 _ => {}
             }
@@ -75,8 +75,8 @@ impl ReadableItem for SynthesisParts {
 }
 
 impl SynthesisParts {
-    pub fn set_parts(&mut self, items: &IndexMap<SharedString, Rc<RefCell<Item>>>, unknown_ids: &mut BTreeMap<SharedString, u32>) {
-        self.itemid.item = items.get(&self.itemid.id).map(|f| Rc::downgrade(f));
+    pub fn set_parts(&mut self, items: &IndexMap<SharedString, Arc<Mutex<Item>>>, unknown_ids: &mut BTreeMap<SharedString, u32>) {
+        self.itemid.item = items.get(&self.itemid.id).map(|f| Arc::downgrade(f));
         if self.itemid.item.is_none() {
             unknown_ids.entry(self.itemid.id.clone()).and_modify(|count| *count += 1).or_insert(1);
         }

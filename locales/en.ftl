@@ -356,3 +356,7 @@ item-effect-magic-resistance-2 = Magic Resistance { $value }
 item-effect-magic-resistance-2-percent = Magic Resistance { $value }%
 item-effect-invincibility = Invincibility
 item-effect-physical-poison-addiction = Physical Poison Addiction
+
+success-chance = Success Chance
+
+usage-period = Usage Period { $value }

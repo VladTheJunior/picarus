@@ -1,10 +1,9 @@
-use std::io::SeekFrom;
+use std::io::{BufRead, Seek, SeekFrom};
 
-use crate::game_data::{DataFormat, TagType, items::ReadableItem};
+use crate::game_data::{DataFormat, ReadExt, TagType, items::ReadableItem};
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 #[derive(Default, Clone)]
 pub struct Tempering {
@@ -32,7 +31,7 @@ impl ReadableItem for Tempering {
         unimplemented!()
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -46,26 +45,26 @@ impl ReadableItem for Tempering {
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
             if tag_count == 121 {
                 match tag_idx {
-                    0 => self.level = reader.read_f32_le().await? as u16,
-                    1..31 => self.attack_ratios[tag_idx - 1] = reader.read_f32_le().await?,
-                    31..61 => self.defenses[tag_idx - 31] = reader.read_f32_le().await?,
-                    61..91 => self.defense_ratios[tag_idx - 61] = reader.read_f32_le().await?,
-                    91..121 => self.spell_ratios[tag_idx - 91] = reader.read_f32_le().await?,
+                    0 => self.level = reader.read_f32_le()? as u16,
+                    1..31 => self.attack_ratios[tag_idx - 1] = reader.read_f32_le()?,
+                    31..61 => self.defenses[tag_idx - 31] = reader.read_f32_le()?,
+                    61..91 => self.defense_ratios[tag_idx - 61] = reader.read_f32_le()?,
+                    91..121 => self.spell_ratios[tag_idx - 91] = reader.read_f32_le()?,
                     _ => {}
                 }
             } else if tag_count == 106 || tag_count == 61 || tag_count == 101 || tag_count == 111 {
                 match tag_idx {
-                    0 => self.level = reader.read_f32_le().await? as u16,
-                    1..31 => self.defenses[tag_idx - 1] = reader.read_f32_le().await?,
-                    31..61 => self.defense_ratios[tag_idx - 31] = reader.read_f32_le().await?,
+                    0 => self.level = reader.read_f32_le()? as u16,
+                    1..31 => self.defenses[tag_idx - 1] = reader.read_f32_le()?,
+                    31..61 => self.defense_ratios[tag_idx - 31] = reader.read_f32_le()?,
                     _ => {}
                 }
             }

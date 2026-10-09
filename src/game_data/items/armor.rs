@@ -1,19 +1,15 @@
-use std::{collections::HashMap, io::SeekFrom};
+use std::{collections::HashMap, io::{BufRead, Seek, SeekFrom}};
 
 use crate::{
     game_data::{
-        AsyncBufReadExtReadString, DataFormat, TagType,
-        common::Common,
-        items::{ItemTrait, ReadableItem},
-        locale::Locale,
-    },
-    game_data_view::PreviewBuilder,
+        DataFormat, ReadExt, TagType, common::Common, items::{ItemTrait, ReadableItem}, locale::Locale,
+    }, game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+
 
 #[derive(Default, Clone)]
 pub struct Armor {
@@ -71,7 +67,7 @@ impl ReadableItem for Armor {
         &mut self.debug
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -79,7 +75,7 @@ impl ReadableItem for Armor {
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
     ) -> Result<Self> {
-        self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
+        self.parse_debug(reader, offsets, item_idx, definitions, global_offset)?;
         let tag_count = definitions.len();
 
         for (tag_idx, (tag, tag_type)) in definitions.iter().enumerate() {
@@ -87,20 +83,20 @@ impl ReadableItem for Armor {
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
-            self.common.parse(tag, tag_type, reader, Self::FORMAT).await?;
+            self.common.parse(tag, tag_type, reader, Self::FORMAT)?;
             match tag_idx {
-                10 => self.equip_slot = reader.read_string(Self::FORMAT).await?,
-                11 => self.armor_type = SharedString::new(reader.read_string(Self::FORMAT).await?.to_lowercase()),
+                10 => self.equip_slot = reader.read_string(Self::FORMAT)?,
+                11 => self.armor_type = SharedString::new(reader.read_string(Self::FORMAT)?.to_lowercase()),
 
                 49 => {
                     self.skill_effect = {
-                        let effect_skill = reader.read_string(Self::FORMAT).await?.to_uppercase().replace(".", "_DESCRIPTION_");
+                        let effect_skill = reader.read_string(Self::FORMAT)?.to_uppercase().replace(".", "_DESCRIPTION_");
                         if effect_skill != "*" {
                             Some(SharedString::new(effect_skill))
                         } else {
@@ -109,17 +105,17 @@ impl ReadableItem for Armor {
                     }
                 }
 
-                14 => self.physical_defense = reader.read_f32_le().await?,
-                15 => self.magical_defense = reader.read_f32_le().await?,
+                14 => self.physical_defense = reader.read_f32_le()?,
+                15 => self.magical_defense = reader.read_f32_le()?,
 
-                24 => self.random_effects_count_min = reader.read_f32_le().await? as u8,
-                25 => self.random_effects_count_max = reader.read_f32_le().await? as u8,
-                27 => self.sealed_fellow_slots_min = reader.read_f32_le().await? as u8,
-                28 => self.sealed_fellow_slots_max = reader.read_f32_le().await? as u8,
-                36 => self.enhancement_limit = reader.read_f32_le().await? as u8,
+                24 => self.random_effects_count_min = reader.read_f32_le()? as u8,
+                25 => self.random_effects_count_max = reader.read_f32_le()? as u8,
+                27 => self.sealed_fellow_slots_min = reader.read_f32_le()? as u8,
+                28 => self.sealed_fellow_slots_max = reader.read_f32_le()? as u8,
+                36 => self.enhancement_limit = reader.read_f32_le()? as u8,
 
-                58 => self.overrise_max = reader.read_f32_le().await? as u8,
-                64 => self.reverse_enhancement_limit = reader.read_f32_le().await? as u8,
+                58 => self.overrise_max = reader.read_f32_le()? as u8,
+                64 => self.reverse_enhancement_limit = reader.read_f32_le()? as u8,
 
                 _ => {}
             }

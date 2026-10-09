@@ -1,13 +1,13 @@
-use std::{cell::RefCell, collections::BTreeMap, io::SeekFrom, rc::Rc};
+use std::{ collections::BTreeMap, io::{BufRead, Seek, SeekFrom}, sync::Arc};
 
 use crate::game_data::{
-    AsyncBufReadExtReadString, DataFormat, TagType,
-    items::{Item, ItemNode, ReadableItem},
+    DataFormat, ReadExt, TagType, items::{Item, ItemNode, ReadableItem},
 };
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+use parking_lot::Mutex;
+
 
 #[derive(Default, Clone)]
 pub struct Evolution {
@@ -41,7 +41,7 @@ impl ReadableItem for Evolution {
         unimplemented!()
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -56,39 +56,39 @@ impl ReadableItem for Evolution {
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
 
             match tag.as_str() {
-                "evolvegroup" => self.evolvegroup = reader.read_f32_le().await?,
-                "cost_grade" => self.cost_grade = reader.read_f32_le().await?,
-                "material_fellow" => self.material_fellow.id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
-                "material_pet" => self.material_pet = reader.read_string(Self::FORMAT).await?,
-                "resultfellow" => self.resultfellow = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
-                "fellowicon" => self.fellowicon = reader.read_string(Self::FORMAT).await?,
-                "evolvetabcategoryid" => self.evolvetabcategoryid = reader.read_string(Self::FORMAT).await?,
-                "successrate" => self.successrate = reader.read_f32_le().await? / 100.0,
+                "evolvegroup" => self.evolvegroup = reader.read_f32_le()?,
+                "cost_grade" => self.cost_grade = reader.read_f32_le()?,
+                "material_fellow" => self.material_fellow.id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
+                "material_pet" => self.material_pet = reader.read_string(Self::FORMAT)?,
+                "resultfellow" => self.resultfellow = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
+                "fellowicon" => self.fellowicon = reader.read_string(Self::FORMAT)?,
+                "evolvetabcategoryid" => self.evolvetabcategoryid = reader.read_string(Self::FORMAT)?,
+                "successrate" => self.successrate = reader.read_f32_le()? / 100.0,
 
-                "extinctionrate00" => self.extinctionrate[0] = reader.read_f32_le().await?,
-                "extinctionrate01" => self.extinctionrate[1] = reader.read_f32_le().await?,
-                "extinctionrate02" => self.extinctionrate[2] = reader.read_f32_le().await?,
-                "extinctionrate03" => self.extinctionrate[3] = reader.read_f32_le().await?,
-                "extinctionrate04" => self.extinctionrate[4] = reader.read_f32_le().await?,
+                "extinctionrate00" => self.extinctionrate[0] = reader.read_f32_le()?,
+                "extinctionrate01" => self.extinctionrate[1] = reader.read_f32_le()?,
+                "extinctionrate02" => self.extinctionrate[2] = reader.read_f32_le()?,
+                "extinctionrate03" => self.extinctionrate[3] = reader.read_f32_le()?,
+                "extinctionrate04" => self.extinctionrate[4] = reader.read_f32_le()?,
 
-                "reinforceplusrate00" => self.reinforceplusrate[0] = reader.read_f32_le().await?,
-                "reinforceplusrate01" => self.reinforceplusrate[1] = reader.read_f32_le().await?,
-                "reinforceplusrate02" => self.reinforceplusrate[2] = reader.read_f32_le().await?,
-                "reinforceplusrate03" => self.reinforceplusrate[3] = reader.read_f32_le().await?,
-                "reinforceplusrate04" => self.reinforceplusrate[4] = reader.read_f32_le().await?,
-                "reinforceplusrate05" => self.reinforceplusrate[5] = reader.read_f32_le().await?,
-                "reinforceplusrate06" => self.reinforceplusrate[6] = reader.read_f32_le().await?,
-                "reinforceplusrate07" => self.reinforceplusrate[7] = reader.read_f32_le().await?,
+                "reinforceplusrate00" => self.reinforceplusrate[0] = reader.read_f32_le()?,
+                "reinforceplusrate01" => self.reinforceplusrate[1] = reader.read_f32_le()?,
+                "reinforceplusrate02" => self.reinforceplusrate[2] = reader.read_f32_le()?,
+                "reinforceplusrate03" => self.reinforceplusrate[3] = reader.read_f32_le()?,
+                "reinforceplusrate04" => self.reinforceplusrate[4] = reader.read_f32_le()?,
+                "reinforceplusrate05" => self.reinforceplusrate[5] = reader.read_f32_le()?,
+                "reinforceplusrate06" => self.reinforceplusrate[6] = reader.read_f32_le()?,
+                "reinforceplusrate07" => self.reinforceplusrate[7] = reader.read_f32_le()?,
 
-                "material_count" => self.material_count = reader.read_f32_le().await? as u16,
+                "material_count" => self.material_count = reader.read_f32_le()? as u16,
 
                 _ => {}
             }
@@ -99,8 +99,8 @@ impl ReadableItem for Evolution {
 }
 
 impl Evolution {
-    pub fn set_fellows(&mut self, items: &IndexMap<SharedString, Rc<RefCell<Item>>>, unknown_ids: &mut BTreeMap<SharedString, u32>) {
-        self.material_fellow.item = items.get(&self.material_fellow.id).map(|f| Rc::downgrade(f));
+    pub fn set_fellows(&mut self, items: &IndexMap<SharedString, Arc<Mutex<Item>>>, unknown_ids: &mut BTreeMap<SharedString, u32>) {
+        self.material_fellow.item = items.get(&self.material_fellow.id).map(|f| Arc::downgrade(f));
         if self.material_fellow.item.is_none() {
             unknown_ids
                 .entry(self.material_fellow.id.clone())

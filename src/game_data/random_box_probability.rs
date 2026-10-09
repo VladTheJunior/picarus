@@ -1,9 +1,8 @@
-use std::io::SeekFrom;
+use std::io::{BufRead, Seek, SeekFrom};
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, items::ReadableItem};
+use crate::game_data::{DataFormat, ReadExt, TagType, items::ReadableItem};
 use anyhow::Result;
 use indexmap::IndexMap;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui_kit::SharedString;
 
@@ -32,7 +31,7 @@ impl ReadableItem for RandomBoxProbability {
         unimplemented!()
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -46,24 +45,24 @@ impl ReadableItem for RandomBoxProbability {
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
 
             match tag_idx {
-                0 => self.randomboxgroupid = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
+                0 => self.randomboxgroupid = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
 
                 1..101 => {
-                    let v = reader.read_f32_le().await?;
+                    let v = reader.read_f32_le()?;
                     if v != 0.0 {
                         self.attributes.insert(tag_idx - 1, v);
                     }
                 }
                 101..201 => {
-                    let v = reader.read_f32_le().await?;
+                    let v = reader.read_f32_le()?;
                     if v != 0.0 {
                         self.probabilities.insert(tag_idx - 101, v);
                     }

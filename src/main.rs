@@ -10,7 +10,7 @@ pub mod rich_text;
 mod settings;
 
 use gpui_kit::assets::AllAssets;
-use gpui_kit::component::{Root, Theme, ThemeConfig};
+use gpui_kit::component::{Theme, ThemeConfig};
 use gpui_kit::{AppContext, Bounds, Global, ReadGlobal, Size, TitlebarOptions, WindowBounds, WindowOptions, px};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::field::MakeExt;
@@ -77,7 +77,6 @@ fn main() {
         Theme::sync_base(cx);
         LanguageController::switch(settings.language);
         cx.set_global(settings);
-
 
         gpui_kit::open_window(
             WindowOptions {

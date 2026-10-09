@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::SeekFrom};
+use std::{collections::HashMap, io::{BufRead, Seek, SeekFrom}};
 
 use crate::{
     game_data::{
@@ -12,7 +12,6 @@ use crate::{
 use anyhow::Result;
 use indexmap::IndexMap;
 
-use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui_kit::SharedString;
 
@@ -40,7 +39,7 @@ impl ReadableItem for Material {
         &mut self.debug
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -48,21 +47,21 @@ impl ReadableItem for Material {
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
     ) -> Result<Self> {
-        self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
+        self.parse_debug(reader, offsets, item_idx, definitions, global_offset)?;
         let tag_count = definitions.len();
         for (tag_idx, (tag, tag_type)) in definitions.iter().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
 
-            self.common.parse(tag, tag_type, reader, Self::FORMAT).await?;
+            self.common.parse(tag, tag_type, reader, Self::FORMAT)?;
         }
 
         Ok(self)

@@ -1,20 +1,16 @@
 use std::{
-    cell::RefCell,
-    collections::{BTreeMap, BTreeSet, HashMap},
-    io::SeekFrom,
-    rc::Rc,
+
+    collections::{BTreeMap, BTreeSet, HashMap}, io::{BufRead, Seek, SeekFrom}, sync::Arc,
 };
 
 use crate::game_data::{
-    AsyncBufReadExtReadString, DataFormat, TagType,
-    items::{Item, ItemNode, ReadableItem},
-    locale::Locale,
-    skill::Skill,
+    DataFormat, ReadExt, TagType, items::{Item, ItemNode, ReadableItem}, locale::Locale, skill::Skill,
 };
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+use parking_lot::Mutex;
+
 
 #[derive(Default, Clone)]
 pub struct FellowCombination {
@@ -55,7 +51,7 @@ impl ReadableItem for FellowCombination {
         unimplemented!()
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -73,97 +69,97 @@ impl ReadableItem for FellowCombination {
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
             match tag.as_str() {
-                "febuffgroupid" => self.febuffgroupid = reader.read_string(Self::FORMAT).await?,
-                "타이틀" => self.title = reader.read_string(Self::FORMAT).await?,
+                "febuffgroupid" => self.febuffgroupid = reader.read_string(Self::FORMAT)?,
+                "타이틀" => self.title = reader.read_string(Self::FORMAT)?,
 
                 "reqfellow01" => {
-                    let id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase());
+                    let id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase());
                     if id != "*" {
                         reqfellow[0] = Some(id)
                     }
                 }
                 "reqpet01" => {
-                    let id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase());
+                    let id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase());
                     if id != "*" {
                         reqpet[0] = Some(id)
                     }
                 }
-                "펠로우1" => fellow[0] = reader.read_string(Self::FORMAT).await?,
-                "hidden01" => hidden[0] = reader.read_f32_le().await?,
+                "펠로우1" => fellow[0] = reader.read_string(Self::FORMAT)?,
+                "hidden01" => hidden[0] = reader.read_f32_le()?,
 
                 "reqfellow02" => {
-                    let id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase());
+                    let id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase());
                     if id != "*" {
                         reqfellow[1] = Some(id)
                     }
                 }
                 "reqpet02" => {
-                    let id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase());
+                    let id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase());
                     if id != "*" {
                         reqpet[1] = Some(id)
                     }
                 }
-                "펠로우2" => fellow[1] = reader.read_string(Self::FORMAT).await?,
-                "hidden02" => hidden[1] = reader.read_f32_le().await?,
+                "펠로우2" => fellow[1] = reader.read_string(Self::FORMAT)?,
+                "hidden02" => hidden[1] = reader.read_f32_le()?,
 
                 "reqfellow03" => {
-                    let id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase());
+                    let id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase());
                     if id != "*" {
                         reqfellow[2] = Some(id)
                     }
                 }
                 "reqpet03" => {
-                    let id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase());
+                    let id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase());
                     if id != "*" {
                         reqpet[2] = Some(id)
                     }
                 }
-                "펠로우3" => fellow[2] = reader.read_string(Self::FORMAT).await?,
-                "hidden03" => hidden[2] = reader.read_f32_le().await?,
+                "펠로우3" => fellow[2] = reader.read_string(Self::FORMAT)?,
+                "hidden03" => hidden[2] = reader.read_f32_le()?,
 
                 "reqfellow04" => {
-                    let id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase());
+                    let id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase());
                     if id != "*" {
                         reqfellow[3] = Some(id)
                     }
                 }
                 "reqpet04" => {
-                    let id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase());
+                    let id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase());
                     if id != "*" {
                         reqpet[3] = Some(id)
                     }
                 }
-                "펠로우4" => fellow[3] = reader.read_string(Self::FORMAT).await?,
-                "hidden04" => hidden[3] = reader.read_f32_le().await?,
+                "펠로우4" => fellow[3] = reader.read_string(Self::FORMAT)?,
+                "hidden04" => hidden[3] = reader.read_f32_le()?,
 
                 "reqfellow05" => {
-                    let id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase());
+                    let id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase());
                     if id != "*" {
                         reqfellow[4] = Some(id)
                     }
                 }
                 "reqpet05" => {
-                    let id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase());
+                    let id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase());
                     if id != "*" {
                         reqpet[4] = Some(id)
                     }
                 }
-                "펠로우5" => fellow[4] = reader.read_string(Self::FORMAT).await?,
-                "hidden05" => hidden[4] = reader.read_f32_le().await?,
+                "펠로우5" => fellow[4] = reader.read_string(Self::FORMAT)?,
+                "hidden05" => hidden[4] = reader.read_f32_le()?,
 
-                "rewardtime" => self.rewardtime = reader.read_f32_le().await?,
-                "rewardbuff" => self.rewardbuff = reader.read_string(Self::FORMAT).await?,
-                "cooltime" => self.cooltime = reader.read_f32_le().await?,
-                "lock" => self.lock = reader.read_f32_le().await?,
-                "reqcount" => self.reqcount = reader.read_f32_le().await?,
-                "combincond" => self.combincond = reader.read_string(Self::FORMAT).await?,
+                "rewardtime" => self.rewardtime = reader.read_f32_le()?,
+                "rewardbuff" => self.rewardbuff = reader.read_string(Self::FORMAT)?,
+                "cooltime" => self.cooltime = reader.read_f32_le()?,
+                "lock" => self.lock = reader.read_f32_le()?,
+                "reqcount" => self.reqcount = reader.read_f32_le()?,
+                "combincond" => self.combincond = reader.read_string(Self::FORMAT)?,
 
                 _ => {}
             }
@@ -186,17 +182,17 @@ impl ReadableItem for FellowCombination {
 }
 
 impl FellowCombination {
-    pub fn set_fellows(&mut self, items: &IndexMap<SharedString, Rc<RefCell<Item>>>, unknown_ids: &mut BTreeMap<SharedString, u32>) {
+    pub fn set_fellows(&mut self, items: &IndexMap<SharedString, Arc<Mutex<Item>>>, unknown_ids: &mut BTreeMap<SharedString, u32>) {
         for (_, entry) in self.entries.iter_mut() {
             if let Some(node) = entry.reqfellow.as_mut() {
-                node.item = items.get(&node.id).map(|f| Rc::downgrade(f));
+                node.item = items.get(&node.id).map(|f| Arc::downgrade(f));
                 if node.item.is_none() {
                     unknown_ids.entry(node.id.clone()).and_modify(|count| *count += 1).or_insert(1);
                 }
             }
 
             if let Some(node) = entry.reqpet.as_mut() {
-                node.item = items.get(&node.id).map(|f| Rc::downgrade(f));
+                node.item = items.get(&node.id).map(|f| Arc::downgrade(f));
                 if node.item.is_none() {
                     unknown_ids.entry(node.id.clone()).and_modify(|count| *count += 1).or_insert(1);
                 }
@@ -214,9 +210,9 @@ impl FellowCombination {
             let clear_name = SharedString::new(name.split_once(".").map(|(a, _)| a).unwrap_or_else(|| name).trim().to_uppercase());
             if let Some(skill) = skills.get(&clear_name) {
                 let mut skill = skill.clone();
-                    if let Some(level) = name.split_once(".").and_then(|(_, a)| a.trim().parse::<u8>().ok()) {
-                        skill.max_item_level = level;
-                    }
+                if let Some(level) = name.split_once(".").and_then(|(_, a)| a.trim().parse::<u8>().ok()) {
+                    skill.max_item_level = level;
+                }
                 skill.description_locale = skill_locales
                     .get(&SharedString::new(name.to_uppercase().replace(".", "_DESCRIPTION_")))
                     .cloned();

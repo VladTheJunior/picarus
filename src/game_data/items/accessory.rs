@@ -1,21 +1,16 @@
-use std::{collections::HashMap, io::SeekFrom};
+use std::{collections::HashMap, io::{BufRead, Seek, SeekFrom}};
 
 use crate::{
     game_data::{
-        AsyncBufReadExtReadString, DataFormat, TagType,
-        common::Common,
-        items::{ItemTrait, ReadableItem},
-        locale::Locale,
-    },
-    game_data_view::PreviewBuilder,
+         DataFormat, ReadExt, TagType, common::Common, items::{ItemTrait, ReadableItem}, locale::Locale,
+    }, game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+
 
 use gpui_kit::SharedString;
-
 
 #[derive(Default, Clone)]
 pub struct Accessory {
@@ -57,7 +52,7 @@ impl ReadableItem for Accessory {
         &mut self.debug
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -65,7 +60,7 @@ impl ReadableItem for Accessory {
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
     ) -> Result<Self> {
-        self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
+        self.parse_debug(reader, offsets, item_idx, definitions, global_offset)?;
         let tag_count = definitions.len();
         // Read all fields sequentially
         for (tag_idx, (tag, tag_type)) in definitions.iter().enumerate() {
@@ -73,19 +68,19 @@ impl ReadableItem for Accessory {
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
-            self.common.parse(tag, tag_type, reader, Self::FORMAT).await?;
+            self.common.parse(tag, tag_type, reader, Self::FORMAT)?;
             match tag_idx {
-                10 => self.accessory_type = SharedString::new(reader.read_string(Self::FORMAT).await?.to_lowercase()),
+                10 => self.accessory_type = SharedString::new(reader.read_string(Self::FORMAT)?.to_lowercase()),
 
                 41 => {
                     self.skill_effect = {
-                        let effect_skill = reader.read_string(Self::FORMAT).await?.to_uppercase().replace(".", "_DESCRIPTION_");
+                        let effect_skill = reader.read_string(Self::FORMAT)?.to_uppercase().replace(".", "_DESCRIPTION_");
                         if effect_skill != "*" {
                             Some(SharedString::new(effect_skill))
                         } else {
@@ -94,18 +89,18 @@ impl ReadableItem for Accessory {
                     }
                 }
 
-                14 => self.physical_min_attack = reader.read_f32_le().await?,
-                15 => self.physical_max_attack = reader.read_f32_le().await?,
-                16 => self.magic_defense = reader.read_f32_le().await?,
+                14 => self.physical_min_attack = reader.read_f32_le()?,
+                15 => self.physical_max_attack = reader.read_f32_le()?,
+                16 => self.magic_defense = reader.read_f32_le()?,
 
-                22 => self.random_effects_count_min = reader.read_f32_le().await? as u8,
-                23 => self.random_effects_count_max = reader.read_f32_le().await? as u8,
+                22 => self.random_effects_count_min = reader.read_f32_le()? as u8,
+                23 => self.random_effects_count_max = reader.read_f32_le()? as u8,
 
-                28 => self.enhancement_limit = reader.read_f32_le().await? as u8,
+                28 => self.enhancement_limit = reader.read_f32_le()? as u8,
 
-                51 => self.overrise_max = reader.read_f32_le().await? as u8,
+                51 => self.overrise_max = reader.read_f32_le()? as u8,
 
-                57 => self.reverse_enhancement_limit = reader.read_f32_le().await? as u8,
+                57 => self.reverse_enhancement_limit = reader.read_f32_le()? as u8,
 
                 _ => {}
             }

@@ -1,14 +1,11 @@
-use std::io::SeekFrom;
+use std::io::{BufRead, Seek, SeekFrom};
 
 use crate::{
-    game_data::TagType,
-    game_data::{AsyncBufReadExtReadString, DataFormat, items::ReadableItem},
-    language::LanguageController,
+    game_data::{DataFormat, ReadExt, TagType, items::ReadableItem}, language::LanguageController,
 };
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
 
 #[derive(Debug, Default, Clone)]
 pub struct Locale {
@@ -50,7 +47,7 @@ impl ReadableItem for Locale {
         unimplemented!()
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -64,22 +61,22 @@ impl ReadableItem for Locale {
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
 
             match tag.as_str() {
                 "key" => {
                     self.key = {
-                        let key = reader.read_string(Self::FORMAT).await?.to_uppercase();
+                        let key = reader.read_string(Self::FORMAT)?.to_uppercase();
                         SharedString::new(key.strip_suffix("_NAME").unwrap_or(&key))
                     }
                 }
-                "eng" => self.eng = reader.read_string(Self::FORMAT).await?,
-                "rus" => self.rus = reader.read_string(Self::FORMAT).await?,
+                "eng" => self.eng = reader.read_string(Self::FORMAT)?,
+                "rus" => self.rus = reader.read_string(Self::FORMAT)?,
                 _ => {}
             }
         }

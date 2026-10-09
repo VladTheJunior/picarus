@@ -1,13 +1,9 @@
-use std::{collections::HashMap, io::SeekFrom};
+use std::{collections::HashMap, io::{BufRead, Seek, SeekFrom}};
 
-use crate::{
-    game_data::{AsyncBufReadExtReadString, items::ReadableItem},
-    game_data::{DataFormat, TagType, effects::ItemEffect, locale::Locale},
-};
+use crate::game_data::{DataFormat, ReadExt, TagType, effects::ItemEffect, items::ReadableItem, locale::Locale};
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 #[derive(Default, Clone)]
 pub struct ItemSetEffects {
@@ -67,7 +63,7 @@ impl ReadableItem for ItemSet {
         unimplemented!()
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -83,33 +79,33 @@ impl ReadableItem for ItemSet {
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
             if tag_count == 58 {
                 match tag_idx {
-                    0 => self.setid = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
+                    0 => self.setid = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
 
-                    1 => self.setname = reader.read_string(Self::FORMAT).await?,
+                    1 => self.setname = reader.read_string(Self::FORMAT)?,
                     2..10 => {
-                        let id = reader.read_string(Self::FORMAT).await?.to_uppercase();
+                        let id = reader.read_string(Self::FORMAT)?.to_uppercase();
                         if id != "*" {
                             self.items.push(SharedString::new(id));
                         }
                     }
 
-                    10 | 16 | 22 | 28 | 34 | 40 | 46 | 52 => set_effects.seteffect_count = reader.read_f32_le().await? as u8,
+                    10 | 16 | 22 | 28 | 34 | 40 | 46 | 52 => set_effects.seteffect_count = reader.read_f32_le()? as u8,
                     11..15 | 17..21 | 23..27 | 29..33 | 35..39 | 41..45 | 47..51 | 53..57 => {
-                        let effect = reader.read_string(Self::FORMAT).await?;
+                        let effect = reader.read_string(Self::FORMAT)?;
                         if effect != "*" && effect != "0" {
                             set_effects.seteffect_effects.push(ItemEffect::new(effect));
                         }
                     }
                     15 | 21 | 27 | 33 | 39 | 45 | 51 | 57 => {
-                        let effect_skill = reader.read_string(Self::FORMAT).await?.to_uppercase();
+                        let effect_skill = reader.read_string(Self::FORMAT)?.to_uppercase();
                         if effect_skill != "*" {
                             set_effects.seteffect_skill = Some(SharedString::new(format!("{}_DESCRIPTION_1", effect_skill)));
                         }
@@ -124,25 +120,25 @@ impl ReadableItem for ItemSet {
                 }
             } else {
                 match tag_idx {
-                    0 => self.setid = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
+                    0 => self.setid = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
 
-                    1 => self.setname = reader.read_string(Self::FORMAT).await?,
+                    1 => self.setname = reader.read_string(Self::FORMAT)?,
                     2..16 => {
-                        let id = reader.read_string(Self::FORMAT).await?.to_uppercase();
+                        let id = reader.read_string(Self::FORMAT)?.to_uppercase();
                         if id != "*" {
                             self.items.push(SharedString::new(id));
                         }
                     }
 
-                    16 | 22 | 28 | 34 | 40 | 46 | 52 | 58 => set_effects.seteffect_count = reader.read_f32_le().await? as u8,
+                    16 | 22 | 28 | 34 | 40 | 46 | 52 | 58 => set_effects.seteffect_count = reader.read_f32_le()? as u8,
                     17..21 | 23..27 | 29..33 | 35..39 | 41..45 | 47..51 | 53..57 | 59..63 => {
-                        let effect = reader.read_string(Self::FORMAT).await?;
+                        let effect = reader.read_string(Self::FORMAT)?;
                         if effect != "*" && effect != "0" {
                             set_effects.seteffect_effects.push(ItemEffect::new(effect));
                         }
                     }
                     21 | 27 | 33 | 39 | 45 | 51 | 57 | 63 => {
-                        let effect_skill = reader.read_string(Self::FORMAT).await?.to_uppercase();
+                        let effect_skill = reader.read_string(Self::FORMAT)?.to_uppercase();
                         if effect_skill != "*" {
                             set_effects.seteffect_skill = Some(SharedString::new(format!("{}_DESCRIPTION_1", effect_skill)));
                         }

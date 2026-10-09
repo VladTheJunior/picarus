@@ -1,16 +1,13 @@
-use std::{collections::BTreeSet, io::SeekFrom};
+use std::{collections::BTreeSet, io::{BufRead, Seek, SeekFrom}};
 
 use crate::game_data::{
-    AsyncBufReadExtReadString, DataFormat, TagType,
-    effects::ItemMinMaxEffect,
-    game_class::GameClass,
-    items::{ArmorClassKind, ArmorTypes, ItemSubType, ReadableItem},
+    DataFormat, ReadExt, TagType, effects::ItemMinMaxEffect, game_class::GameClass, items::{ArmorClassKind, ArmorTypes, ItemSubType, ReadableItem},
 };
 use anyhow::Result;
 
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+
 
 #[derive(Default, Clone)]
 pub struct ItemOption {
@@ -51,7 +48,7 @@ impl ReadableItem for ItemOption {
         unimplemented!()
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -66,87 +63,87 @@ impl ReadableItem for ItemOption {
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
 
             match tag_idx {
                 0 => {
-                    self.level = reader.read_f32_le().await? as u16;
+                    self.level = reader.read_f32_le()? as u16;
                 }
                 1 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
 
                     self.effect1 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 2 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
 
                     self.effect2 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
 
                 3 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.special_effect = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 4 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.wr_effect1 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 5 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.wr_effect2 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 6 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.gd_effect1 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 7 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.gd_effect2 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 8 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.tf_effect1 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 9 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.tf_effect2 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 10 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.pr_effect1 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 11 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.pr_effect2 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 12 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.wz_effect1 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 13 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.wz_effect2 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 14 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.ac_effect1 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 15 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.ac_effect2 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
 
                 16 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.do_effect1 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 17 => {
-                    let effects = reader.read_string(Self::FORMAT).await?;
+                    let effects = reader.read_string(Self::FORMAT)?;
                     self.do_effect2 = effects.split(",").map(|e| ItemMinMaxEffect::new(e)).collect();
                 }
                 _ => {}

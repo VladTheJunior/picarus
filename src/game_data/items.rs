@@ -17,6 +17,7 @@ pub mod fellow;
 pub mod fellow_book;
 pub mod fellow_consume;
 pub mod fellow_style;
+pub mod monster;
 pub mod quest;
 pub mod random_box;
 pub mod recipe;
@@ -25,33 +26,46 @@ pub mod sealed_fellow;
 pub mod secondary_weapon;
 pub mod skill_book;
 pub mod style;
-pub mod monster;
 
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    io::{Cursor, Read, SeekFrom},
-    rc::Weak,
-    sync::Arc,
-};
-
-use crate::{
-    game_data::{
-        AsyncBufReadExtReadString, common::Common, evolution::Evolution, fellow_combination::FellowCombination, filters::AdditionalFilter, fishing::Fishing, grade::Grade, items::{
-            accessory::Accessory, armor::Armor, bag::Bag, boost::Boost, bracelet::Bracelet, consume::Consume, elluns::Elluns, event::Event, exchange::Exchange, fellow::Fellow, fellow_book::FellowBook, fellow_consume::FellowConsume, fellow_equip::FellowEquip, fellow_style::FellowStyle, gem::Gem, material::Material, monster::Monster, package::Package, quest::Quest, random_box::RandomBox, recipe::Recipe, relic::Relic, sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon, skill_book::SkillBook, style::Style, weapon::Weapon,
-        }, locale::Locale, synthesis_fellows::SynthesisFellows, synthesis_parts::SynthesisParts,
-    }, language::t,
-};
 use crate::{
     game_data::{DataFormat, DebugValue, TagType, effects::EffectKind, read_definitions, read_item_count, read_offsets},
     game_data_view::PreviewBuilder,
+};
+use crate::{
+    game_data::{
+        ReadExt,
+        common::Common,
+        evolution::Evolution,
+        fellow_combination::FellowCombination,
+        filters::AdditionalFilter,
+        fishing::Fishing,
+        grade::Grade,
+        items::{
+            accessory::Accessory, armor::Armor, bag::Bag, boost::Boost, bracelet::Bracelet, consume::Consume, elluns::Elluns, event::Event,
+            exchange::Exchange, fellow::Fellow, fellow_book::FellowBook, fellow_consume::FellowConsume, fellow_equip::FellowEquip,
+            fellow_style::FellowStyle, gem::Gem, material::Material, monster::Monster, package::Package, quest::Quest, random_box::RandomBox,
+            recipe::Recipe, relic::Relic, sealed_fellow::SealedFellow, secondary_weapon::SecondaryWeapon, skill_book::SkillBook, style::Style,
+            weapon::Weapon,
+        },
+        locale::Locale,
+        synthesis_fellows::SynthesisFellows,
+        synthesis_parts::SynthesisParts,
+    },
+    language::t,
 };
 use anyhow::Result;
 use enum_dispatch::enum_dispatch;
 use gpui_kit::{Image, SharedString};
 use indexmap::IndexMap;
+use parking_lot::Mutex;
+use rayon::prelude::*;
+use std::{
+    collections::{HashMap, HashSet},
+    io::{BufRead, BufReader, Cursor, Read, Seek, SeekFrom},
+    sync::{Arc, Weak},
+};
 use strum::EnumIter;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt, BufReader};
+
 use zip::ZipArchive;
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum ArmorClassKind {
@@ -167,7 +181,7 @@ pub enum ItemType {
     Event,
     Elluns,
     Fellow,
-    Monster
+    Monster,
 }
 
 impl ItemType {
@@ -271,7 +285,7 @@ pub trait ItemTrait {
 #[derive(Default, Clone)]
 pub struct ItemNode {
     pub id: SharedString,
-    pub item: Option<Weak<RefCell<Item>>>,
+    pub item: Option<Weak<Mutex<Item>>>,
 }
 
 #[enum_dispatch(ItemTrait)]
@@ -433,8 +447,8 @@ impl Item {
 
 pub trait ReadableItem: Sized + Default {
     const FORMAT: DataFormat;
-    type Key: Eq + std::hash::Hash;
-    type CollectionItem;
+    type Key: Send + Eq + std::hash::Hash;
+    type CollectionItem: Send;
 
     fn new_collection_item(item: Self) -> Self::CollectionItem;
 
@@ -442,7 +456,7 @@ pub trait ReadableItem: Sized + Default {
 
     fn debug_mut(&mut self) -> &mut Vec<u8>;
 
-    async fn read_all<R: std::io::Read + std::io::Seek>(
+    fn read_all<R: std::io::Read + std::io::Seek>(
         gamedatas_zip: &mut ZipArchive<R>,
         data_path: &str,
     ) -> Result<HashMap<Self::Key, Self::CollectionItem>> {
@@ -452,46 +466,62 @@ pub trait ReadableItem: Sized + Default {
 
         let mut reader = BufReader::new(Cursor::new(data.as_slice()));
 
-        let definitions = read_definitions(&mut reader).await?;
-        //debug!(?definitions);
-        let item_count = read_item_count(&mut reader).await?;
-        let offsets = read_offsets(&mut reader, item_count, definitions.len()).await?;
+        let definitions = read_definitions(&mut reader)?;
+        let item_count = read_item_count(&mut reader)?;
+        let offsets = read_offsets(&mut reader, item_count, definitions.len())?;
 
-        let global_offset = reader.stream_position().await?;
-        let mut items = HashMap::with_capacity(item_count);
+        let global_offset = reader.stream_position()?;
+        let pairs: Result<Vec<(Self::Key, Self::CollectionItem)>> = (0..item_count)
+            .into_par_iter()
+            .with_min_len(32)
+            .map_init(
+                || BufReader::new(Cursor::new(data.as_slice())),
+                |reader, idx| {
+                    let item = Self::default().read(reader, &offsets, idx, &definitions, global_offset)?;
+                    Ok((item.key(), Self::new_collection_item(item)))
+                },
+            )
+            .collect();
 
-        for idx in 0..item_count {
-            let item = Self::default().read(&mut reader, &offsets, idx, &definitions, global_offset).await?;
-            items.insert(item.key(), Self::new_collection_item(item));
-        }
-
-        Ok(items)
+        Ok(pairs?.into_iter().collect())
     }
 
-    async fn read_all_vec<R: std::io::Read + std::io::Seek>(gamedatas_zip: &mut ZipArchive<R>, data_path: &str) -> Result<Vec<Self::CollectionItem>> {
+    fn read_all_vec<R: std::io::Read + std::io::Seek>(gamedatas_zip: &mut ZipArchive<R>, data_path: &str) -> Result<Vec<Self::CollectionItem>> {
         let mut file = gamedatas_zip.by_path(data_path)?;
         let mut data = vec![];
         file.read_to_end(&mut data)?;
 
         let mut reader = BufReader::new(Cursor::new(data.as_slice()));
 
-        let definitions = read_definitions(&mut reader).await?;
-        let item_count = read_item_count(&mut reader).await?;
+        let definitions = read_definitions(&mut reader)?;
+        let item_count = read_item_count(&mut reader)?;
 
-        let offsets = read_offsets(&mut reader, item_count, definitions.len()).await?;
+        let offsets = read_offsets(&mut reader, item_count, definitions.len())?;
 
-        let global_offset = reader.stream_position().await?;
-        let mut items = Vec::with_capacity(item_count);
+        let global_offset = reader.stream_position()?;
+        //let mut items = Vec::with_capacity(item_count);
 
-        for idx in 0..item_count {
-            let item = Self::default().read(&mut reader, &offsets, idx, &definitions, global_offset).await?;
+        /*for idx in 0..item_count {
+            let item = Self::default().read(&mut reader, &offsets, idx, &definitions, global_offset)?;
             items.push(Self::new_collection_item(item));
-        }
+        }*/
 
-        Ok(items)
+        let items: Result<Vec<_>> = (0..item_count)
+            .into_par_iter()
+            .with_min_len(32)
+            .map_init(
+                || BufReader::new(Cursor::new(data.as_slice())),
+                |reader, idx| {
+                    let item = Self::default().read(reader, &offsets, idx, &definitions, global_offset)?;
+                    Ok(Self::new_collection_item(item))
+                },
+            )
+            .collect();
+
+        items
     }
 
-    async fn parse_debug<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn parse_debug<R: BufRead + ?Sized + Seek>(
         &mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -506,23 +536,23 @@ pub trait ReadableItem: Sized + Default {
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
 
             match value_type {
-                TagType::String => debug.insert(key.clone(), DebugValue::String(reader.read_string(Self::FORMAT).await?)),
-                TagType::Float => debug.insert(key.clone(), DebugValue::Float(reader.read_f32_le().await?)),
+                TagType::String => debug.insert(key.clone(), DebugValue::String(reader.read_string(Self::FORMAT)?)),
+                TagType::Float => debug.insert(key.clone(), DebugValue::Float(reader.read_f32_le()?)),
             };
         }
         *self.debug_mut() = lz4_flex::block::compress_prepend_size(&serde_json::to_vec_pretty(&debug)?);
         Ok(())
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + ?Sized + Seek>(
         self,
         reader: &mut R,
         offsets: &[u32],

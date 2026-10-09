@@ -301,11 +301,11 @@ impl ItemEffect {
             "tp회복력%" => Some("item-effect-stamina-percent"),
             "cp회복력%" => Some("item-effect-chaos-percent"),
             "ep회복력%" => Some("item-effect-energy-percent"),
-            "공격시분노생성+"=> Some("item-effect-rage"),
-            "마법저항력+"=> Some("item-effect-magic-resistance-2"),
-            "마법저항력%"=> Some("item-effect-magic-resistance-2-percent"),
-            "무적상태"=> Some("item-effect-invincibility"),
-            "신체독중독상태"=> Some("item-effect-physical-poison-addiction"),
+            "공격시분노생성+" => Some("item-effect-rage"),
+            "마법저항력+" => Some("item-effect-magic-resistance-2"),
+            "마법저항력%" => Some("item-effect-magic-resistance-2-percent"),
+            "무적상태" => Some("item-effect-invincibility"),
+            "신체독중독상태" => Some("item-effect-physical-poison-addiction"),
             _ => {
                 return None;
             }

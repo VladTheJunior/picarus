@@ -366,3 +366,7 @@ item-effect-magic-resistance-2 = Сопротивление магии { $value 
 item-effect-magic-resistance-2-percent = Сопротивление магии { $value }%
 item-effect-invincibility = Неуязвимость
 item-effect-physical-poison-addiction = Отравление парализующим ядом
+
+success-chance = Шанс успеха
+
+usage-period = Срок { $value }

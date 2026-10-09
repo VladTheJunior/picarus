@@ -1,17 +1,15 @@
 use std::{
-    cell::RefCell,
-    collections::{BTreeMap, HashMap},
-    io::SeekFrom,
-    rc::Rc,
+
+    collections::{BTreeMap, HashMap}, io::{BufRead, Seek, SeekFrom}, sync::Arc,
 };
 
 use crate::game_data::{
-    AsyncBufReadExtReadString, DataFormat, Item, TagType, items::ItemNode, items::ReadableItem, random_box_probability::RandomBoxProbability,
+    DataFormat, Item, ReadExt, TagType, items::{ItemNode, ReadableItem}, random_box_probability::RandomBoxProbability,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
 
-use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
+use parking_lot::Mutex;
 
 use gpui_kit::SharedString;
 use tracing::warn;
@@ -33,16 +31,16 @@ impl ReadableItem for RandomBoxGroup {
         self.id.clone()
     }
 
-    type CollectionItem = Rc<RefCell<Self>>;
+    type CollectionItem = Arc<Mutex<Self>>;
     fn new_collection_item(item: Self) -> Self::CollectionItem {
-        Rc::new(RefCell::new(item))
+        Arc::new(Mutex::new(item))
     }
 
     fn debug_mut(&mut self) -> &mut Vec<u8> {
         unimplemented!()
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -56,18 +54,18 @@ impl ReadableItem for RandomBoxGroup {
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
 
             match tag_idx {
-                0 => self.id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
+                0 => self.id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
 
                 10..110 => {
-                    let id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase());
+                    let id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase());
                     if id != "*" {
                         self.items.insert(tag_idx - 10, ItemNode { id, item: None });
                     }
@@ -83,12 +81,12 @@ impl ReadableItem for RandomBoxGroup {
 impl RandomBoxGroup {
     pub fn set_items(
         &mut self,
-        items: &IndexMap<SharedString, Rc<RefCell<Item>>>,
+        items: &IndexMap<SharedString, Arc<Mutex<Item>>>,
         probabilities: &HashMap<SharedString, RandomBoxProbability>,
         unknown_ids: &mut BTreeMap<SharedString, u32>,
     ) {
         for (_, content) in &mut self.items {
-            content.item = items.get(&content.id).map(|f| Rc::downgrade(f));
+            content.item = items.get(&content.id).map(|f| Arc::downgrade(f));
             if content.item.is_none() {
                 unknown_ids.entry(content.id.clone()).and_modify(|count| *count += 1).or_insert(1);
             }

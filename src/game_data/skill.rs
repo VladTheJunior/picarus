@@ -1,15 +1,15 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-    io::Read,
+
     sync::Arc,
 };
 
 use anyhow::Result;
-use gpui_kit::{Image, SharedString};
+use gpui_kit::{ Image, SharedString};
 use serde::Deserialize;
-use tracing::error;
 
-use crate::game_data::{dds_to_jpeg, effects::ItemEffect, locale::Locale};
+
+use crate::game_data::{effects::ItemEffect, locale::Locale};
 
 #[derive(Clone, Deserialize)]
 pub struct Skill {
@@ -23,12 +23,6 @@ pub struct Skill {
     pub locale: Option<Locale>,
     #[serde(rename = "RECID")]
     pub recid: SharedString,
-    #[serde(rename = "NAME")]
-    pub name: SharedString,
-    #[serde(rename = "ENABLED")]
-    pub enabled: u8,
-    #[serde(rename = "SKILL_TYPE")]
-    pub skill_type: SharedString,
     #[serde(rename = "MAX_LEVEL")]
     pub max_level: u8,
     #[serde(rename = "PASSIVE_SKILL")]
@@ -57,26 +51,14 @@ pub struct SkillLevel {
     pub keep_buff_time: i32,
     #[serde(rename = "buff1")]
     pub buff1: Buff,
-    #[serde(rename = "buff2")]
-    pub buff2: Buff,
-    #[serde(rename = "passive")]
-    pub passive: Passive,
 }
 
 #[derive(Clone, Deserialize)]
 pub struct Buff {
     #[serde(rename = "VISIBLE")]
     pub visible: u8,
-    #[serde(rename = "APPLY_RATE")]
-    pub apply_rate: f32,
-    #[serde(rename = "BOARDER_APPLY_OPTION")]
-    pub boarder_apply_option: SharedString,
     #[serde(rename = "EFFECT_PATTERN_LIST")]
     pub effect_pattern_list: Option<EffectPatternList>,
-    #[serde(rename = "EFFECT_BUFFICON_ID")]
-    pub effect_bufficon_id: SharedString,
-    #[serde(rename = "SHOW_BUFFICON")]
-    pub show_bufficon: u8,
 }
 
 #[derive(Clone, Deserialize)]
@@ -89,9 +71,6 @@ pub struct EffectPatternList {
 pub struct EffectPattern {
     #[serde(skip)]
     pub effect: ItemEffect,
-
-    #[serde(rename = "EFFECT_PERCENT")]
-    pub effect_percent: f32,
     #[serde(rename = "EFFECT_PATTERN_ENUM")]
     pub effect_pattern_enum: SharedString,
     #[serde(rename = "PARAM1")]
@@ -100,30 +79,17 @@ pub struct EffectPattern {
     pub param2: Option<SharedString>,
 }
 
-#[derive(Clone, Deserialize)]
-pub struct Passive {
-    #[serde(rename = "VISIBLE")]
-    pub visible: u8,
-    #[serde(rename = "APPLY_RATE")]
-    pub apply_rate: f32,
-    #[serde(rename = "EFFECT_MAIN_PERSON")]
-    pub effect_main_person: SharedString,
-}
-
 impl Skill {
-    pub async fn load<R: std::io::Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, path: &str) -> Result<Self> {
-        let mut file = zip.by_path(path)?;
-        let mut bytes = Vec::with_capacity(file.size() as usize);
-        file.read_to_end(&mut bytes)?;
-
-        let content = if let Ok(text) = String::from_utf8(bytes.clone()) {
-            text.replace(r#"encoding="EUC-KR""#, r#"encoding="UTF-8""#)
-        } else {
-            let (decoded, _, _) = encoding_rs::EUC_KR.decode(&bytes);
-            decoded.into_owned()
+    pub fn load(bytes: &[u8]) -> Result<Self> {
+        let content = match std::str::from_utf8(bytes) {
+            Ok(text) => text.replace(r#"encoding="EUC-KR""#, r#"encoding="UTF-8""#),
+            Err(_) => {
+                let (decoded, _, _) = encoding_rs::EUC_KR.decode(bytes);
+                decoded.into_owned()
+            }
         };
 
-        let mut skill = tokio::task::spawn_blocking(move || quick_xml::de::from_str::<Skill>(content.as_ref())).await??;
+        let mut skill = quick_xml::de::from_str::<Skill>(content.as_ref())?;
         skill.recid = SharedString::new(skill.recid.to_uppercase());
         Ok(skill)
     }
@@ -140,48 +106,24 @@ impl Skill {
         self.locale = locales.get(&self.recid).cloned();
     }
 
-    pub async fn set_icon<R: std::io::Read + std::io::Seek>(
+    pub fn set_icon(
         &mut self,
-        zip: &mut zip::ZipArchive<R>,
-        icons: &HashMap<String, String>,
-        icon_cache: &mut HashMap<String, Arc<Image>>,
+        icons: &HashMap<String, Arc<Image>>,
         unknown_icons: &mut BTreeMap<SharedString, BTreeSet<SharedString>>,
-    ) -> Result<()> {
+    ) {
         let icon_key = self.clt_icon.to_lowercase();
-        if icon_key.is_empty() {
-            return Ok(());
+        if icon_key.is_empty() || icon_key == "0" {
+            return;
         }
-        if let Some(icon) = icon_cache.get(&icon_key) {
+        if let Some(icon) = icons.get(&format!("libs/ui/resources/textures/slot_icons/{}.dds", icon_key)) {
             self.icon = Some(icon.clone());
-            return Ok(());
-        }
-
-        if let Some(icon_path) = icons.get(&format!("libs/ui/resources/textures/slot_icons/{}.dds", icon_key)) {
-            match zip.by_path(icon_path) {
-                Ok(mut file) => {
-                    let mut buf = Vec::with_capacity(file.size() as usize);
-                    file.read_to_end(&mut buf)?;
-
-                    match dds_to_jpeg(buf).await {
-                        Ok(icon) => {
-                            icon_cache.insert(icon_key, icon.clone());
-                            self.icon = Some(icon);
-                        }
-                        Err(e) => error!(?e, ?self.recid, ?self.clt_icon, "Failed to convert icon"),
-                    }
-                }
-                Err(e) => {
-                    error!(?e, ?self.recid, ?self.clt_icon, "Failed to load icon");
-                }
-            }
+            return;
         } else {
             unknown_icons
                 .entry(self.clt_icon.clone())
                 .or_insert_with(BTreeSet::new)
                 .insert(self.recid.clone());
         }
-
-        Ok(())
     }
 
     pub fn set_effects(&mut self) {

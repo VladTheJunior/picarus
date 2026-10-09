@@ -1,18 +1,13 @@
-use std::io::SeekFrom;
+use std::io::{BufRead, Seek, SeekFrom};
 
 use crate::{
     game_data::{
-        AsyncBufReadExtReadString, DataFormat, TagType,
-        common::Common,
-        effects::{EffectKind, ItemMinMaxNoStepEffect, ItemMinMaxStepEffect},
-        items::{ItemTrait, ReadableItem},
-    },
-    game_data_view::PreviewBuilder,
+        DataFormat, ReadExt, TagType, common::Common, effects::{EffectKind, ItemMinMaxNoStepEffect, ItemMinMaxStepEffect}, items::{ItemTrait, ReadableItem},
+    }, game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui_kit::SharedString;
 
@@ -46,7 +41,7 @@ impl ReadableItem for SealedFellow {
         &mut self.debug
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -54,34 +49,34 @@ impl ReadableItem for SealedFellow {
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
     ) -> Result<Self> {
-        self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
+        self.parse_debug(reader, offsets, item_idx, definitions, global_offset)?;
         let tag_count = definitions.len();
         for (tag_idx, (tag, tag_type)) in definitions.iter().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
-            self.common.parse(tag, tag_type, reader, Self::FORMAT).await?;
+            self.common.parse(tag, tag_type, reader, Self::FORMAT)?;
             match tag_idx {
-                9 => self.parse_effect(reader, Self::FORMAT).await?,
-                10 => self.parse_effect(reader, Self::FORMAT).await?,
-                11 => self.parse_effect(reader, Self::FORMAT).await?,
+                9 => self.parse_effect(reader, Self::FORMAT)?,
+                10 => self.parse_effect(reader, Self::FORMAT)?,
+                11 => self.parse_effect(reader, Self::FORMAT)?,
                 12 => {
-                    let effect = reader.read_string(Self::FORMAT).await?;
+                    let effect = reader.read_string(Self::FORMAT)?;
                     if effect != "*" && effect != "0" && !effect.starts_with("*,") && !effect.starts_with("0,") {
                         self.max_enhancement_sealed_fellow_effect = Some(ItemMinMaxNoStepEffect::new(&effect));
                     }
                 }
-                13 => self.tempering = reader.read_f32_le().await? as u8,
-                14 => self.tempering_effect = reader.read_f32_le().await?,
+                13 => self.tempering = reader.read_f32_le()? as u8,
+                14 => self.tempering_effect = reader.read_f32_le()?,
 
-                24 => self.characteristic_power = reader.read_f32_le().await? as u16,
+                24 => self.characteristic_power = reader.read_f32_le()? as u16,
 
                 _ => {}
             }
@@ -92,8 +87,8 @@ impl ReadableItem for SealedFellow {
 }
 
 impl SealedFellow {
-    async fn parse_effect<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(&mut self, reader: &mut R, format: DataFormat) -> Result<()> {
-        let effect = reader.read_string(format).await?;
+    fn parse_effect<R: BufRead + ?Sized>(&mut self, reader: &mut R, format: DataFormat) -> Result<()> {
+        let effect = reader.read_string(format)?;
         if effect != "*" && effect != "0" && !effect.starts_with("*,") && !effect.starts_with("0,") {
             self.effects.push(ItemMinMaxStepEffect::new(&effect));
         }

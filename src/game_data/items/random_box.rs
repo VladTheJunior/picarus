@@ -1,30 +1,24 @@
 use std::{
-    cell::RefCell,
-    collections::HashMap,
-    io::SeekFrom,
-    rc::{Rc, Weak},
+
+    collections::HashMap, io::{BufRead, Seek, SeekFrom}, sync::{Arc, Weak},
 };
 
 use crate::{
     game_data::{
-        AsyncBufReadExtReadString, DataFormat, TagType,
-        common::Common,
-        items::{ItemTrait, ReadableItem},
-        random_box_group::RandomBoxGroup,
-    },
-    game_data_view::PreviewBuilder,
+        DataFormat, ReadExt, TagType, common::Common, items::{ItemTrait, ReadableItem}, random_box_group::RandomBoxGroup,
+    }, game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
 
-use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
+use parking_lot::Mutex;
 
 use gpui_kit::SharedString;
 
 #[derive(Default, Clone)]
 pub struct RandomBox {
     pub debug: Vec<u8>,
-    pub content: Option<Weak<RefCell<RandomBoxGroup>>>,
+    pub content: Option<Weak<Mutex<RandomBoxGroup>>>,
 
     pub common: Common,
     random_item_id: SharedString,
@@ -47,7 +41,7 @@ impl ReadableItem for RandomBox {
         &mut self.debug
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -55,23 +49,23 @@ impl ReadableItem for RandomBox {
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
     ) -> Result<Self> {
-        self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
+        self.parse_debug(reader, offsets, item_idx, definitions, global_offset)?;
         let tag_count = definitions.len();
         for (tag_idx, (tag, tag_type)) in definitions.iter().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
-            self.common.parse(tag, tag_type, reader, Self::FORMAT).await?;
+            self.common.parse(tag, tag_type, reader, Self::FORMAT)?;
 
             match tag.as_str() {
-                "랜덤아이템id" => self.random_item_id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
+                "랜덤아이템id" => self.random_item_id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
 
                 _ => {}
             }
@@ -82,8 +76,8 @@ impl ReadableItem for RandomBox {
 }
 
 impl RandomBox {
-    pub fn set_random_box_group(&mut self, random_box_groups: &HashMap<SharedString, Rc<RefCell<RandomBoxGroup>>>) {
-        self.content = random_box_groups.get(&self.random_item_id).map(|f| Rc::downgrade(f));
+    pub fn set_random_box_group(&mut self, random_box_groups: &HashMap<SharedString, Arc<Mutex<RandomBoxGroup>>>) {
+        self.content = random_box_groups.get(&self.random_item_id).map(|f| Arc::downgrade(f));
     }
 }
 

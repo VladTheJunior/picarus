@@ -1,24 +1,17 @@
 use std::{
-    cell::RefCell,
-    collections::BTreeSet,
-    io::SeekFrom,
-    rc::{Rc, Weak},
+    collections::BTreeSet, io::{BufRead, Seek, SeekFrom}, sync::{Arc, Weak},
 };
 
 use crate::{
     game_data::{
-        AsyncBufReadExtReadString, DataFormat, TagType,
-        common::Common,
-        items::{ItemTrait, ReadableItem},
-        product::Product,
-    },
-    game_data_view::PreviewBuilder,
-    language::t,
+        DataFormat, ReadExt, TagType, common::Common, items::{ItemTrait, ReadableItem}, product::Product,
+    }, game_data_view::PreviewBuilder, language::t,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
+use parking_lot::Mutex;
 use serde::Serialize;
-use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
+
 
 use gpui_kit::SharedString;
 
@@ -64,7 +57,7 @@ impl RecipeType {
 #[derive(Default, Clone)]
 pub struct Recipe {
     pub debug: Vec<u8>,
-    pub product: Option<Weak<RefCell<Product>>>,
+    pub product: Option<Weak<Mutex<Product>>>,
     pub common: Common,
 
     pub recipe_type: Option<RecipeType>,
@@ -88,7 +81,7 @@ impl ReadableItem for Recipe {
         &mut self.debug
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -96,26 +89,26 @@ impl ReadableItem for Recipe {
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
     ) -> Result<Self> {
-        self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
+        self.parse_debug(reader, offsets, item_idx, definitions, global_offset)?;
         let tag_count = definitions.len();
         for (tag_idx, (tag, tag_type)) in definitions.iter().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
-            self.common.parse(tag, tag_type, reader, Self::FORMAT).await?;
+            self.common.parse(tag, tag_type, reader, Self::FORMAT)?;
             match tag_idx {
                 4 => {
-                    let m = reader.read_string(Self::FORMAT).await?;
+                    let m = reader.read_string(Self::FORMAT)?;
                     self.recipe_type = RecipeType::try_from(m.as_str()).ok()
                 }
-                9 => self.crafted_item_id = SharedString::new(reader.read_string(Self::FORMAT).await?.to_uppercase()),
+                9 => self.crafted_item_id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
 
                 _ => {}
             }
@@ -126,14 +119,17 @@ impl ReadableItem for Recipe {
 }
 
 impl Recipe {
-    pub fn set_product(&mut self, products: &Vec<Rc<RefCell<Product>>>) {
+    pub fn set_product(&mut self, products: &Vec<Arc<Mutex<Product>>>) {
         self.product = products
             .iter()
-            .find(|p| p.borrow().node.id == self.common.id || p.borrow().productid == self.crafted_item_id)
-            .map(|f| Rc::downgrade(f));
+            .find(|p| {
+                let g = p.lock();
+                g.node.id == self.common.id || g.productid == self.crafted_item_id
+            })
+            .map(|f| Arc::downgrade(f));
 
         if let Some(f) = self.product.as_mut().and_then(|f| f.upgrade()) {
-            f.borrow_mut().recipe = Some(self.common.id.clone());
+            f.lock().recipe = Some(self.common.id.clone());
         }
     }
 }
@@ -151,7 +147,7 @@ impl ItemTrait for Recipe {
 
     fn build_preview(&self) -> PreviewBuilder<'_> {
         PreviewBuilder::new(self.common())
-            .recipe_stage(self.product.as_ref().and_then(|f| f.upgrade()).map(|p| p.borrow().technology_grade))
+            .recipe_stage(self.product.as_ref().and_then(|f| f.upgrade()).map(|p| p.lock().technology_grade))
             .product(self.product.clone())
             .recipe_types(self.recipe_type.as_ref().map(|f| BTreeSet::from([*f])))
     }

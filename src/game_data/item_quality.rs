@@ -1,10 +1,10 @@
-use std::io::SeekFrom;
+use std::io::{BufRead, Seek, SeekFrom};
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, effects::ItemEffect, items::ReadableItem};
+use crate::game_data::{DataFormat, ReadExt, TagType, effects::ItemEffect, items::ReadableItem};
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+
 
 #[derive(Default, Clone)]
 pub struct ItemQuality {
@@ -32,7 +32,7 @@ impl ReadableItem for ItemQuality {
         unimplemented!()
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -47,30 +47,30 @@ impl ReadableItem for ItemQuality {
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
 
             match tag_idx {
-                0 => self.level = reader.read_f32_le().await? as u16,
+                0 => self.level = reader.read_f32_le()? as u16,
 
                 1 => {
-                    let effect = reader.read_string(Self::FORMAT).await?;
+                    let effect = reader.read_string(Self::FORMAT)?;
                     if effect != "*" && effect != "0" {
                         self.intermediate_fixed_effect = Some(ItemEffect::new(effect));
                     }
                 }
-                2 => self.intermediate_variable_effect_bonus = reader.read_f32_le().await?,
+                2 => self.intermediate_variable_effect_bonus = reader.read_f32_le()?,
                 3 => {
-                    let effect = reader.read_string(Self::FORMAT).await?;
+                    let effect = reader.read_string(Self::FORMAT)?;
                     if effect != "*" && effect != "0" {
                         self.advanced_fixed_effect = Some(ItemEffect::new(effect));
                     }
                 }
-                4 => self.advanced_variable_effect_bonus = reader.read_f32_le().await?,
+                4 => self.advanced_variable_effect_bonus = reader.read_f32_le()?,
 
                 _ => {}
             }

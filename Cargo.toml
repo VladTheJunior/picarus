@@ -10,7 +10,7 @@ LegalCopyright = "Copyright © VladTheJunior, 2026"
 FileDescription = "Interactive items viewer for Riders of Icarus"
 
 [dependencies.gpui-kit]
-version = "=0.7.0"
+version = "=0.7.1"
 features = ["tree-sitter"]
 
 [dependencies.scraper]
@@ -30,6 +30,12 @@ version = "=0.3.13"
 
 [dependencies.itertools]
 version = "=0.15.0"
+
+[dependencies.rayon]
+version = "=1.12.0"
+
+[dependencies.parking_lot]
+version = "=0.12.5"
 
 [dependencies.lz4_flex]
 version = "=0.14.0"
@@ -56,7 +62,7 @@ version = "=1.43.0"
 features = ["macros"]
 
 [dependencies.zip]
-version = "=8.6.0"
+version = "=9.0.0"
 
 [dependencies.fluent]
 version = "=0.17.0"
@@ -66,8 +72,8 @@ version = "=0.9.6"
 features = ["macros"]
 
 [dependencies.tokio]
-version = "=1.53.1"
-features = ["macros", "rt-multi-thread", "fs", "io-util", "time"]
+version = "=1.53.2"
+features = ["macros", "rt-multi-thread", "fs", "time"]
 
 [dependencies.anyhow]
 version = "=1.0.104"
@@ -84,7 +90,7 @@ version = "=0.28.0"
 features = ["derive"]
 
 [dependencies.toml]
-version = "=1.1.6"
+version = "=1.1.8"
 
 [dependencies.encoding_rs]
 version = "=0.8.42"

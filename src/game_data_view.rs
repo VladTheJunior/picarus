@@ -1,7 +1,7 @@
 use gpui_kit::Div;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{
-    ActiveTheme, Disableable, Icon, IndexPath, Root, Sizable, StyledExt, TitleBar, WindowExt,
+    ActiveTheme, Disableable, Icon, IndexPath, Sizable, StyledExt, TitleBar, WindowExt,
     button::{Button, ButtonCustomVariant, ButtonVariants},
     combobox::{Combobox, ComboboxEvent},
     h_flex,
@@ -23,26 +23,28 @@ use gpui_kit::{
     Action, App, AppContext, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight, ImageSource, InteractiveElement, IntoElement,
     KeyBinding, ListSizingBehavior, ObjectFit, ParentElement, PathPromptOptions, ReadGlobal, Render, ScrollHandle, ScrollStrategy, SharedString,
     StatefulInteractiveElement, Styled, StyledImage, UniformListScrollHandle, UpdateGlobal, Window, actions, div, img, prelude::FluentBuilder, px,
-    rems, rgb, uniform_list,
+    rgb, uniform_list,
 };
 
 use indexmap::{IndexMap, IndexSet};
 
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
 use serde::Deserialize;
 use strum::IntoEnumIterator;
 
+use std::sync::{Arc, Weak};
 use std::{
-    cell::RefCell,
     collections::{BTreeSet, HashMap},
     ops::Range,
     path::Path,
-    rc::{Rc, Weak},
 };
 
 use crate::game_data::filters::AdditionalFilter;
 use crate::game_data::items::fellow::FellowType;
+use crate::game_data::reverse_tempering_rate::ReverseTemperingRate;
+use crate::language::format_duration;
 use crate::rich_text::RichText;
 use crate::{
     extensions::EnumNameExt,
@@ -114,7 +116,7 @@ pub struct PreviewBuilderOptional {
 
     pub recipe_types: Option<BTreeSet<RecipeType>>,
     pub recipe_stage: Option<u8>,
-    pub product: Option<Weak<RefCell<Product>>>,
+    pub product: Option<Weak<Mutex<Product>>>,
 
     pub min_sealed_slots: u8,
     pub max_sealed_slots: u8,
@@ -126,7 +128,7 @@ pub struct PreviewBuilderOptional {
 
     pub max_ep: Option<f32>,
 
-    pub random_box_group: Option<Weak<RefCell<RandomBoxGroup>>>,
+    pub random_box_group: Option<Weak<Mutex<RandomBoxGroup>>>,
     pub package_contents: Option<IndexMap<usize, PackageItem>>,
 
     pub skills: Vec<Skill>,
@@ -136,6 +138,7 @@ pub struct PreviewBuilderOptional {
     pub fellow_can_fly: Option<bool>,
     pub fellow_people: Option<u8>,
     pub fellow_region: Option<SharedString>,
+    pub reverse_tempering_rates: Option<ReverseTemperingRate>,
 }
 
 impl<'a> PreviewBuilder<'a> {
@@ -187,6 +190,11 @@ impl<'a> PreviewBuilder<'a> {
 
     pub fn skills(mut self, value: Vec<Skill>) -> Self {
         self.optional.skills = value;
+        self
+    }
+
+    pub fn reverse_tempering_rates(mut self, value: Option<ReverseTemperingRate>) -> Self {
+        self.optional.reverse_tempering_rates = value;
         self
     }
 
@@ -265,7 +273,7 @@ impl<'a> PreviewBuilder<'a> {
         self
     }
 
-    pub fn product(mut self, value: Option<Weak<RefCell<Product>>>) -> Self {
+    pub fn product(mut self, value: Option<Weak<Mutex<Product>>>) -> Self {
         self.optional.product = value;
         self
     }
@@ -311,7 +319,7 @@ impl<'a> PreviewBuilder<'a> {
         self
     }
 
-    pub fn random_box_group(mut self, value: Option<Weak<RefCell<RandomBoxGroup>>>) -> Self {
+    pub fn random_box_group(mut self, value: Option<Weak<Mutex<RandomBoxGroup>>>) -> Self {
         self.optional.random_box_group = value;
         self
     }
@@ -382,95 +390,15 @@ impl PreviewValues {
             self.total_tempering = self.total_tempering.saturating_sub(1);
         }
     }
-}
 
-#[derive(Clone)]
-pub enum GameDataLoadingStatus {
-    ItemSet,
-    SecondaryWeapon,
-    Weapon,
-    Accessory,
-    Armor,
-    Tempering,
-    Effects,
-    Quality,
-    Material,
-    Recipe,
-    ProductMaterial,
-    FellowEquip,
-    Consume,
-    Boost,
-    Gem,
-    SealedFellow,
-    SkillBook,
-    Exchange,
-    RandomBox,
-    RandomBoxGroup,
-    RandomBoxProbability,
-    Package,
-    Style,
-    Bag,
-    FellowStyle,
-    FellowConsume,
-    Quest,
-    Bracelet,
-    Relic,
-    FellowBook,
-    Event,
-    Elluns,
-    Fellow,
-    Skill,
-    Fishing,
-    Evolution,
-    Synthesis,
-    Locales,
-    FellowCombination,
-    Monster
-}
-
-impl GameDataLoadingStatus {
-    pub fn localize(&self) -> SharedString {
-        match self {
-            GameDataLoadingStatus::ItemSet => t("game-data-loading-itemset"),
-            GameDataLoadingStatus::Weapon => t("game-data-loading-weapon"),
-            GameDataLoadingStatus::Accessory => t("game-data-loading-accessory"),
-            GameDataLoadingStatus::Armor => t("game-data-loading-armor"),
-            GameDataLoadingStatus::SecondaryWeapon => t("game-data-loading-secondary-weapon"),
-            GameDataLoadingStatus::Tempering => t("game-data-loading-tempering"),
-            GameDataLoadingStatus::Effects => t("game-data-loading-effects"),
-            GameDataLoadingStatus::Quality => t("game-data-loading-quality"),
-            GameDataLoadingStatus::Material => t("game-data-loading-material"),
-            GameDataLoadingStatus::Recipe => t("game-data-loading-recipe"),
-            GameDataLoadingStatus::ProductMaterial => t("game-data-loading-product-material"),
-            GameDataLoadingStatus::FellowEquip => t("game-data-loading-fellow-equip"),
-            GameDataLoadingStatus::Consume => t("game-data-loading-consume"),
-            GameDataLoadingStatus::Boost => t("game-data-loading-boost"),
-            GameDataLoadingStatus::Gem => t("game-data-loading-gem"),
-            GameDataLoadingStatus::SealedFellow => t("game-data-loading-sealed-fellow"),
-            GameDataLoadingStatus::SkillBook => t("game-data-loading-skill-book"),
-            GameDataLoadingStatus::Exchange => t("game-data-loading-exchange"),
-            GameDataLoadingStatus::RandomBox => t("game-data-loading-random-box"),
-            GameDataLoadingStatus::RandomBoxGroup => t("game-data-loading-random-box-group"),
-            GameDataLoadingStatus::RandomBoxProbability => t("game-data-loading-random-box-probability"),
-            GameDataLoadingStatus::Package => t("game-data-loading-package"),
-            GameDataLoadingStatus::Style => t("game-data-loading-style"),
-            GameDataLoadingStatus::Bag => t("game-data-loading-bag"),
-            GameDataLoadingStatus::FellowStyle => t("game-data-loading-fellow-style"),
-            GameDataLoadingStatus::FellowConsume => t("game-data-loading-fellow-consume"),
-            GameDataLoadingStatus::Quest => t("game-data-loading-quest"),
-            GameDataLoadingStatus::Bracelet => t("game-data-loading-bracelet"),
-            GameDataLoadingStatus::Relic => t("game-data-loading-relic"),
-            GameDataLoadingStatus::FellowBook => t("game-data-loading-fellow-book"),
-            GameDataLoadingStatus::Event => t("game-data-loading-event"),
-            GameDataLoadingStatus::Elluns => t("game-data-loading-elluns"),
-            GameDataLoadingStatus::Fellow => t("game-data-loading-fellow"),
-            GameDataLoadingStatus::Skill => t("game-data-loading-skill"),
-            GameDataLoadingStatus::Fishing => t("game-data-loading-fishing"),
-            GameDataLoadingStatus::Evolution => t("game-data-loading-evolution"),
-            GameDataLoadingStatus::Synthesis => t("game-data-loading-synthesis"),
-            GameDataLoadingStatus::Locales => t("game-data-loading-locales"),
-            GameDataLoadingStatus::FellowCombination => t("game-data-loading-fellow-combination"),
-            GameDataLoadingStatus::Monster => t("game-data-loading-monster"),
+    pub fn decrease_tempering_rate(&mut self) {
+        if self.tempering > 0 {
+            self.tempering = self.tempering.saturating_sub(1);
+        }
+    }
+    pub fn increase_tempering_rate(&mut self, temper_limit: u8) {
+        if self.tempering < temper_limit {
+            self.tempering = self.tempering.saturating_add(1).min(temper_limit);
         }
     }
 }
@@ -478,7 +406,7 @@ impl GameDataLoadingStatus {
 pub struct GameDataView {
     game_data: GameData,
     pub filters: GameDataFilters,
-    pub filtered: IndexMap<SharedString, Rc<RefCell<Item>>>,
+    pub filtered: IndexMap<SharedString, Arc<Mutex<Item>>>,
     is_exporting: bool,
     is_reading: bool,
     explorer_scroll_handle: UniformListScrollHandle,
@@ -486,7 +414,6 @@ pub struct GameDataView {
     focus_handle: FocusHandle,
     debug: bool,
     debug_preview: Entity<EditorState>,
-    loading_status: Entity<GameDataLoadingStatus>,
     game_path: Entity<InputState>,
     preview: HashMap<SharedString, PreviewValues>,
     tabs: IndexSet<SharedString>,
@@ -513,7 +440,6 @@ impl GameDataView {
                     .placeholder("Game path...")
                     .default_value(Settings::global(cx).game_path.clone())
             }),
-            loading_status: cx.new(|_| GameDataLoadingStatus::Weapon),
             debug_preview: cx.new(|cx| EditorState::new(window, cx).language("json")),
         }
     }
@@ -529,12 +455,9 @@ impl GameDataView {
                     if path.extension().is_none_or(|f| f != "xlsx") {
                         path.set_extension("xlsx");
                     }
-
-                    let export_result = (async || -> Result<()> {
-                        let game_data = this.read_with(cx, |this, _| this.game_data.clone())?;
-                        Ok(game_data.export_xlsx(path.clone()).await?)
-                    })()
-                    .await;
+                    let game_data = this.read_with(cx, |this, _| this.game_data.clone()).unwrap();
+                    let p = path.clone();
+                    let export_result = cx.background_spawn(async move || -> Result<()> { game_data.export_xlsx(p) }()).await;
 
                     let _ = cx.update({
                         move |window, cx| {
@@ -585,8 +508,8 @@ impl GameDataView {
             .game_data
             .items
             .iter()
-            .filter(|(_, item)| self.filters.check_item(&item.borrow()))
-            .map(|(id, item)| (id.clone(), Rc::clone(item)))
+            .filter(|(_, item)| self.filters.check_item(&item.lock()))
+            .map(|(id, item)| (id.clone(), Arc::clone(item)))
             .collect();
     }
 
@@ -594,7 +517,7 @@ impl GameDataView {
         item_type: ItemType,
         preview_builder: PreviewBuilder,
         preview: &PreviewValues,
-        items: &IndexMap<SharedString, Rc<RefCell<Item>>>,
+        items: &IndexMap<SharedString, Arc<Mutex<Item>>>,
         cx: &Context<'_, GameDataView>,
     ) -> Div {
         v_flex()
@@ -948,6 +871,51 @@ impl GameDataView {
                             }),
                     ),
             )
+            .when_some(preview_builder.optional.reverse_tempering_rates, |this, tempering_rates| {
+                this.child(
+                    h_flex()
+                        .child(div().mr_2().text_color(cx.theme().success).child(t("success-chance")))
+                        .child(
+                            Button::new("decrease-tempering")
+                                //   .ghost()
+                                .xsmall()
+                                .icon(IconName::Minus)
+                                .on_click(cx.listener({
+                                    let id = preview_builder.common.id.clone();
+                                    move |this, _, _, cx| {
+                                        let preview = this.preview.entry(id.clone()).or_insert_with(|| PreviewValues::default());
+                                        preview.decrease_tempering_rate();
+                                        cx.notify();
+                                    }
+                                })),
+                        )
+                        .child(
+                            h_flex()
+                                .justify_center()
+                                .w(px(50.))
+                                .child(format!("{}/{}", preview.tempering, tempering_rates.rates.len())),
+                        )
+                        .child(
+                            Button::new("increase-tempering")
+                                //   .ghost()
+                                .xsmall()
+                                .icon(IconName::Plus)
+                                .on_click(cx.listener({
+                                    let id = preview_builder.common.id.clone();
+                                    let len = tempering_rates.rates.len();
+                                    move |this, _, _, cx| {
+                                        let preview = this.preview.entry(id.clone()).or_insert_with(|| PreviewValues::default());
+                                        preview.increase_tempering_rate(len as u8);
+
+                                        cx.notify();
+                                    }
+                                })),
+                        )
+                        .when_some(tempering_rates.rates.get(&preview.tempering), |this, rate| {
+                            this.child(div().ml_2().text_color(cx.theme().success).child(format!("{}%", rate)))
+                        }),
+                )
+            })
             .when(preview_builder.common.required_level != 0, |this| {
                 this.child(format!("{}: {}", t("item-required-level"), preview_builder.common.required_level))
             })
@@ -970,7 +938,14 @@ impl GameDataView {
                     })
                     .when(preview_builder.common.no_trade, |this| this.child(t("item-tag-no-trade")))
                     .when(preview_builder.common.no_sell, |this| this.child(t("item-tag-no-sell")))
-                    .when(preview_builder.common.no_destroy, |this| this.child(t("item-tag-no-destroy"))),
+                    .when(preview_builder.common.no_destroy, |this| this.child(t("item-tag-no-destroy")))
+                    .when_some(preview_builder.common.duration, |this, duration| {
+                        this.child(
+                            div()
+                                .text_color(cx.theme().danger)
+                                .child(t_v("usage-period", vec![("value", format_duration(duration).as_str())])),
+                        )
+                    }),
             )
             .when_some(preview_builder.optional.recipe_types, |this, recipe_types| {
                 this.child(
@@ -998,17 +973,18 @@ impl GameDataView {
                                         for (_, entry) in &fellow_combination.entries {
                                             let node = entry.reqpet.as_ref().or(entry.reqfellow.as_ref()).unwrap();
 
-                                            let (is_present, node_id, grade, icon, name) = (
-                                                node.item.is_some(),
-                                                node.id.clone(),
-                                                node.item.as_ref().and_then(|f| f.upgrade()).map(|m| m.borrow().get_grade()),
-                                                node.item.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.borrow().get_icon()),
-                                                node.item
-                                                    .as_ref()
-                                                    .and_then(|f| f.upgrade())
-                                                    .map(|m| m.borrow().get_localized_name())
-                                                    .unwrap_or_else(|| node.id.clone()),
-                                            );
+                                            let item = node.item.as_ref().and_then(|f| f.upgrade());
+
+                                            let (grade, icon, name) = match item {
+                                                Some(m) => {
+                                                    let g = m.lock(); // single lock, single guard
+                                                    (Some(g.get_grade()), g.get_icon(), g.get_localized_name())
+                                                }
+                                                None => (None, None, node.id.clone()),
+                                            };
+
+                                            let (is_present, node_id) = (node.item.is_some(), node.id.clone());
+
                                             content = content.child(
                                                 h_flex()
                                                     .id(format!("button-{}-{}", index, node_id))
@@ -1043,30 +1019,24 @@ impl GameDataView {
                                             )
                                         }
                                         v_flex().gap_1().child(content).when(!fellow_combination.skills.is_empty(), |this| {
-                                            this
-                                                .children(fellow_combination.skills.iter().map(|skill| {
-                                                    let last_level_skill_data =
-                                                        skill.skill_data.skill_level.iter().last();
-                                                    
-                                                    v_flex()
-                                                    
-                                                        .when_some(last_level_skill_data, |this, s| {
-                                                            this.when_some(s.buff1.effect_pattern_list.as_ref(), |this, buff| {
-                                                                this.when_some(buff.effect_pattern.as_ref(), |this, effects| {
-                                                                    this.when(!effects.is_empty(), |this| {
-                                                                        this.child(
-                                                                            div().text_color(cx.theme().yellow).mt_2().child(t("item-skill-effects")),
-                                                                        )
-                                                                        .children(effects.iter().map(|e| {
-                                                                            div()
-                                                                                .text_color(cx.theme().success)
-                                                                                .child(e.effect.get_locale_with_duration(s.keep_buff_time))
-                                                                        }))
-                                                                    })
-                                                                })
+                                            this.children(fellow_combination.skills.iter().map(|skill| {
+                                                let last_level_skill_data = skill.skill_data.skill_level.iter().last();
+
+                                                v_flex().when_some(last_level_skill_data, |this, s| {
+                                                    this.when_some(s.buff1.effect_pattern_list.as_ref(), |this, buff| {
+                                                        this.when_some(buff.effect_pattern.as_ref(), |this, effects| {
+                                                            this.when(!effects.is_empty(), |this| {
+                                                                this.child(div().text_color(cx.theme().yellow).mt_2().child(t("item-skill-effects")))
+                                                                    .children(effects.iter().map(|e| {
+                                                                        div()
+                                                                            .text_color(cx.theme().success)
+                                                                            .child(e.effect.get_locale_with_duration(s.keep_buff_time))
+                                                                    }))
                                                             })
                                                         })
-                                                }))
+                                                    })
+                                                })
+                                            }))
                                         })
                                     }
                                 })),
@@ -1078,30 +1048,21 @@ impl GameDataView {
                     this.child(div().mt_2().text_color(cx.theme().success).child(t("item-evolution")))
                         .child(v_flex().gap_1().children(preview_builder.common.evolution.iter().enumerate().map({
                             move |(index, evolution)| {
-                                let (is_present, chance, node_id, count, grade, icon, name) = (
+                                let material = evolution.material_fellow.item.as_ref().and_then(|f| f.upgrade());
+
+                                let (grade, icon, name) = match material {
+                                    Some(m) => {
+                                        let g = m.lock(); // lock once
+                                        (Some(g.get_grade()), g.get_icon(), g.get_localized_name())
+                                    }
+                                    None => (None, None, evolution.material_fellow.id.clone()),
+                                };
+
+                                let (is_present, chance, node_id, count) = (
                                     evolution.material_fellow.item.is_some(),
                                     evolution.successrate,
                                     evolution.material_fellow.id.clone(),
                                     evolution.material_count,
-                                    evolution
-                                        .material_fellow
-                                        .item
-                                        .as_ref()
-                                        .and_then(|f| f.upgrade())
-                                        .map(|m| m.borrow().get_grade()),
-                                    evolution
-                                        .material_fellow
-                                        .item
-                                        .as_ref()
-                                        .and_then(|f| f.upgrade())
-                                        .and_then(|m| m.borrow().get_icon()),
-                                    evolution
-                                        .material_fellow
-                                        .item
-                                        .as_ref()
-                                        .and_then(|f| f.upgrade())
-                                        .map(|m| m.borrow().get_localized_name())
-                                        .unwrap_or_else(|| evolution.material_fellow.id.clone()),
                                 );
 
                                 h_flex()
@@ -1175,30 +1136,21 @@ impl GameDataView {
                     this.child(div().mt_2().text_color(cx.theme().success).child(t("item-synthesis")))
                         .child(v_flex().gap_1().children(preview_builder.common.synthesis_parts.iter().enumerate().map({
                             move |(index, synthesis_parts)| {
-                                let (is_present, chance, node_id, count, grade, icon, name) = (
+                                let item = synthesis_parts.itemid.item.as_ref().and_then(|f| f.upgrade());
+
+                                let (grade, icon, name) = match item {
+                                    Some(m) => {
+                                        let guard = m.lock();
+                                        (Some(guard.get_grade()), guard.get_icon(), guard.get_localized_name())
+                                    }
+                                    None => (None, None, synthesis_parts.itemid.id.clone()),
+                                };
+
+                                let (is_present, chance, node_id, count) = (
                                     synthesis_parts.itemid.item.is_some(),
                                     synthesis_parts.successrate,
                                     synthesis_parts.itemid.id.clone(),
                                     synthesis_parts.itemcnt,
-                                    synthesis_parts
-                                        .itemid
-                                        .item
-                                        .as_ref()
-                                        .and_then(|f| f.upgrade())
-                                        .map(|m| m.borrow().get_grade()),
-                                    synthesis_parts
-                                        .itemid
-                                        .item
-                                        .as_ref()
-                                        .and_then(|f| f.upgrade())
-                                        .and_then(|m| m.borrow().get_icon()),
-                                    synthesis_parts
-                                        .itemid
-                                        .item
-                                        .as_ref()
-                                        .and_then(|f| f.upgrade())
-                                        .map(|m| m.borrow().get_localized_name())
-                                        .unwrap_or_else(|| synthesis_parts.itemid.id.clone()),
                                 );
 
                                 h_flex()
@@ -1353,11 +1305,14 @@ impl GameDataView {
                     .children(item_set.items.iter().map(|item| items.get(item)).map(|item| {
                         v_flex().items_start().when_some(item, {
                             move |this, item| {
-                                let id = item.borrow().get_id();
-                                let grade = item.borrow().get_grade();
+                                let (id, grade, name) = {
+                                    let g = item.lock();
+                                    (g.get_id(), g.get_grade(), g.get_localized_name())
+                                };
+
                                 this.child(
                                     Button::new(format!("button-{}", id))
-                                        .label(item.borrow().get_localized_name())
+                                        .label(name)
                                         .link()
                                         .small()
                                         .mb_2()
@@ -1581,18 +1536,18 @@ impl GameDataView {
                 },
             )
             .when(!preview_builder.optional.skills.is_empty(), |this| {
-                this.when(item_type == ItemType::Fellow, |this| {
+                this.when(item_type == ItemType::Fellow || item_type == ItemType::Monster, |this| {
                     this.child(div().mt_2().text_color(cx.theme().success).child(t("item-skills")))
                 })
                 .children(preview_builder.optional.skills.iter().map(|skill| {
-                    let last_level_skill_data = if item_type == ItemType::Fellow {
+                    let last_level_skill_data = if item_type == ItemType::Fellow || item_type == ItemType::Monster {
                         skill.skill_data.skill_level.iter().rev().find(|f| f.learn_level <= skill.max_item_level)
                     } else {
                         skill.skill_data.skill_level.iter().find(|f| f.level == skill.max_item_level)
                     };
                     v_flex()
                         .mt_2()
-                        .when(item_type == ItemType::Fellow, |this| {
+                        .when(item_type == ItemType::Fellow || item_type == ItemType::Monster, |this| {
                             this.child(
                                 h_flex()
                                     .gap_2()
@@ -1636,13 +1591,13 @@ impl GameDataView {
             .when_some(preview_builder.optional.description_locale, |this, description_locale| {
                 this.child(div().mt_2().child(RichText::parse(&description_locale, cx.theme().yellow)))
             })
-            .when_some(preview_builder.optional.product.and_then(|f| f.upgrade()).map(|f| f.borrow().clone()), {
+            .when_some(preview_builder.optional.product.and_then(|f| f.upgrade()).map(|f| f.lock().clone()), {
                 let id = preview_builder.common.id.clone();
                 move |this, product| {
                     let item = product.node.item.clone();
 
-                    let icon = item.as_ref().and_then(|f| f.upgrade()).and_then(|i| i.borrow().get_icon());
-                    let grade = item.as_ref().and_then(|f| f.upgrade()).map(|i| i.borrow().get_grade());
+                    let icon = item.as_ref().and_then(|f| f.upgrade()).and_then(|i| i.lock().get_icon());
+                    let grade = item.as_ref().and_then(|f| f.upgrade()).map(|i| i.lock().get_grade());
                     let chance = product.success_probability;
                     let inheritance_enhancement_condition = product.inheritance_enhancement_condition;
                     let inheritance_transcendence_condition = product.inheritance_transcendence_condition;
@@ -1682,7 +1637,7 @@ impl GameDataView {
                                                     .label(
                                                         item.as_ref()
                                                             .and_then(|f| f.upgrade())
-                                                            .map(|i| i.borrow().get_localized_name())
+                                                            .map(|i| i.lock().get_localized_name())
                                                             .unwrap_or_else(|| product.node.id.clone()),
                                                     )
                                                     .link()
@@ -1730,44 +1685,32 @@ impl GameDataView {
                                 move |(index, material)| {
                                     let use_additional = preview.materials.get(&(index as u8)).cloned().unwrap_or_default();
                                     let (is_present, node_id, count, grade, icon, name) = if !use_additional {
-                                        (
-                                            material.node.item.is_some(),
-                                            material.node.id.clone(),
-                                            material.count,
-                                            material.node.item.as_ref().and_then(|f| f.upgrade()).map(|m| m.borrow().get_grade()),
-                                            material.node.item.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.borrow().get_icon()),
-                                            material
-                                                .node
-                                                .item
-                                                .as_ref()
-                                                .and_then(|f| f.upgrade())
-                                                .map(|m| m.borrow().get_localized_name())
-                                                .unwrap_or_else(|| material.node.id.clone()),
-                                        )
+                                        let item = material.node.item.as_ref().and_then(|f| f.upgrade());
+                                        let (grade, icon, name) = match item {
+                                            Some(m) => {
+                                                let g = m.lock();
+                                                (Some(g.get_grade()), g.get_icon(), g.get_localized_name())
+                                            }
+                                            None => (None, None, material.node.id.clone()),
+                                        };
+                                        (material.node.item.is_some(), material.node.id.clone(), material.count, grade, icon, name)
                                     } else {
+                                        let node = material.additional_node.as_ref(); // Option<&T>
+                                        let item = node.and_then(|n| n.item.as_ref()).and_then(|f| f.upgrade());
+                                        let (grade, icon, name) = match item {
+                                            Some(m) => {
+                                                let g = m.lock();
+                                                (Some(g.get_grade()), g.get_icon(), g.get_localized_name())
+                                            }
+                                            None => (None, None, node.map(|n| n.id.clone()).unwrap_or_default()),
+                                        };
                                         (
-                                            material.additional_node.as_ref().and_then(|f| f.item.as_ref()).is_some(),
-                                            material.additional_node.as_ref().unwrap().id.clone(),
+                                            node.and_then(|n| n.item.as_ref()).is_some(),
+                                            node.map(|n| n.id.clone()).unwrap_or_default(),
                                             material.additional_count,
-                                            material
-                                                .additional_node
-                                                .as_ref()
-                                                .and_then(|f| f.item.as_ref())
-                                                .and_then(|f| f.upgrade())
-                                                .map(|m| m.borrow().get_grade()),
-                                            material
-                                                .additional_node
-                                                .as_ref()
-                                                .and_then(|f| f.item.as_ref())
-                                                .and_then(|f| f.upgrade())
-                                                .and_then(|m| m.borrow().get_icon()),
-                                            material
-                                                .additional_node
-                                                .as_ref()
-                                                .and_then(|f| f.item.as_ref())
-                                                .and_then(|f| f.upgrade())
-                                                .map(|m| m.borrow().get_localized_name())
-                                                .unwrap_or_else(|| material.additional_node.as_ref().unwrap().id.clone()),
+                                            grade,
+                                            icon,
+                                            name,
                                         )
                                     };
 
@@ -1848,7 +1791,7 @@ impl GameDataView {
                     .optional
                     .random_box_group
                     .and_then(|f| f.upgrade())
-                    .map(|f| f.borrow().clone()),
+                    .map(|f| f.lock().clone()),
                 {
                     move |this, random_box_group| {
                         let contents = random_box_group.items;
@@ -1860,17 +1803,15 @@ impl GameDataView {
                                 .children(contents.into_iter().map({
                                     move |(index, node)| {
                                         let (is_present, node_id, grade, icon, name) = {
-                                            (
-                                                node.item.is_some(),
-                                                node.id.clone(),
-                                                node.item.as_ref().and_then(|f| f.upgrade()).map(|m| m.borrow().get_grade()),
-                                                node.item.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.borrow().get_icon()),
-                                                node.item
-                                                    .as_ref()
-                                                    .and_then(|f| f.upgrade())
-                                                    .map(|m| m.borrow().get_localized_name())
-                                                    .unwrap_or_else(|| node.id.clone()),
-                                            )
+                                            let item = node.item.as_ref().and_then(|f| f.upgrade());
+                                            let (grade, icon, name) = match item {
+                                                Some(m) => {
+                                                    let g = m.lock(); // one guard
+                                                    (Some(g.get_grade()), g.get_icon(), g.get_localized_name())
+                                                }
+                                                None => (None, None, node.id.clone()),
+                                            };
+                                            (node.item.is_some(), node.id.clone(), grade, icon, name)
                                         };
                                         let probability = random_box_group.probabilities.get(&index);
                                         h_flex()
@@ -1940,19 +1881,15 @@ impl GameDataView {
                             .children(contents.into_iter().map({
                                 move |(index, item)| {
                                     let (is_present, count, node_id, grade, icon, name) = {
-                                        (
-                                            item.node.item.is_some(),
-                                            item.count,
-                                            item.node.id.clone(),
-                                            item.node.item.as_ref().and_then(|f| f.upgrade()).map(|m| m.borrow().get_grade()),
-                                            item.node.item.as_ref().and_then(|f| f.upgrade()).and_then(|m| m.borrow().get_icon()),
-                                            item.node
-                                                .item
-                                                .as_ref()
-                                                .and_then(|f| f.upgrade())
-                                                .map(|m| m.borrow().get_localized_name())
-                                                .unwrap_or_else(|| item.node.id.clone()),
-                                        )
+                                        let item_arc = item.node.item.as_ref().and_then(|f| f.upgrade());
+                                        let (grade, icon, name) = match item_arc {
+                                            Some(m) => {
+                                                let g = m.lock(); // single guard
+                                                (Some(g.get_grade()), g.get_icon(), g.get_localized_name())
+                                            }
+                                            None => (None, None, item.node.id.clone()),
+                                        };
+                                        (item.node.item.is_some(), item.count, item.node.id.clone(), grade, icon, name)
                                     };
 
                                     h_flex()
@@ -2048,12 +1985,12 @@ impl GameDataView {
                 )
                 .when(preview.linked_recipes_expanded, |this| {
                     this.children(preview_builder.common.linked_recipes.iter().filter_map(|id| items.get(id)).map(|item| {
-                        let id = item.borrow().get_id();
-                        let grade = item.borrow().get_grade();
+                        let id = item.lock().get_id();
+                        let grade = item.lock().get_grade();
 
                         v_flex().items_start().child(
                             Button::new(format!("button-recipe-{}", id))
-                                .label(item.borrow().get_localized_name())
+                                .label(item.lock().get_localized_name())
                                 .link()
                                 .small()
                                 .mb_2()
@@ -2083,7 +2020,7 @@ impl GameDataView {
             return;
         };
         if let Some(item) = self.filtered.get(selected_item) {
-            cx.write_to_clipboard(ClipboardItem::new_string(item.borrow().get_localized_name().to_string()));
+            cx.write_to_clipboard(ClipboardItem::new_string(item.lock().get_localized_name().to_string()));
             window.push_notification((NotificationType::Info, t("message-copy-item-name")), cx);
         }
     }
@@ -2098,9 +2035,9 @@ impl GameDataView {
             self.tabs_scroll_handle.scroll_to_item(index);
         }
         if let Some(item) = self.game_data.items.get(item) {
-            self.selected_item = Some(item.borrow().get_id());
+            self.selected_item = Some(item.lock().get_id());
             self.debug_preview.update(cx, |state, cx| {
-                state.set_value(item.borrow().get_debug().unwrap_or_default(), window, cx);
+                state.set_value(item.lock().get_debug().unwrap_or_default(), window, cx);
             });
 
             cx.notify();
@@ -2158,17 +2095,6 @@ impl Focusable for GameDataView {
     }
 }
 
-impl Render for GameDataLoadingStatus {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div().child(
-            Label::new(self.localize())
-                .text_sm()
-                .line_height(rems(1.8))
-                .text_color(cx.theme().muted_foreground),
-        )
-    }
-}
-
 impl Render for GameDataView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let focus_handle = self.focus_handle(cx);
@@ -2215,7 +2141,6 @@ impl Render for GameDataView {
                     this.child(
                         v_flex().size_full().justify_center().items_center().child(
                             h_flex()
-                                .w(px(350.))
                                 .items_center()
                                 .gap_5()
                                 .child(
@@ -2224,11 +2149,7 @@ impl Render for GameDataView {
                                         .min_size(px(80.))
                                         .size(px(80.)),
                                 )
-                                .child(
-                                    v_flex()
-                                        .child(div().font_medium().child(t("game-data-loading")))
-                                        .child(self.loading_status.clone()),
-                                ),
+                                .child(v_flex().child(div().font_medium().child(t("game-data-loading")))),
                         ),
                     )
                 },
@@ -2278,7 +2199,7 @@ impl Render for GameDataView {
                                             .on_click(cx.listener(|this, _, window, cx| {
                                                 this.is_reading = true;
                                                 let game_path = Settings::global(cx).game_path.clone();
-                                                let loading_status = this.loading_status.clone();
+
                                                 cx.spawn_in(window, async move |this, cx| {
                                                     let path = Path::new(&game_path);
                                                     if path.try_exists().ok().is_none_or(|f| f == false) || !path.is_dir() {
@@ -2304,7 +2225,10 @@ impl Render for GameDataView {
                                                         return;
                                                     }
 
-                                                    match GameData::load(&game_path, &loading_status, cx).await {
+                                                    match cx
+                                                        .background_spawn(async move || -> Result<GameData> { GameData::load(game_path) }())
+                                                        .await
+                                                    {
                                                         Ok(data) => {
                                                             let _ = this.update_in(cx, |this, window, cx| {
                                                                 this.game_data = data;
@@ -2388,8 +2312,8 @@ impl Render for GameDataView {
                                                                     visible_range
                                                                         .filter_map(|ix| {
                                                                             this.filtered.iter().nth(ix).map(|(id, item)| {
-                                                                                let icon = item.borrow().get_icon();
-                                                                                let grade = item.borrow().get_grade();
+                                                                                let icon = item.lock().get_icon();
+                                                                                let grade = item.lock().get_grade();
 
                                                                                 h_flex()
                                                                                     .w_full()
@@ -2438,7 +2362,7 @@ impl Render for GameDataView {
                                                                                             .truncate()
                                                                                             .w_full()
                                                                                             .text_sm()
-                                                                                            .child(item.borrow().get_localized_name())
+                                                                                            .child(item.lock().get_localized_name())
                                                                                             .when_some(grade.color(), |this, color| {
                                                                                                 this.text_color(color)
                                                                                             }),
@@ -2485,7 +2409,7 @@ impl Render for GameDataView {
                                                                                 item,
                                                                                 |this, item| {
                                                                                     this.item(
-                                                                                        PopupMenuItem::new(item.borrow().get_localized_name())
+                                                                                        PopupMenuItem::new(item.lock().get_localized_name())
                                                                                             .checked(
                                                                                                 entity
                                                                                                     .read(cx)
@@ -2518,17 +2442,18 @@ impl Render for GameDataView {
                                                         )
                                                         .children(
                                                             self.tabs.iter().filter_map(|item_id| self.game_data.items.get(item_id)).map(|item| {
-                                                                let item_id = item.borrow().get_id();
+                                                                let (item_id, name, grade_color) = {
+                                                                    let g = item.lock();
+                                                                    (g.get_id(), g.get_localized_name(), g.get_grade().color())
+                                                                };
 
                                                                 Tab::new()
                                                                     .child(
                                                                         div()
                                                                             .px_1()
                                                                             .w_full()
-                                                                            .child(item.borrow().get_localized_name())
-                                                                            .when_some(item.borrow().get_grade().color(), |this, color| {
-                                                                                this.text_color(color)
-                                                                            }),
+                                                                            .child(name)
+                                                                            .when_some(grade_color, |this, color| this.text_color(color)),
                                                                     )
                                                                     .on_click({
                                                                         let item_id = item_id.clone();
@@ -2556,9 +2481,9 @@ impl Render for GameDataView {
                                                     }),
                                             )
                                             .when_some(
-                                                self.selected_item
-                                                    .as_ref()
-                                                    .and_then(|selected_item_id| self.game_data.items.get(selected_item_id).map(|f| f.borrow())),
+                                                self.selected_item.as_ref().and_then(|selected_item_id| {
+                                                    self.game_data.items.get(selected_item_id).map(|f| f.lock().clone())
+                                                }),
                                                 |this, selected_item| {
                                                     let grade = selected_item.get_grade();
 
@@ -2577,7 +2502,7 @@ impl Render for GameDataView {
                                                     let transcendence_effect =
                                                         (preview.transcendence != 0).then(|| preview.transcendence as f32 * 0.05);
 
-                                                    let preview_builder = match &*selected_item {
+                                                    let preview_builder = match &selected_item {
                                                         crate::game_data::items::Item::Armor(armor) => {
                                                             let random_effects = self.game_data.get_random_effects(
                                                                 grade,
@@ -3041,7 +2966,7 @@ impl Render for GameDataView {
                                         .additional_filter
                                         .as_ref()
                                         .is_some_and(|x| *x == AdditionalFilter::Synthesis);
-                                                                        let is_fellow_combination_checked = entity
+                                    let is_fellow_combination_checked = entity
                                         .read(cx)
                                         .filters
                                         .additional_filter
@@ -3058,30 +2983,31 @@ impl Render for GameDataView {
                                             cx.notify();
                                         })
                                     }))
+                                    .item(PopupMenuItem::new(t("filter-synthesis")).checked(is_synthesis_checked).on_click({
+                                        window.listener_for(&entity, move |this, _, _, cx| {
+                                            if is_synthesis_checked {
+                                                this.filters.additional_filter = None;
+                                            } else {
+                                                this.filters.additional_filter = Some(AdditionalFilter::Synthesis);
+                                            }
+                                            this.apply_filter_and_resort();
+                                            cx.notify();
+                                        })
+                                    }))
                                     .item(
-                                        PopupMenuItem::new(t("filter-synthesis")).checked(is_synthesis_checked).on_click({
-                                            window.listener_for(&entity, move |this, _, _, cx| {
-                                                if is_synthesis_checked {
-                                                    this.filters.additional_filter = None;
-                                                } else {
-                                                    this.filters.additional_filter = Some(AdditionalFilter::Synthesis);
-                                                }
-                                                this.apply_filter_and_resort();
-                                                cx.notify();
-                                            })
-                                        }),
-                                    ) .item(
-                                        PopupMenuItem::new(t("filter-fellow-combination")).checked(is_fellow_combination_checked).on_click({
-                                            window.listener_for(&entity, move |this, _, _, cx| {
-                                                if is_fellow_combination_checked {
-                                                    this.filters.additional_filter = None;
-                                                } else {
-                                                    this.filters.additional_filter = Some(AdditionalFilter::FellowCombination);
-                                                }
-                                                this.apply_filter_and_resort();
-                                                cx.notify();
-                                            })
-                                        }),
+                                        PopupMenuItem::new(t("filter-fellow-combination"))
+                                            .checked(is_fellow_combination_checked)
+                                            .on_click({
+                                                window.listener_for(&entity, move |this, _, _, cx| {
+                                                    if is_fellow_combination_checked {
+                                                        this.filters.additional_filter = None;
+                                                    } else {
+                                                        this.filters.additional_filter = Some(AdditionalFilter::FellowCombination);
+                                                    }
+                                                    this.apply_filter_and_resort();
+                                                    cx.notify();
+                                                })
+                                            }),
                                     )
                                 }
                             }),

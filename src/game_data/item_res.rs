@@ -1,15 +1,15 @@
-use std::io::SeekFrom;
+use std::io::{BufRead, Seek, SeekFrom};
 
-use crate::game_data::{AsyncBufReadExtReadString, DataFormat, TagType, items::ReadableItem};
+use crate::game_data::{ DataFormat, ReadExt, TagType, items::ReadableItem};
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-use tokio::io::{AsyncBufReadExt, AsyncSeek, AsyncSeekExt};
+
 
 #[derive(Debug, Default)]
 pub struct ItemRes {
     pub id: SharedString,
-    pub icon: SharedString,
+    pub icon: Option<SharedString>,
 }
 
 impl ReadableItem for ItemRes {
@@ -29,7 +29,7 @@ impl ReadableItem for ItemRes {
         unimplemented!()
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -45,22 +45,25 @@ impl ReadableItem for ItemRes {
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
 
             match tag.as_str() {
                 "id" => {
                     self.id = {
-                        let id = reader.read_string(Self::FORMAT).await?.to_uppercase();
+                        let id = reader.read_string(Self::FORMAT)?.to_uppercase();
                         SharedString::new(id)
                     }
                 }
                 "icon" | "iconb" => {
-                    self.icon = reader.read_string(Self::FORMAT).await?;
+                    let icon =  reader.read_string(Self::FORMAT)?;
+                    if !icon.is_empty() && icon != "0"{
+                        self.icon = Some(icon);
+                    }
                 }
                 _ => {}
             }

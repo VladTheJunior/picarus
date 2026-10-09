@@ -1,24 +1,15 @@
 use std::{
-    collections::{BTreeSet, HashMap},
-    io::SeekFrom,
+    collections::{BTreeSet, HashMap}, io::{BufRead, Seek, SeekFrom},
 };
 
 use crate::{
     game_data::{
-        AsyncBufReadExtReadString, DataFormat, TagType,
-        common::Common,
-        effects::EffectKind,
-        items::{ItemTrait, ReadableItem},
-        locale::Locale,
-        skill::Skill,
-    },
-    game_data_view::PreviewBuilder,
-    language::t,
+         DataFormat, ReadExt, TagType, common::Common, effects::EffectKind, items::{ItemTrait, ReadableItem}, locale::Locale, skill::Skill,
+    }, game_data_view::PreviewBuilder, language::t,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use gpui_kit::SharedString;
 use tracing::warn;
@@ -94,7 +85,7 @@ impl ReadableItem for Fellow {
         &mut self.debug
     }
 
-    async fn read<R: AsyncBufReadExt + AsyncSeek + std::marker::Unpin>(
+    fn read<R: BufRead + Seek + ?Sized>(
         mut self,
         reader: &mut R,
         offsets: &[u32],
@@ -102,39 +93,39 @@ impl ReadableItem for Fellow {
         definitions: &IndexMap<SharedString, TagType>,
         global_offset: u64,
     ) -> Result<Self> {
-        self.parse_debug(reader, offsets, item_idx, definitions, global_offset).await?;
+        self.parse_debug(reader, offsets, item_idx, definitions, global_offset)?;
         let tag_count = definitions.len();
         for (tag_idx, (tag, tag_type)) in definitions.iter().enumerate() {
             let global_idx = item_idx * tag_count + tag_idx;
             let offset = offsets[global_idx] as u64;
             match Self::FORMAT {
                 DataFormat::String => {
-                    reader.seek(SeekFrom::Start(global_offset + offset)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset))?;
                 }
                 DataFormat::WideString => {
-                    reader.seek(SeekFrom::Start(global_offset + offset * 2)).await?;
+                    reader.seek(SeekFrom::Start(global_offset + offset * 2))?;
                 }
             };
 
-            self.common.parse(tag, tag_type, reader, Self::FORMAT).await?;
+            self.common.parse(tag, tag_type, reader, Self::FORMAT)?;
 
             match tag.as_str() {
-                "advpoint" => self.adventure_points = reader.read_f32_le().await? as u16,
+                "advpoint" => self.adventure_points = reader.read_f32_le()? as u16,
                 "regionid" => {
-                    let value = reader.read_string(Self::FORMAT).await?.to_uppercase();
+                    let value = reader.read_string(Self::FORMAT)?.to_uppercase();
                     if value != "*" {
                         self.region_id = Some(SharedString::new(value));
                     }
                 }
-                "maxReinforce" => self.temper_limit = reader.read_f32_le().await? as u8,
-                "뛰기속도" => self.run_speed = reader.read_f32_le().await?,
-                "비행뛰기속도" => self.flight_run_speed = reader.read_f32_le().await?,
-                "비행가능여부" => self.can_fly = reader.read_f32_le().await? != 0.0,
-                "최대성장레벨" => self.max_level = reader.read_f32_le().await? as u8,
-                "펠로우슬레이브타입" => self.fellow_type = FellowType::from(reader.read_string(Self::FORMAT).await?),
-                "fellowpeople" => self.fellow_people = reader.read_f32_le().await? as u8,
+                "maxReinforce" => self.temper_limit = reader.read_f32_le()? as u8,
+                "뛰기속도" => self.run_speed = reader.read_f32_le()?,
+                "비행뛰기속도" => self.flight_run_speed = reader.read_f32_le()?,
+                "비행가능여부" => self.can_fly = reader.read_f32_le()? != 0.0,
+                "최대성장레벨" => self.max_level = reader.read_f32_le()? as u8,
+                "펠로우슬레이브타입" => self.fellow_type = FellowType::from(reader.read_string(Self::FORMAT)?),
+                "fellowpeople" => self.fellow_people = reader.read_f32_le()? as u8,
                 "skill" => {
-                    let value = reader.read_string(Self::FORMAT).await?;
+                    let value = reader.read_string(Self::FORMAT)?;
                     if value != "*" {
                         self.skill = Some(value);
                     }
