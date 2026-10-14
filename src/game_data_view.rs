@@ -2086,6 +2086,7 @@ impl Render for GameDataView {
             .child(
                 TitleBar::new().child(
                     h_flex()
+                    .items_center()
                         .gap_2()
                         .child("PICARUS")
                         .when_some(option_env!("VERGEN_GIT_DESCRIBE"), |this, git_describe| {
@@ -2112,24 +2113,47 @@ impl Render for GameDataView {
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground),
                             )
-                        }),
-                ),
+                        })
+                ).child(  h_flex()
+                 .justify_end()
+                    .items_center().child(
+                        Button::new("lang-switcher")
+                            .icon(IconName::Languages)
+                            .ghost()
+                            .xsmall()
+                            .w(px(70.))
+                            .cursor_pointer()
+                            .label(language.title())
+                            .on_click(cx.listener(move |_, _, _, cx| {
+                                match language {
+                                    crate::settings::Language::English => {
+                                        Settings::update_global(cx, |this, _| this.language = crate::settings::Language::Russian);
+                                        LanguageController::switch(crate::settings::Language::Russian);
+                                    }
+                                    crate::settings::Language::Russian => {
+                                        Settings::update_global(cx, |this, _| this.language = crate::settings::Language::English);
+                                        LanguageController::switch(crate::settings::Language::English);
+                                    }
+                                }
+                                cx.notify();
+                            })),
+                    )),
             )
             .when_else(
                 self.is_reading,
                 |this| {
                     this.child(
                         v_flex().size_full().justify_center().items_center().child(
-                            h_flex()
+                            v_flex()
                                 .items_center()
-                                .gap_5()
+                                .gap_3()
                                 .child(
                                     ProgressCircle::new("analysis-progress")
                                         .loading(self.is_reading)
                                         .min_size(px(80.))
                                         .size(px(80.)),
                                 )
-                                .child(v_flex().child(div().font_medium().child(t("game-data-loading")))),
+                                .child(div().font_medium().child(t("game-data-loading"))),
                         ),
                     )
                 },
@@ -2753,11 +2777,8 @@ impl Render for GameDataView {
                                             .into_any_element(),
                                     ),
                             )
-                        },
-                    )
-                },
-            )
-            .child(
+                        
+                                    .child(
                 StatusBar::new()
                     .left(
                         Input::new(&self.filters.search_state)
@@ -3000,28 +3021,13 @@ impl Render for GameDataView {
                             })),
                     )
                     .right(Separator::vertical())
-                    .right(
-                        Button::new("lang-switcher")
-                            .icon(IconName::Languages)
-                            .ghost()
-                            .xsmall()
-                            .w(px(70.))
-                            .cursor_pointer()
-                            .label(language.title())
-                            .on_click(cx.listener(move |_, _, _, cx| {
-                                match language {
-                                    crate::settings::Language::English => {
-                                        Settings::update_global(cx, |this, _| this.language = crate::settings::Language::Russian);
-                                        LanguageController::switch(crate::settings::Language::Russian);
-                                    }
-                                    crate::settings::Language::Russian => {
-                                        Settings::update_global(cx, |this, _| this.language = crate::settings::Language::English);
-                                        LanguageController::switch(crate::settings::Language::English);
-                                    }
-                                }
-                                cx.notify();
-                            })),
-                    ),
+                    ,
+            )
+
+                        
+                        },
+                    )
+                },
             )
     }
 }
