@@ -2084,60 +2084,63 @@ impl Render for GameDataView {
         v_flex()
             .size_full()
             .child(
-                TitleBar::new().child(
-                    h_flex()
-                    .items_center()
-                        .gap_2()
-                        .child("PICARUS")
-                        .when_some(option_env!("VERGEN_GIT_DESCRIBE"), |this, git_describe| {
-                            this.child(
-                                Button::new("button-github")
-                                    .occlude()
-                                    .icon(IconName::Github)
-                                    .text_color(cx.theme().foreground)
-                                    .link()
-                                    .xsmall()
-                                    .label(git_describe)
-                                    .on_click(|_, _, cx| cx.open_url("https://github.com/VladTheJunior/picarus")),
-                            )
-                        })
-                        .when(!self.game_data.elapsed.is_zero(), |this| {
-                            this.child(
-                                Label::new(t_v(
-                                    "game-data-elapsed",
-                                    vec![
-                                        ("elapsed", format!("{:?}", self.game_data.elapsed)),
-                                        ("items", format!("{}", self.game_data.shared.len())),
-                                    ],
-                                ))
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground),
-                            )
-                        })
-                ).child(  h_flex()
-                 .justify_end()
-                    .items_center().child(
-                        Button::new("lang-switcher")
-                            .icon(IconName::Languages)
-                            .ghost()
-                            .xsmall()
-                            .w(px(70.))
-                            .cursor_pointer()
-                            .label(language.title())
-                            .on_click(cx.listener(move |_, _, _, cx| {
-                                match language {
-                                    crate::settings::Language::English => {
-                                        Settings::update_global(cx, |this, _| this.language = crate::settings::Language::Russian);
-                                        LanguageController::switch(crate::settings::Language::Russian);
+                TitleBar::new()
+                    .child(
+                        h_flex()
+                            .items_center()
+                            .gap_2()
+                            .child("PICARUS")
+                            .when_some(option_env!("VERGEN_GIT_DESCRIBE"), |this, git_describe| {
+                                this.child(
+                                    Button::new("button-github")
+                                        .occlude()
+                                        .icon(IconName::Github)
+                                        .text_color(cx.theme().foreground)
+                                        .link()
+                                        .xsmall()
+                                        .label(git_describe)
+                                        .on_click(|_, _, cx| cx.open_url("https://github.com/VladTheJunior/picarus")),
+                                )
+                            })
+                            .when(!self.game_data.elapsed.is_zero(), |this| {
+                                this.child(
+                                    Label::new(t_v(
+                                        "game-data-elapsed",
+                                        vec![
+                                            ("elapsed", format!("{:?}", self.game_data.elapsed)),
+                                            ("items", format!("{}", self.game_data.shared.len())),
+                                        ],
+                                    ))
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground),
+                                )
+                            }),
+                    )
+                    .child(
+                        h_flex().justify_end().items_center().child(
+                            Button::new("lang-switcher")
+                                .icon(IconName::Languages)
+                                .ghost()
+                                .occlude()
+                                .xsmall()
+                                .w(px(70.))
+                                .cursor_pointer()
+                                .label(language.title())
+                                .on_click(cx.listener(move |_, _, _, cx| {
+                                    match language {
+                                        crate::settings::Language::English => {
+                                            Settings::update_global(cx, |this, _| this.language = crate::settings::Language::Russian);
+                                            LanguageController::switch(crate::settings::Language::Russian);
+                                        }
+                                        crate::settings::Language::Russian => {
+                                            Settings::update_global(cx, |this, _| this.language = crate::settings::Language::English);
+                                            LanguageController::switch(crate::settings::Language::English);
+                                        }
                                     }
-                                    crate::settings::Language::Russian => {
-                                        Settings::update_global(cx, |this, _| this.language = crate::settings::Language::English);
-                                        LanguageController::switch(crate::settings::Language::English);
-                                    }
-                                }
-                                cx.notify();
-                            })),
-                    )),
+                                    cx.notify();
+                                })),
+                        ),
+                    ),
             )
             .when_else(
                 self.is_reading,
@@ -2777,254 +2780,258 @@ impl Render for GameDataView {
                                             .into_any_element(),
                                     ),
                             )
-                        
-                                    .child(
-                StatusBar::new()
-                    .left(
-                        Input::new(&self.filters.search_state)
-                            .appearance(false)
-                            .flex_shrink_0()
-                            .w(px(284.))
-                            .disabled(self.is_reading)
-                            .prefix(Icon::new(IconName::Search).small())
-                            .small(),
-                    )
-                    .left(Separator::vertical())
-                    .left({
-                        let entity = self.filters.item_type_state.clone();
-                        let status = entity.read_with(cx, |this, _| {
-                            let selected_len = this.selected_values().len();
-                            if selected_len == 0 {
-                                return Some(false);
-                            }
-                            if selected_len == ItemType::iter().len() {
-                                return Some(true);
-                            }
-                            None
-                        });
-                        Combobox::new(&self.filters.item_type_state)
-                            .appearance(false)
-                            .w(px(200.))
-                            .flex_shrink_0()
-                            .disabled(self.is_reading)
-                            .small()
-                            .render_trigger(move |_, _, _| div().child(t("item-types")))
-                            .footer(move |_, _| {
-                                let entity = entity.clone();
-                                Button::new("check-selection-grade")
-                                    .ghost()
-                                    .map(move |this| match status {
-                                        Some(true) => this.icon(Icon::new(IconName::SquareCheckBig)).on_click(move |_, _, cx| {
-                                            entity.update(cx, |this, cx| {
-                                                this.clear_selection(cx);
-                                                cx.notify();
-                                            });
-                                        }),
-                                        Some(false) => this.icon(Icon::new(IconName::Square)).on_click(move |_, window, cx| {
-                                            entity.update(cx, |this, cx| {
-                                                this.set_selected_indices(ItemType::iter().enumerate().map(|(i, _)| IndexPath::new(i)), window, cx);
-                                                cx.emit(ComboboxEvent::Change(this.selected_values()));
-                                                cx.notify();
-                                            });
-                                        }),
-                                        None => this.icon(Icon::new(IconName::SquareMinus)).on_click(move |_, _, cx| {
-                                            entity.update(cx, |this, cx| {
-                                                this.clear_selection(cx);
-                                                cx.notify();
-                                            });
-                                        }),
-                                    })
-                                    .label(t("checkbox-check-all"))
-                                    .small()
-                                    .w_full()
-                                    .justify_start()
-                                    .into_any_element()
-                            })
-                    })
-                    .left(Separator::vertical())
-                    .left({
-                        let entity = self.filters.grade_state.clone();
-                        let status = entity.read_with(cx, |this, _| {
-                            let selected_len = this.selected_values().len();
-                            if selected_len == 0 {
-                                return Some(false);
-                            }
-                            if selected_len == Grade::iter().len() {
-                                return Some(true);
-                            }
-                            None
-                        });
-                        Combobox::new(&self.filters.grade_state)
-                            .appearance(false)
-                            .w(px(150.))
-                            .flex_shrink_0()
-                            .disabled(self.is_reading)
-                            .small()
-                            .render_trigger(move |_, _, _| div().child(t("item-grades")))
-                            .footer(move |_, _| {
-                                let entity = entity.clone();
-                                Button::new("check-selection-grade")
-                                    .ghost()
-                                    .map(move |this| match status {
-                                        Some(true) => this.icon(Icon::new(IconName::SquareCheckBig)).on_click(move |_, _, cx| {
-                                            entity.update(cx, |this, cx| {
-                                                this.clear_selection(cx);
-                                                cx.notify();
-                                            });
-                                        }),
-                                        Some(false) => this.icon(Icon::new(IconName::Square)).on_click(move |_, window, cx| {
-                                            entity.update(cx, |this, cx| {
-                                                this.set_selected_indices(Grade::iter().enumerate().map(|(i, _)| IndexPath::new(i)), window, cx);
-                                                cx.emit(ComboboxEvent::Change(this.selected_values()));
-                                                cx.notify();
-                                            });
-                                        }),
-                                        None => this.icon(Icon::new(IconName::SquareMinus)).on_click(move |_, _, cx| {
-                                            entity.update(cx, |this, cx| {
-                                                this.clear_selection(cx);
-                                                cx.notify();
-                                            });
-                                        }),
-                                    })
-                                    .label(t("checkbox-check-all"))
-                                    .small()
-                                    .w_full()
-                                    .justify_start()
-                                    .into_any_element()
-                            })
-                    })
-                    .left(Separator::vertical())
-                    .left(
-                        Combobox::new(&self.filters.effects_state)
-                            .appearance(false)
-                            .w(px(300.))
-                            .flex_shrink_0()
-                            .disabled(self.is_reading)
-                            .small()
-                            .cleanable(true)
-                            .placeholder(t("item-effects")),
-                    )
-                    .left(Separator::vertical())
-                    .left(
-                        Button::new("filter-additional")
-                            .ghost()
-                            .xsmall()
-                            .disabled(self.is_reading)
-                            .icon(IconName::EllipsisVertical)
-                            .dropdown_menu({
-                                let entity = cx.entity();
-                                move |mut menu, window, cx| {
-                                    menu = menu.submenu(t("filter-fishing"), window, cx, {
-                                        let entity = entity.clone();
-                                        move |mut menu, window, cx| {
-                                            let fishing = entity
-                                                .read(cx)
-                                                .game_data
-                                                .fishing
-                                                .iter()
-                                                .map(|f| (f.area.clone(), f.get_localized_fishing_map()))
-                                                .collect::<IndexMap<_, _>>();
-
-                                            for (area_id, area) in fishing {
-                                                let is_checked = entity
-                                                    .read(cx)
-                                                    .filters
-                                                    .additional_filter
-                                                    .as_ref()
-                                                    .is_some_and(|x| *x == AdditionalFilter::Fishing(area_id.clone()));
-
-                                                menu = menu.item(PopupMenuItem::new(area).checked(is_checked).on_click({
-                                                    window.listener_for(&entity, move |this, _, _, cx| {
-                                                        if is_checked {
-                                                            this.filters.additional_filter = None;
-                                                        } else {
-                                                            this.filters.additional_filter = Some(AdditionalFilter::Fishing(area_id.clone()));
-                                                        }
-                                                        this.apply_filter_and_resort();
-                                                        cx.notify();
+                            .child(
+                                StatusBar::new()
+                                    .left(
+                                        Input::new(&self.filters.search_state)
+                                            .appearance(false)
+                                            .flex_shrink_0()
+                                            .w(px(284.))
+                                            .disabled(self.is_reading)
+                                            .prefix(Icon::new(IconName::Search).small())
+                                            .small(),
+                                    )
+                                    .left(Separator::vertical())
+                                    .left({
+                                        let entity = self.filters.item_type_state.clone();
+                                        let status = entity.read_with(cx, |this, _| {
+                                            let selected_len = this.selected_values().len();
+                                            if selected_len == 0 {
+                                                return Some(false);
+                                            }
+                                            if selected_len == ItemType::iter().len() {
+                                                return Some(true);
+                                            }
+                                            None
+                                        });
+                                        Combobox::new(&self.filters.item_type_state)
+                                            .appearance(false)
+                                            .w(px(200.))
+                                            .flex_shrink_0()
+                                            .disabled(self.is_reading)
+                                            .small()
+                                            .render_trigger(move |_, _, _| div().child(t("item-types")))
+                                            .footer(move |_, _| {
+                                                let entity = entity.clone();
+                                                Button::new("check-selection-grade")
+                                                    .ghost()
+                                                    .map(move |this| match status {
+                                                        Some(true) => this.icon(Icon::new(IconName::SquareCheckBig)).on_click(move |_, _, cx| {
+                                                            entity.update(cx, |this, cx| {
+                                                                this.clear_selection(cx);
+                                                                cx.notify();
+                                                            });
+                                                        }),
+                                                        Some(false) => this.icon(Icon::new(IconName::Square)).on_click(move |_, window, cx| {
+                                                            entity.update(cx, |this, cx| {
+                                                                this.set_selected_indices(
+                                                                    ItemType::iter().enumerate().map(|(i, _)| IndexPath::new(i)),
+                                                                    window,
+                                                                    cx,
+                                                                );
+                                                                cx.emit(ComboboxEvent::Change(this.selected_values()));
+                                                                cx.notify();
+                                                            });
+                                                        }),
+                                                        None => this.icon(Icon::new(IconName::SquareMinus)).on_click(move |_, _, cx| {
+                                                            entity.update(cx, |this, cx| {
+                                                                this.clear_selection(cx);
+                                                                cx.notify();
+                                                            });
+                                                        }),
                                                     })
-                                                }))
+                                                    .label(t("checkbox-check-all"))
+                                                    .small()
+                                                    .w_full()
+                                                    .justify_start()
+                                                    .into_any_element()
+                                            })
+                                    })
+                                    .left(Separator::vertical())
+                                    .left({
+                                        let entity = self.filters.grade_state.clone();
+                                        let status = entity.read_with(cx, |this, _| {
+                                            let selected_len = this.selected_values().len();
+                                            if selected_len == 0 {
+                                                return Some(false);
                                             }
-                                            menu
-                                        }
-                                    });
+                                            if selected_len == Grade::iter().len() {
+                                                return Some(true);
+                                            }
+                                            None
+                                        });
+                                        Combobox::new(&self.filters.grade_state)
+                                            .appearance(false)
+                                            .w(px(150.))
+                                            .flex_shrink_0()
+                                            .disabled(self.is_reading)
+                                            .small()
+                                            .render_trigger(move |_, _, _| div().child(t("item-grades")))
+                                            .footer(move |_, _| {
+                                                let entity = entity.clone();
+                                                Button::new("check-selection-grade")
+                                                    .ghost()
+                                                    .map(move |this| match status {
+                                                        Some(true) => this.icon(Icon::new(IconName::SquareCheckBig)).on_click(move |_, _, cx| {
+                                                            entity.update(cx, |this, cx| {
+                                                                this.clear_selection(cx);
+                                                                cx.notify();
+                                                            });
+                                                        }),
+                                                        Some(false) => this.icon(Icon::new(IconName::Square)).on_click(move |_, window, cx| {
+                                                            entity.update(cx, |this, cx| {
+                                                                this.set_selected_indices(
+                                                                    Grade::iter().enumerate().map(|(i, _)| IndexPath::new(i)),
+                                                                    window,
+                                                                    cx,
+                                                                );
+                                                                cx.emit(ComboboxEvent::Change(this.selected_values()));
+                                                                cx.notify();
+                                                            });
+                                                        }),
+                                                        None => this.icon(Icon::new(IconName::SquareMinus)).on_click(move |_, _, cx| {
+                                                            entity.update(cx, |this, cx| {
+                                                                this.clear_selection(cx);
+                                                                cx.notify();
+                                                            });
+                                                        }),
+                                                    })
+                                                    .label(t("checkbox-check-all"))
+                                                    .small()
+                                                    .w_full()
+                                                    .justify_start()
+                                                    .into_any_element()
+                                            })
+                                    })
+                                    .left(Separator::vertical())
+                                    .left(
+                                        Combobox::new(&self.filters.effects_state)
+                                            .appearance(false)
+                                            .w(px(300.))
+                                            .flex_shrink_0()
+                                            .disabled(self.is_reading)
+                                            .small()
+                                            .cleanable(true)
+                                            .placeholder(t("item-effects")),
+                                    )
+                                    .left(Separator::vertical())
+                                    .left(
+                                        Button::new("filter-additional")
+                                            .ghost()
+                                            .xsmall()
+                                            .disabled(self.is_reading)
+                                            .icon(IconName::EllipsisVertical)
+                                            .dropdown_menu({
+                                                let entity = cx.entity();
+                                                move |mut menu, window, cx| {
+                                                    menu = menu.submenu(t("filter-fishing"), window, cx, {
+                                                        let entity = entity.clone();
+                                                        move |mut menu, window, cx| {
+                                                            let fishing = entity
+                                                                .read(cx)
+                                                                .game_data
+                                                                .fishing
+                                                                .iter()
+                                                                .map(|f| (f.area.clone(), f.get_localized_fishing_map()))
+                                                                .collect::<IndexMap<_, _>>();
 
-                                    let is_evolution_checked = entity
-                                        .read(cx)
-                                        .filters
-                                        .additional_filter
-                                        .as_ref()
-                                        .is_some_and(|x| *x == AdditionalFilter::Evolution);
-                                    let is_synthesis_checked = entity
-                                        .read(cx)
-                                        .filters
-                                        .additional_filter
-                                        .as_ref()
-                                        .is_some_and(|x| *x == AdditionalFilter::Synthesis);
-                                    let is_fellow_combination_checked = entity
-                                        .read(cx)
-                                        .filters
-                                        .additional_filter
-                                        .as_ref()
-                                        .is_some_and(|x| *x == AdditionalFilter::FellowCombination);
-                                    menu.item(PopupMenuItem::new(t("filter-evolution")).checked(is_evolution_checked).on_click({
-                                        window.listener_for(&entity, move |this, _, _, cx| {
-                                            if is_evolution_checked {
-                                                this.filters.additional_filter = None;
-                                            } else {
-                                                this.filters.additional_filter = Some(AdditionalFilter::Evolution);
-                                            }
-                                            this.apply_filter_and_resort();
-                                            cx.notify();
-                                        })
-                                    }))
-                                    .item(PopupMenuItem::new(t("filter-synthesis")).checked(is_synthesis_checked).on_click({
-                                        window.listener_for(&entity, move |this, _, _, cx| {
-                                            if is_synthesis_checked {
-                                                this.filters.additional_filter = None;
-                                            } else {
-                                                this.filters.additional_filter = Some(AdditionalFilter::Synthesis);
-                                            }
-                                            this.apply_filter_and_resort();
-                                            cx.notify();
-                                        })
-                                    }))
-                                    .item(
-                                        PopupMenuItem::new(t("filter-fellow-combination"))
-                                            .checked(is_fellow_combination_checked)
-                                            .on_click({
-                                                window.listener_for(&entity, move |this, _, _, cx| {
-                                                    if is_fellow_combination_checked {
-                                                        this.filters.additional_filter = None;
-                                                    } else {
-                                                        this.filters.additional_filter = Some(AdditionalFilter::FellowCombination);
-                                                    }
-                                                    this.apply_filter_and_resort();
-                                                    cx.notify();
-                                                })
+                                                            for (area_id, area) in fishing {
+                                                                let is_checked = entity
+                                                                    .read(cx)
+                                                                    .filters
+                                                                    .additional_filter
+                                                                    .as_ref()
+                                                                    .is_some_and(|x| *x == AdditionalFilter::Fishing(area_id.clone()));
+
+                                                                menu = menu.item(PopupMenuItem::new(area).checked(is_checked).on_click({
+                                                                    window.listener_for(&entity, move |this, _, _, cx| {
+                                                                        if is_checked {
+                                                                            this.filters.additional_filter = None;
+                                                                        } else {
+                                                                            this.filters.additional_filter =
+                                                                                Some(AdditionalFilter::Fishing(area_id.clone()));
+                                                                        }
+                                                                        this.apply_filter_and_resort();
+                                                                        cx.notify();
+                                                                    })
+                                                                }))
+                                                            }
+                                                            menu
+                                                        }
+                                                    });
+
+                                                    let is_evolution_checked = entity
+                                                        .read(cx)
+                                                        .filters
+                                                        .additional_filter
+                                                        .as_ref()
+                                                        .is_some_and(|x| *x == AdditionalFilter::Evolution);
+                                                    let is_synthesis_checked = entity
+                                                        .read(cx)
+                                                        .filters
+                                                        .additional_filter
+                                                        .as_ref()
+                                                        .is_some_and(|x| *x == AdditionalFilter::Synthesis);
+                                                    let is_fellow_combination_checked = entity
+                                                        .read(cx)
+                                                        .filters
+                                                        .additional_filter
+                                                        .as_ref()
+                                                        .is_some_and(|x| *x == AdditionalFilter::FellowCombination);
+                                                    menu.item(PopupMenuItem::new(t("filter-evolution")).checked(is_evolution_checked).on_click({
+                                                        window.listener_for(&entity, move |this, _, _, cx| {
+                                                            if is_evolution_checked {
+                                                                this.filters.additional_filter = None;
+                                                            } else {
+                                                                this.filters.additional_filter = Some(AdditionalFilter::Evolution);
+                                                            }
+                                                            this.apply_filter_and_resort();
+                                                            cx.notify();
+                                                        })
+                                                    }))
+                                                    .item(PopupMenuItem::new(t("filter-synthesis")).checked(is_synthesis_checked).on_click({
+                                                        window.listener_for(&entity, move |this, _, _, cx| {
+                                                            if is_synthesis_checked {
+                                                                this.filters.additional_filter = None;
+                                                            } else {
+                                                                this.filters.additional_filter = Some(AdditionalFilter::Synthesis);
+                                                            }
+                                                            this.apply_filter_and_resort();
+                                                            cx.notify();
+                                                        })
+                                                    }))
+                                                    .item(
+                                                        PopupMenuItem::new(t("filter-fellow-combination"))
+                                                            .checked(is_fellow_combination_checked)
+                                                            .on_click({
+                                                                window.listener_for(&entity, move |this, _, _, cx| {
+                                                                    if is_fellow_combination_checked {
+                                                                        this.filters.additional_filter = None;
+                                                                    } else {
+                                                                        this.filters.additional_filter = Some(AdditionalFilter::FellowCombination);
+                                                                    }
+                                                                    this.apply_filter_and_resort();
+                                                                    cx.notify();
+                                                                })
+                                                            }),
+                                                    )
+                                                }
                                             }),
                                     )
-                                }
-                            }),
-                    )
-                    .right(
-                        Button::new("button-export")
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::Upload)
-                            .loading(self.is_exporting)
-                            .cursor_pointer()
-                            .disabled(self.is_reading)
-                            .label(t("button-export"))
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.export_xlsx(window, cx);
-                            })),
-                    )
-                    .right(Separator::vertical())
-                    ,
-            )
-
-                        
+                                    .right(
+                                        Button::new("button-export")
+                                            .ghost()
+                                            .xsmall()
+                                            .icon(IconName::Upload)
+                                            .loading(self.is_exporting)
+                                            .cursor_pointer()
+                                            .disabled(self.is_reading)
+                                            .label(t("button-export"))
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.export_xlsx(window, cx);
+                                            })),
+                                    ),
+                            )
                         },
                     )
                 },
