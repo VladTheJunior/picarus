@@ -1,21 +1,27 @@
 use std::{
-    collections::{BTreeSet, HashMap}, io::{BufRead, Seek, SeekFrom},
+    collections::{BTreeSet, HashMap},
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
 };
 
 use crate::{
     game_data::{
-        DataFormat, ReadExt, TagType, common::Common, items::{ItemTrait, ReadableItem}, locale::Locale, skill::Skill,
-    }, game_data_view::PreviewBuilder,
+        DataFormat, ReadExt, TagType,
+        common::Common,
+        items::{ItemTrait, ReadableItem},
+        locale::Locale,
+        skill::Skill,
+    },
+    game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
-
 
 use gpui_kit::SharedString;
 
 #[derive(Default, Clone)]
 pub struct Monster {
-    pub debug: Vec<u8>,
+    pub debug: Arc<Vec<u8>>,
     pub common: Common,
     pub skills: Vec<Skill>,
     pub skill: Option<SharedString>,
@@ -34,7 +40,7 @@ impl ReadableItem for Monster {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         &mut self.debug
     }
 

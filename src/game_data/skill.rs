@@ -1,13 +1,11 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-
     sync::Arc,
 };
 
 use anyhow::Result;
-use gpui_kit::{ Image, SharedString};
+use gpui_kit::{Image, SharedString};
 use serde::Deserialize;
-
 
 use crate::game_data::{effects::ItemEffect, locale::Locale};
 
@@ -106,11 +104,7 @@ impl Skill {
         self.locale = locales.get(&self.recid).cloned();
     }
 
-    pub fn set_icon(
-        &mut self,
-        icons: &HashMap<String, Arc<Image>>,
-        unknown_icons: &mut BTreeMap<SharedString, BTreeSet<SharedString>>,
-    ) {
+    pub fn set_icon(&mut self, icons: &HashMap<String, Arc<Image>>, unknown_icons: &mut BTreeMap<SharedString, BTreeSet<SharedString>>) {
         let icon_key = self.clt_icon.to_lowercase();
         if icon_key.is_empty() || icon_key == "0" {
             return;

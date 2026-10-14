@@ -1,10 +1,12 @@
-use std::io::{BufRead, Seek, SeekFrom};
+use std::{
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
-use crate::game_data::{ DataFormat, ReadExt, TagType, items::ReadableItem};
+use crate::game_data::{DataFormat, ReadExt, TagType, items::ReadableItem};
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-
 
 #[derive(Default, Debug, Clone)]
 pub struct SynthesisFellows {
@@ -31,7 +33,7 @@ impl ReadableItem for SynthesisFellows {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         unimplemented!()
     }
 

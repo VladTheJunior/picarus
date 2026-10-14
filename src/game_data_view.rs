@@ -128,7 +128,7 @@ pub struct PreviewBuilderOptional {
 
     pub max_ep: Option<f32>,
 
-    pub random_box_group: Option<Weak<Mutex<RandomBoxGroup>>>,
+    pub random_box_group: Option<Weak<RandomBoxGroup>>,
     pub package_contents: Option<IndexMap<usize, PackageItem>>,
 
     pub skills: Vec<Skill>,
@@ -319,7 +319,7 @@ impl<'a> PreviewBuilder<'a> {
         self
     }
 
-    pub fn random_box_group(mut self, value: Option<Weak<Mutex<RandomBoxGroup>>>) -> Self {
+    pub fn random_box_group(mut self, value: Option<Weak<RandomBoxGroup>>) -> Self {
         self.optional.random_box_group = value;
         self
     }
@@ -406,7 +406,7 @@ impl PreviewValues {
 pub struct GameDataView {
     game_data: GameData,
     pub filters: GameDataFilters,
-    pub filtered: IndexMap<SharedString, Arc<Mutex<Item>>>,
+    pub filtered: IndexMap<SharedString, Arc<Item>>,
     is_exporting: bool,
     is_reading: bool,
     explorer_scroll_handle: UniformListScrollHandle,
@@ -506,9 +506,9 @@ impl GameDataView {
     pub fn apply_filter_and_resort(&mut self) {
         self.filtered = self
             .game_data
-            .items
+            .shared
             .iter()
-            .filter(|(_, item)| self.filters.check_item(&item.lock()))
+            .filter(|(_, item)| self.filters.check_item(&item))
             .map(|(id, item)| (id.clone(), Arc::clone(item)))
             .collect();
     }
@@ -517,7 +517,7 @@ impl GameDataView {
         item_type: ItemType,
         preview_builder: PreviewBuilder,
         preview: &PreviewValues,
-        items: &IndexMap<SharedString, Arc<Mutex<Item>>>,
+        items: &IndexMap<SharedString, Arc<Item>>,
         cx: &Context<'_, GameDataView>,
     ) -> Div {
         v_flex()
@@ -971,19 +971,16 @@ impl GameDataView {
                                     move |(index, fellow_combination)| {
                                         let mut content = h_flex().gap_1();
                                         for (_, entry) in &fellow_combination.entries {
-                                            let node = entry.reqpet.as_ref().or(entry.reqfellow.as_ref()).unwrap();
+                                            let id = entry.reqpet.as_ref().or(entry.reqfellow.as_ref()).unwrap();
 
-                                            let item = node.item.as_ref().and_then(|f| f.upgrade());
+                                            let item = items.get(id);
 
                                             let (grade, icon, name) = match item {
-                                                Some(m) => {
-                                                    let g = m.lock(); // single lock, single guard
-                                                    (Some(g.get_grade()), g.get_icon(), g.get_localized_name())
-                                                }
-                                                None => (None, None, node.id.clone()),
+                                                Some(m) => (Some(m.get_grade()), m.get_icon(), m.get_localized_name()),
+                                                None => (None, None, id.clone()),
                                             };
 
-                                            let (is_present, node_id) = (node.item.is_some(), node.id.clone());
+                                            let (is_present, node_id) = (item.is_some(), id.clone());
 
                                             content = content.child(
                                                 h_flex()
@@ -1048,20 +1045,17 @@ impl GameDataView {
                     this.child(div().mt_2().text_color(cx.theme().success).child(t("item-evolution")))
                         .child(v_flex().gap_1().children(preview_builder.common.evolution.iter().enumerate().map({
                             move |(index, evolution)| {
-                                let material = evolution.material_fellow.item.as_ref().and_then(|f| f.upgrade());
+                                let material = items.get(&evolution.material_fellow);
 
                                 let (grade, icon, name) = match material {
-                                    Some(m) => {
-                                        let g = m.lock(); // lock once
-                                        (Some(g.get_grade()), g.get_icon(), g.get_localized_name())
-                                    }
-                                    None => (None, None, evolution.material_fellow.id.clone()),
+                                    Some(m) => (Some(m.get_grade()), m.get_icon(), m.get_localized_name()),
+                                    None => (None, None, evolution.material_fellow.clone()),
                                 };
 
                                 let (is_present, chance, node_id, count) = (
-                                    evolution.material_fellow.item.is_some(),
+                                    material.is_some(),
                                     evolution.successrate,
-                                    evolution.material_fellow.id.clone(),
+                                    evolution.material_fellow.clone(),
                                     evolution.material_count,
                                 );
 
@@ -1136,20 +1130,17 @@ impl GameDataView {
                     this.child(div().mt_2().text_color(cx.theme().success).child(t("item-synthesis")))
                         .child(v_flex().gap_1().children(preview_builder.common.synthesis_parts.iter().enumerate().map({
                             move |(index, synthesis_parts)| {
-                                let item = synthesis_parts.itemid.item.as_ref().and_then(|f| f.upgrade());
+                                let item = items.get(&synthesis_parts.itemid);
 
                                 let (grade, icon, name) = match item {
-                                    Some(m) => {
-                                        let guard = m.lock();
-                                        (Some(guard.get_grade()), guard.get_icon(), guard.get_localized_name())
-                                    }
-                                    None => (None, None, synthesis_parts.itemid.id.clone()),
+                                    Some(m) => (Some(m.get_grade()), m.get_icon(), m.get_localized_name()),
+                                    None => (None, None, synthesis_parts.itemid.clone()),
                                 };
 
                                 let (is_present, chance, node_id, count) = (
-                                    synthesis_parts.itemid.item.is_some(),
+                                    item.is_some(),
                                     synthesis_parts.successrate,
-                                    synthesis_parts.itemid.id.clone(),
+                                    synthesis_parts.itemid.clone(),
                                     synthesis_parts.itemcnt,
                                 );
 
@@ -1305,10 +1296,7 @@ impl GameDataView {
                     .children(item_set.items.iter().map(|item| items.get(item)).map(|item| {
                         v_flex().items_start().when_some(item, {
                             move |this, item| {
-                                let (id, grade, name) = {
-                                    let g = item.lock();
-                                    (g.get_id(), g.get_grade(), g.get_localized_name())
-                                };
+                                let (id, grade, name) = { (item.get_id(), item.get_grade(), item.get_localized_name()) };
 
                                 this.child(
                                     Button::new(format!("button-{}", id))
@@ -1591,16 +1579,32 @@ impl GameDataView {
             .when_some(preview_builder.optional.description_locale, |this, description_locale| {
                 this.child(div().mt_2().child(RichText::parse(&description_locale, cx.theme().yellow)))
             })
-            .when_some(preview_builder.optional.product.and_then(|f| f.upgrade()).map(|f| f.lock().clone()), {
+            .when_some(preview_builder.optional.product.and_then(|f| f.upgrade()), {
                 let id = preview_builder.common.id.clone();
                 move |this, product| {
-                    let item = product.node.item.clone();
+                    let (
+                        product_id,
+                        materials,
+                        item,
+                        chance,
+                        inheritance_enhancement_condition,
+                        inheritance_transcendence_condition,
+                        inheritance_on_craft,
+                    ) = {
+                        let g = product.lock();
+                        (
+                            g.id.clone(),
+                            g.materials.clone(),
+                            items.get(&g.id).clone(),
+                            g.success_probability,
+                            g.inheritance_enhancement_condition,
+                            g.inheritance_transcendence_condition,
+                            g.inheritance_on_craft,
+                        )
+                    };
 
-                    let icon = item.as_ref().and_then(|f| f.upgrade()).and_then(|i| i.lock().get_icon());
-                    let grade = item.as_ref().and_then(|f| f.upgrade()).map(|i| i.lock().get_grade());
-                    let chance = product.success_probability;
-                    let inheritance_enhancement_condition = product.inheritance_enhancement_condition;
-                    let inheritance_transcendence_condition = product.inheritance_transcendence_condition;
+                    let icon = item.as_ref().and_then(|i| i.get_icon());
+                    let grade = item.as_ref().map(|i| i.get_grade());
 
                     this.child(
                         v_flex()
@@ -1633,19 +1637,14 @@ impl GameDataView {
                                         v_flex()
                                             .items_start()
                                             .child(
-                                                Button::new(format!("button-{}", product.node.id))
-                                                    .label(
-                                                        item.as_ref()
-                                                            .and_then(|f| f.upgrade())
-                                                            .map(|i| i.lock().get_localized_name())
-                                                            .unwrap_or_else(|| product.node.id.clone()),
-                                                    )
+                                                Button::new(format!("button-{}", product_id))
+                                                    .label(item.as_ref().map(|i| i.get_localized_name()).unwrap_or_else(|| product_id.clone()))
                                                     .link()
                                                     .small()
                                                     .mb_2()
                                                     .text_color(cx.theme().foreground)
                                                     .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
-                                                    .when(product.inheritance_on_craft, move |this| {
+                                                    .when(inheritance_on_craft, move |this| {
                                                         this.child(
                                                             div()
                                                                 .id("item-product-inheritance")
@@ -1666,8 +1665,8 @@ impl GameDataView {
                                                     .when(item.is_some(), |this| {
                                                         this.on_click(cx.listener({
                                                             move |this, _, window, cx| {
-                                                                this.tabs.insert(product.node.id.clone());
-                                                                this.set_selected_item(Some(product.node.id.clone()), window, cx);
+                                                                this.tabs.insert(product_id.clone());
+                                                                this.set_selected_item(Some(product_id.clone()), window, cx);
                                                                 cx.notify();
                                                             }
                                                         }))
@@ -1681,32 +1680,26 @@ impl GameDataView {
                         v_flex()
                             .gap_1()
                             .child(div().mt_2().text_color(cx.theme().success).child(t("item-product-materials")))
-                            .children(product.materials.into_iter().map({
+                            .children(materials.into_iter().map({
                                 move |(index, material)| {
                                     let use_additional = preview.materials.get(&(index as u8)).cloned().unwrap_or_default();
                                     let (is_present, node_id, count, grade, icon, name) = if !use_additional {
-                                        let item = material.node.item.as_ref().and_then(|f| f.upgrade());
+                                        let item = items.get(&material.id);
                                         let (grade, icon, name) = match item {
-                                            Some(m) => {
-                                                let g = m.lock();
-                                                (Some(g.get_grade()), g.get_icon(), g.get_localized_name())
-                                            }
-                                            None => (None, None, material.node.id.clone()),
+                                            Some(m) => (Some(m.get_grade()), m.get_icon(), m.get_localized_name()),
+                                            None => (None, None, material.id.clone()),
                                         };
-                                        (material.node.item.is_some(), material.node.id.clone(), material.count, grade, icon, name)
+                                        (item.is_some(), material.id.clone(), material.count, grade, icon, name)
                                     } else {
-                                        let node = material.additional_node.as_ref(); // Option<&T>
-                                        let item = node.and_then(|n| n.item.as_ref()).and_then(|f| f.upgrade());
+                                        let item = material.additional_id.as_ref().and_then(|id| items.get(id));
+
                                         let (grade, icon, name) = match item {
-                                            Some(m) => {
-                                                let g = m.lock();
-                                                (Some(g.get_grade()), g.get_icon(), g.get_localized_name())
-                                            }
-                                            None => (None, None, node.map(|n| n.id.clone()).unwrap_or_default()),
+                                            Some(m) => (Some(m.get_grade()), m.get_icon(), m.get_localized_name()),
+                                            None => (None, None, material.additional_id.clone().unwrap_or_default()),
                                         };
                                         (
-                                            node.and_then(|n| n.item.as_ref()).is_some(),
-                                            node.map(|n| n.id.clone()).unwrap_or_default(),
+                                            item.is_some(),
+                                            material.additional_id.clone().unwrap_or_default(),
                                             material.additional_count,
                                             grade,
                                             icon,
@@ -1737,7 +1730,7 @@ impl GameDataView {
                                                             .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
                                                     )
                                                 })
-                                                .when(material.additional_node.is_some(), {
+                                                .when(material.additional_id.as_ref().is_some(), {
                                                     let id = id.clone();
                                                     move |this| {
                                                         this.child(
@@ -1786,92 +1779,82 @@ impl GameDataView {
                     )
                 }
             })
-            .when_some(
-                preview_builder
-                    .optional
-                    .random_box_group
-                    .and_then(|f| f.upgrade())
-                    .map(|f| f.lock().clone()),
-                {
-                    move |this, random_box_group| {
-                        let contents = random_box_group.items;
+            .when_some(preview_builder.optional.random_box_group.and_then(|f| f.upgrade()), {
+                move |this, random_box_group| {
+                    let (contents, probabilities) = (&random_box_group.items, &random_box_group.probabilities);
 
-                        this.child(
-                            v_flex()
-                                .gap_1()
-                                .child(div().mt_2().text_color(cx.theme().success).child(t("item-random-box-contents")))
-                                .children(contents.into_iter().map({
-                                    move |(index, node)| {
-                                        let (is_present, node_id, grade, icon, name) = {
-                                            let item = node.item.as_ref().and_then(|f| f.upgrade());
-                                            let (grade, icon, name) = match item {
-                                                Some(m) => {
-                                                    let g = m.lock(); // one guard
-                                                    (Some(g.get_grade()), g.get_icon(), g.get_localized_name())
-                                                }
-                                                None => (None, None, node.id.clone()),
-                                            };
-                                            (node.item.is_some(), node.id.clone(), grade, icon, name)
+                    this.child(
+                        v_flex()
+                            .gap_1()
+                            .child(div().mt_2().text_color(cx.theme().success).child(t("item-random-box-contents")))
+                            .children(contents.iter().map({
+                                move |(index, id)| {
+                                    let (is_present, node_id, grade, icon, name) = {
+                                        let item = items.get(id);
+                                        let (grade, icon, name) = match item {
+                                            Some(m) => (Some(m.get_grade()), m.get_icon(), m.get_localized_name()),
+                                            None => (None, None, id.clone()),
                                         };
-                                        let probability = random_box_group.probabilities.get(&index);
-                                        h_flex()
-                                            .gap_2()
-                                            .child(
-                                                h_flex()
-                                                    .relative()
-                                                    .id(format!("icon-additional-{index}"))
-                                                    .when_none(&icon, |this| {
-                                                        this.child(
-                                                            div()
-                                                                .size(px(40.))
-                                                                .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color))
-                                                                .border_2(),
-                                                        )
-                                                    })
-                                                    .when_some(icon, |this, icon| {
-                                                        this.child(
-                                                            img(ImageSource::Image(icon))
-                                                                .object_fit(ObjectFit::Cover)
-                                                                .size(px(40.))
-                                                                .border_2()
-                                                                .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
-                                                        )
-                                                    }),
-                                            )
-                                            .child(
-                                                v_flex()
-                                                    .items_start()
-                                                    .child(
-                                                        Button::new(format!("button-{}-{}", index, node_id))
-                                                            .label(name)
-                                                            .link()
-                                                            .small()
-                                                            .mb_2()
-                                                            .text_color(cx.theme().foreground)
-                                                            .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
-                                                            .when(is_present, |this| {
-                                                                this.on_click(cx.listener({
-                                                                    move |this, _, window, cx| {
-                                                                        this.tabs.insert(node_id.clone());
-                                                                        this.set_selected_item(Some(node_id.clone()), window, cx);
-                                                                        cx.notify();
-                                                                    }
-                                                                }))
-                                                            }),
+                                        (item.is_some(), id.clone(), grade, icon, name)
+                                    };
+                                    let probability = probabilities.get(index);
+                                    h_flex()
+                                        .gap_2()
+                                        .child(
+                                            h_flex()
+                                                .relative()
+                                                .id(format!("icon-additional-{index}"))
+                                                .when_none(&icon, |this| {
+                                                    this.child(
+                                                        div()
+                                                            .size(px(40.))
+                                                            .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color))
+                                                            .border_2(),
                                                     )
-                                                    .when_some(probability, |this, probability| {
-                                                        this.child(t_v(
-                                                            "item-random-box-probability-percent",
-                                                            vec![("value", format!("{:.2}", probability))],
-                                                        ))
-                                                    }),
-                                            )
-                                    }
-                                })),
-                        )
-                    }
-                },
-            )
+                                                })
+                                                .when_some(icon, |this, icon| {
+                                                    this.child(
+                                                        img(ImageSource::Image(icon))
+                                                            .object_fit(ObjectFit::Cover)
+                                                            .size(px(40.))
+                                                            .border_2()
+                                                            .when_some(grade.and_then(|g| g.color()), |this, color| this.border_color(color)),
+                                                    )
+                                                }),
+                                        )
+                                        .child(
+                                            v_flex()
+                                                .items_start()
+                                                .child(
+                                                    Button::new(format!("button-{}-{}", index, node_id))
+                                                        .label(name)
+                                                        .link()
+                                                        .small()
+                                                        .mb_2()
+                                                        .text_color(cx.theme().foreground)
+                                                        .when_some(grade.and_then(|g| g.color()), |this, color| this.text_color(color))
+                                                        .when(is_present, |this| {
+                                                            this.on_click(cx.listener({
+                                                                move |this, _, window, cx| {
+                                                                    this.tabs.insert(node_id.clone());
+                                                                    this.set_selected_item(Some(node_id.clone()), window, cx);
+                                                                    cx.notify();
+                                                                }
+                                                            }))
+                                                        }),
+                                                )
+                                                .when_some(probability, |this, probability| {
+                                                    this.child(t_v(
+                                                        "item-random-box-probability-percent",
+                                                        vec![("value", format!("{:.2}", probability))],
+                                                    ))
+                                                }),
+                                        )
+                                }
+                            })),
+                    )
+                }
+            })
             .when_some(preview_builder.optional.package_contents, {
                 move |this, contents| {
                     this.child(
@@ -1881,15 +1864,12 @@ impl GameDataView {
                             .children(contents.into_iter().map({
                                 move |(index, item)| {
                                     let (is_present, count, node_id, grade, icon, name) = {
-                                        let item_arc = item.node.item.as_ref().and_then(|f| f.upgrade());
+                                        let item_arc = items.get(&item.id);
                                         let (grade, icon, name) = match item_arc {
-                                            Some(m) => {
-                                                let g = m.lock(); // single guard
-                                                (Some(g.get_grade()), g.get_icon(), g.get_localized_name())
-                                            }
-                                            None => (None, None, item.node.id.clone()),
+                                            Some(m) => (Some(m.get_grade()), m.get_icon(), m.get_localized_name()),
+                                            None => (None, None, item.id.clone()),
                                         };
-                                        (item.node.item.is_some(), item.count, item.node.id.clone(), grade, icon, name)
+                                        (item_arc.is_some(), item.count, item.id.clone(), grade, icon, name)
                                     };
 
                                     h_flex()
@@ -1985,12 +1965,12 @@ impl GameDataView {
                 )
                 .when(preview.linked_recipes_expanded, |this| {
                     this.children(preview_builder.common.linked_recipes.iter().filter_map(|id| items.get(id)).map(|item| {
-                        let id = item.lock().get_id();
-                        let grade = item.lock().get_grade();
+                        let id = item.get_id();
+                        let grade = item.get_grade();
 
                         v_flex().items_start().child(
                             Button::new(format!("button-recipe-{}", id))
-                                .label(item.lock().get_localized_name())
+                                .label(item.get_localized_name())
                                 .link()
                                 .small()
                                 .mb_2()
@@ -2020,7 +2000,7 @@ impl GameDataView {
             return;
         };
         if let Some(item) = self.filtered.get(selected_item) {
-            cx.write_to_clipboard(ClipboardItem::new_string(item.lock().get_localized_name().to_string()));
+            cx.write_to_clipboard(ClipboardItem::new_string(item.get_localized_name().to_string()));
             window.push_notification((NotificationType::Info, t("message-copy-item-name")), cx);
         }
     }
@@ -2034,10 +2014,10 @@ impl GameDataView {
         if let Some(index) = self.tabs.get_index_of(item) {
             self.tabs_scroll_handle.scroll_to_item(index);
         }
-        if let Some(item) = self.game_data.items.get(item) {
-            self.selected_item = Some(item.lock().get_id());
+        if let Some(item) = self.game_data.shared.get(item) {
+            self.selected_item = Some(item.get_id());
             self.debug_preview.update(cx, |state, cx| {
-                state.set_value(item.lock().get_debug().unwrap_or_default(), window, cx);
+                state.set_value(item.get_debug().unwrap_or_default(), window, cx);
             });
 
             cx.notify();
@@ -2126,7 +2106,7 @@ impl Render for GameDataView {
                                     "game-data-elapsed",
                                     vec![
                                         ("elapsed", format!("{:?}", self.game_data.elapsed)),
-                                        ("items", format!("{}", self.game_data.items.len())),
+                                        ("items", format!("{}", self.game_data.shared.len())),
                                     ],
                                 ))
                                 .text_xs()
@@ -2155,7 +2135,7 @@ impl Render for GameDataView {
                 },
                 |this| {
                     this.when_else(
-                        self.game_data.items.is_empty(),
+                        self.game_data.shared.is_empty(),
                         |this| {
                             this.child(
                                 v_flex()
@@ -2225,14 +2205,10 @@ impl Render for GameDataView {
                                                         return;
                                                     }
 
-                                                    match cx
-                                                        .background_spawn(async move || -> Result<GameData> { GameData::load(game_path) }())
-                                                        .await
-                                                    {
-                                                        Ok(data) => {
+                                                    match cx.background_spawn(async move || -> Result<_> { GameData::load(game_path) }()).await {
+                                                        Ok((data, effects)) => {
                                                             let _ = this.update_in(cx, |this, window, cx| {
                                                                 this.game_data = data;
-                                                                let effects = this.game_data.get_all_effects();
 
                                                                 cx.update_entity(&this.filters.effects_state, |this, cx| {
                                                                     this.set_items(
@@ -2311,9 +2287,9 @@ impl Render for GameDataView {
                                                                 cx.processor(move |this, visible_range: Range<usize>, _, cx| {
                                                                     visible_range
                                                                         .filter_map(|ix| {
-                                                                            this.filtered.iter().nth(ix).map(|(id, item)| {
-                                                                                let icon = item.lock().get_icon();
-                                                                                let grade = item.lock().get_grade();
+                                                                            this.filtered.get_index(ix).map(|(id, item)| {
+                                                                                let icon = item.get_icon();
+                                                                                let grade = item.get_grade();
 
                                                                                 h_flex()
                                                                                     .w_full()
@@ -2362,7 +2338,7 @@ impl Render for GameDataView {
                                                                                             .truncate()
                                                                                             .w_full()
                                                                                             .text_sm()
-                                                                                            .child(item.lock().get_localized_name())
+                                                                                            .child(item.get_localized_name())
                                                                                             .when_some(grade.color(), |this, color| {
                                                                                                 this.text_color(color)
                                                                                             }),
@@ -2403,13 +2379,13 @@ impl Render for GameDataView {
                                                                     let entity = cx.entity();
                                                                     move |mut menu, window, cx| {
                                                                         for item_id in &entity.read(cx).tabs {
-                                                                            let item = entity.read(cx).game_data.items.get(item_id);
+                                                                            let item = entity.read(cx).game_data.shared.get(item_id);
 
                                                                             menu = menu.scrollable(true).max_h(px(300.)).when_some(
                                                                                 item,
                                                                                 |this, item| {
                                                                                     this.item(
-                                                                                        PopupMenuItem::new(item.lock().get_localized_name())
+                                                                                        PopupMenuItem::new(item.get_localized_name())
                                                                                             .checked(
                                                                                                 entity
                                                                                                     .read(cx)
@@ -2441,11 +2417,9 @@ impl Render for GameDataView {
                                                                 }),
                                                         )
                                                         .children(
-                                                            self.tabs.iter().filter_map(|item_id| self.game_data.items.get(item_id)).map(|item| {
-                                                                let (item_id, name, grade_color) = {
-                                                                    let g = item.lock();
-                                                                    (g.get_id(), g.get_localized_name(), g.get_grade().color())
-                                                                };
+                                                            self.tabs.iter().filter_map(|item_id| self.game_data.shared.get(item_id)).map(|item| {
+                                                                let (item_id, name, grade_color) =
+                                                                    { (item.get_id(), item.get_localized_name(), item.get_grade().color()) };
 
                                                                 Tab::new()
                                                                     .child(
@@ -2481,9 +2455,9 @@ impl Render for GameDataView {
                                                     }),
                                             )
                                             .when_some(
-                                                self.selected_item.as_ref().and_then(|selected_item_id| {
-                                                    self.game_data.items.get(selected_item_id).map(|f| f.lock().clone())
-                                                }),
+                                                self.selected_item
+                                                    .as_ref()
+                                                    .and_then(|selected_item_id| self.game_data.shared.get(selected_item_id)),
                                                 |this, selected_item| {
                                                     let grade = selected_item.get_grade();
 
@@ -2502,7 +2476,7 @@ impl Render for GameDataView {
                                                     let transcendence_effect =
                                                         (preview.transcendence != 0).then(|| preview.transcendence as f32 * 0.05);
 
-                                                    let preview_builder = match &selected_item {
+                                                    let preview_builder = match &**selected_item {
                                                         crate::game_data::items::Item::Armor(armor) => {
                                                             let random_effects = self.game_data.get_random_effects(
                                                                 grade,
@@ -2754,7 +2728,7 @@ impl Render for GameDataView {
                                                                                     selected_item.item_type(),
                                                                                     preview_builder,
                                                                                     preview,
-                                                                                    &self.game_data.items,
+                                                                                    &self.game_data.shared,
                                                                                     cx,
                                                                                 ))
                                                                             }),

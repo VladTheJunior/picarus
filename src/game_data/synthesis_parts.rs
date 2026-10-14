@@ -1,17 +1,16 @@
-use std::{ collections::BTreeMap, io::{BufRead, Seek, SeekFrom}, sync::Arc};
-
-use crate::game_data::{
-     DataFormat, ReadExt, TagType, items::{Item, ItemNode, ReadableItem},
+use std::{
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
 };
+
+use crate::game_data::{DataFormat, ReadExt, TagType, items::ReadableItem};
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-use parking_lot::Mutex;
-
 
 #[derive(Default, Clone)]
 pub struct SynthesisParts {
-    pub itemid: ItemNode,
+    pub itemid: SharedString,
     pub itemcnt: u16,
     pub resultid: SharedString,
     pub cost: f32,
@@ -32,7 +31,7 @@ impl ReadableItem for SynthesisParts {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         unimplemented!()
     }
 
@@ -59,7 +58,7 @@ impl ReadableItem for SynthesisParts {
             };
 
             match tag.as_str() {
-                "itemid" => self.itemid.id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
+                "itemid" => self.itemid = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
                 "itemcnt" => self.itemcnt = reader.read_f32_le()? as u16,
                 "resultid" => self.resultid = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
                 "cost" => self.cost = reader.read_f32_le()?,
@@ -71,14 +70,5 @@ impl ReadableItem for SynthesisParts {
         }
 
         Ok(self)
-    }
-}
-
-impl SynthesisParts {
-    pub fn set_parts(&mut self, items: &IndexMap<SharedString, Arc<Mutex<Item>>>, unknown_ids: &mut BTreeMap<SharedString, u32>) {
-        self.itemid.item = items.get(&self.itemid.id).map(|f| Arc::downgrade(f));
-        if self.itemid.item.is_none() {
-            unknown_ids.entry(self.itemid.id.clone()).and_modify(|count| *count += 1).or_insert(1);
-        }
     }
 }

@@ -1,16 +1,13 @@
 use std::{
-
-    collections::{BTreeMap, BTreeSet, HashMap}, io::{BufRead, Seek, SeekFrom}, sync::Arc,
+    collections::{BTreeSet, HashMap},
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
 };
 
-use crate::game_data::{
-    DataFormat, ReadExt, TagType, items::{Item, ItemNode, ReadableItem}, locale::Locale, skill::Skill,
-};
+use crate::game_data::{DataFormat, ReadExt, TagType, items::ReadableItem, locale::Locale, skill::Skill};
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-use parking_lot::Mutex;
-
 
 #[derive(Default, Clone)]
 pub struct FellowCombination {
@@ -28,8 +25,8 @@ pub struct FellowCombination {
 
 #[derive(Clone)]
 pub struct FellowCombinationEntry {
-    pub reqfellow: Option<ItemNode>,
-    pub reqpet: Option<ItemNode>,
+    pub reqfellow: Option<SharedString>,
+    pub reqpet: Option<SharedString>,
     pub fellow: SharedString,
     pub hidden: f32,
 }
@@ -47,7 +44,7 @@ impl ReadableItem for FellowCombination {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         unimplemented!()
     }
 
@@ -169,8 +166,8 @@ impl ReadableItem for FellowCombination {
                 self.entries.insert(
                     i as u8,
                     FellowCombinationEntry {
-                        reqfellow: reqfellow[i].clone().map(|f| ItemNode { id: f, item: None }),
-                        reqpet: reqpet[i].clone().map(|f| ItemNode { id: f, item: None }),
+                        reqfellow: reqfellow[i].clone(),
+                        reqpet: reqpet[i].clone(),
                         fellow: fellow[i].clone(),
                         hidden: hidden[i],
                     },
@@ -182,24 +179,6 @@ impl ReadableItem for FellowCombination {
 }
 
 impl FellowCombination {
-    pub fn set_fellows(&mut self, items: &IndexMap<SharedString, Arc<Mutex<Item>>>, unknown_ids: &mut BTreeMap<SharedString, u32>) {
-        for (_, entry) in self.entries.iter_mut() {
-            if let Some(node) = entry.reqfellow.as_mut() {
-                node.item = items.get(&node.id).map(|f| Arc::downgrade(f));
-                if node.item.is_none() {
-                    unknown_ids.entry(node.id.clone()).and_modify(|count| *count += 1).or_insert(1);
-                }
-            }
-
-            if let Some(node) = entry.reqpet.as_mut() {
-                node.item = items.get(&node.id).map(|f| Arc::downgrade(f));
-                if node.item.is_none() {
-                    unknown_ids.entry(node.id.clone()).and_modify(|count| *count += 1).or_insert(1);
-                }
-            }
-        }
-    }
-
     pub fn set_skills(
         &mut self,
         skills: &HashMap<SharedString, Skill>,

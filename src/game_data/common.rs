@@ -1,15 +1,28 @@
 use std::{
-
-    collections::{BTreeMap, BTreeSet, HashMap}, io::BufRead, sync::Arc,
+    collections::{BTreeMap, BTreeSet, HashMap},
+    io::BufRead,
+    sync::Arc,
 };
 
 use crate::game_data::{
-    DataFormat, ReadExt, TagType, binding::Binding, effects::{EffectKind, ItemEffect}, evolution::Evolution, fellow_combination::FellowCombination, fishing::{Fishing, FishingDrop}, game_class::GameClass, grade::Grade, item_res::ItemRes, item_set::ItemSet, locale::Locale, product::Product, synthesis_fellows::{SynthesisFellow, SynthesisFellows}, synthesis_parts::SynthesisParts,
+    DataFormat, ReadExt, TagType,
+    binding::Binding,
+    effects::{EffectKind, ItemEffect},
+    evolution::Evolution,
+    fellow_combination::FellowCombination,
+    fishing::{Fishing, FishingDrop},
+    game_class::GameClass,
+    grade::Grade,
+    item_res::ItemRes,
+    item_set::ItemSet,
+    locale::Locale,
+    product::Product,
+    synthesis_fellows::{SynthesisFellow, SynthesisFellows},
+    synthesis_parts::SynthesisParts,
 };
 use anyhow::Result;
-use gpui_kit::{ Image, SharedString};
+use gpui_kit::{Image, SharedString};
 use parking_lot::Mutex;
-
 
 #[derive(Default, Clone)]
 pub struct Common {
@@ -108,7 +121,7 @@ impl Common {
             .filter(|f| {
                 f.entries
                     .iter()
-                    .find(|(_, r)| r.reqfellow.as_ref().is_some_and(|f| f.id == self.id) || r.reqpet.as_ref().is_some_and(|f| f.id == self.id))
+                    .find(|(_, r)| r.reqfellow.as_ref().is_some_and(|id| *id == self.id) || r.reqpet.as_ref().is_some_and(|id| *id == self.id))
                     .is_some()
             })
             .cloned()
@@ -136,11 +149,11 @@ impl Common {
             .iter()
             .filter_map(|product| {
                 let p = product.lock();
-                if p.node.id == self.id
+                if p.id == self.id
                     || p.productid == self.id
                     || p.materials
                         .values()
-                        .any(|m| m.node.id == self.id || m.additional_node.as_ref().is_some_and(|f| f.id == self.id))
+                        .any(|m| m.id == self.id || m.additional_id.as_ref().is_some_and(|id| *id == self.id))
                 {
                     p.recipe.clone()
                 } else {
@@ -155,25 +168,20 @@ impl Common {
         res: &HashMap<SharedString, ItemRes>,
         icons: &HashMap<String, Arc<Image>>,
         unknown_icons: &mut BTreeMap<SharedString, BTreeSet<SharedString>>,
-    )  {
+    ) {
         if let Some(icon) = res.get(&self.id).and_then(|f| f.icon.as_ref()) {
             let icon_key = icon.to_lowercase();
 
             if icon_key.is_empty() {
                 return;
             }
-            if let Some(icon) = icons.get(&format!("libs/ui/resources/textures/slot_icons/{}.dds", icon_key)) {
+            if let Some(icon) = icons.get(&icon_key) {
                 self.icon = Some(icon.clone());
                 return;
             } else {
-                unknown_icons
-                    .entry(icon.clone())
-                    .or_insert_with(BTreeSet::new)
-                    .insert(self.id.clone());
+                unknown_icons.entry(icon.clone()).or_insert_with(BTreeSet::new).insert(self.id.clone());
             }
         }
-
-
     }
 
     fn parse_id<R: BufRead + ?Sized>(&mut self, reader: &mut R, format: DataFormat) -> Result<()> {
@@ -216,12 +224,7 @@ impl Common {
         Ok(())
     }
 
-    fn parse_grade<R: BufRead + ?Sized>(
-        &mut self,
-        reader: &mut R,
-        format: DataFormat,
-        tag_type: &TagType,
-    ) -> Result<()> {
+    fn parse_grade<R: BufRead + ?Sized>(&mut self, reader: &mut R, format: DataFormat, tag_type: &TagType) -> Result<()> {
         self.grade = match tag_type {
             TagType::String => Grade::from(reader.read_string(format)?),
             TagType::Float => Grade::from(reader.read_f32_le()? as u8),
@@ -247,13 +250,7 @@ impl Common {
         Ok(())
     }
 
-    pub fn parse<R:BufRead + ?Sized>(
-        &mut self,
-        tag: &str,
-        tag_type: &TagType,
-        reader: &mut R,
-        format: DataFormat,
-    ) -> Result<()> {
+    pub fn parse<R: BufRead + ?Sized>(&mut self, tag: &str, tag_type: &TagType, reader: &mut R, format: DataFormat) -> Result<()> {
         match tag {
             "id" => self.parse_id(reader, format)?,
             "등급" => self.parse_grade(reader, format, tag_type)?,

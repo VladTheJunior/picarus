@@ -1,10 +1,12 @@
-use std::io::{BufRead, Seek, SeekFrom};
+use std::{
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
-use crate::game_data::{ DataFormat, ReadExt, TagType, items::ReadableItem};
+use crate::game_data::{DataFormat, ReadExt, TagType, items::ReadableItem};
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-
 
 #[derive(Debug, Default)]
 pub struct ItemRes {
@@ -25,7 +27,7 @@ impl ReadableItem for ItemRes {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         unimplemented!()
     }
 
@@ -60,8 +62,8 @@ impl ReadableItem for ItemRes {
                     }
                 }
                 "icon" | "iconb" => {
-                    let icon =  reader.read_string(Self::FORMAT)?;
-                    if !icon.is_empty() && icon != "0"{
+                    let icon = reader.read_string(Self::FORMAT)?;
+                    if !icon.is_empty() && icon != "0" {
                         self.icon = Some(icon);
                     }
                 }

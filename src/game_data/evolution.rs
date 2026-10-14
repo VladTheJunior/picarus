@@ -1,19 +1,18 @@
-use std::{ collections::BTreeMap, io::{BufRead, Seek, SeekFrom}, sync::Arc};
-
-use crate::game_data::{
-    DataFormat, ReadExt, TagType, items::{Item, ItemNode, ReadableItem},
+use std::{
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
 };
+
+use crate::game_data::{DataFormat, ReadExt, TagType, items::ReadableItem};
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-use parking_lot::Mutex;
-
 
 #[derive(Default, Clone)]
 pub struct Evolution {
     pub evolvegroup: f32,
     pub cost_grade: f32,
-    pub material_fellow: ItemNode,
+    pub material_fellow: SharedString,
     pub material_pet: SharedString,
     pub resultfellow: SharedString,
     pub fellowicon: SharedString,
@@ -37,7 +36,7 @@ impl ReadableItem for Evolution {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         unimplemented!()
     }
 
@@ -66,7 +65,7 @@ impl ReadableItem for Evolution {
             match tag.as_str() {
                 "evolvegroup" => self.evolvegroup = reader.read_f32_le()?,
                 "cost_grade" => self.cost_grade = reader.read_f32_le()?,
-                "material_fellow" => self.material_fellow.id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
+                "material_fellow" => self.material_fellow = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
                 "material_pet" => self.material_pet = reader.read_string(Self::FORMAT)?,
                 "resultfellow" => self.resultfellow = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
                 "fellowicon" => self.fellowicon = reader.read_string(Self::FORMAT)?,
@@ -95,17 +94,5 @@ impl ReadableItem for Evolution {
         }
 
         Ok(self)
-    }
-}
-
-impl Evolution {
-    pub fn set_fellows(&mut self, items: &IndexMap<SharedString, Arc<Mutex<Item>>>, unknown_ids: &mut BTreeMap<SharedString, u32>) {
-        self.material_fellow.item = items.get(&self.material_fellow.id).map(|f| Arc::downgrade(f));
-        if self.material_fellow.item.is_none() {
-            unknown_ids
-                .entry(self.material_fellow.id.clone())
-                .and_modify(|count| *count += 1)
-                .or_insert(1);
-        }
     }
 }

@@ -1,4 +1,7 @@
-use std::io::{BufRead, Seek, SeekFrom};
+use std::{
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
 use crate::{
     game_data::{
@@ -15,7 +18,7 @@ use gpui_kit::SharedString;
 
 #[derive(Default, Clone)]
 pub struct SkillBook {
-    pub debug: Vec<u8>,
+    pub debug: Arc<Vec<u8>>,
     pub common: Common,
 }
 
@@ -32,7 +35,7 @@ impl ReadableItem for SkillBook {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         &mut self.debug
     }
 

@@ -1,13 +1,19 @@
-use std::{collections::BTreeSet, io::{BufRead, Seek, SeekFrom}};
+use std::{
+    collections::BTreeSet,
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
 use crate::game_data::{
-    DataFormat, ReadExt, TagType, effects::ItemMinMaxEffect, game_class::GameClass, items::{ArmorClassKind, ArmorTypes, ItemSubType, ReadableItem},
+    DataFormat, ReadExt, TagType,
+    effects::ItemMinMaxEffect,
+    game_class::GameClass,
+    items::{ArmorClassKind, ArmorTypes, ItemSubType, ReadableItem},
 };
 use anyhow::Result;
 
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-
 
 #[derive(Default, Clone)]
 pub struct ItemOption {
@@ -44,7 +50,7 @@ impl ReadableItem for ItemOption {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         unimplemented!()
     }
 

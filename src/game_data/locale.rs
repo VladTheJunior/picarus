@@ -1,7 +1,11 @@
-use std::io::{BufRead, Seek, SeekFrom};
+use std::{
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
 use crate::{
-    game_data::{DataFormat, ReadExt, TagType, items::ReadableItem}, language::LanguageController,
+    game_data::{DataFormat, ReadExt, TagType, items::ReadableItem},
+    language::LanguageController,
 };
 use anyhow::Result;
 use gpui_kit::SharedString;
@@ -43,7 +47,7 @@ impl ReadableItem for Locale {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         unimplemented!()
     }
 

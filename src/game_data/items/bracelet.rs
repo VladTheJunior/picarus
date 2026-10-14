@@ -1,19 +1,26 @@
-use std::{collections::HashMap, io::{BufRead, Seek, SeekFrom}};
+use std::{
+    collections::HashMap,
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
 use crate::{
     game_data::{
-        DataFormat, ReadExt, TagType, common::Common, items::{ItemTrait, ReadableItem}, locale::Locale,
-    }, game_data_view::PreviewBuilder,
+        DataFormat, ReadExt, TagType,
+        common::Common,
+        items::{ItemTrait, ReadableItem},
+        locale::Locale,
+    },
+    game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
-
 
 use gpui_kit::SharedString;
 
 #[derive(Default, Clone)]
 pub struct Bracelet {
-    pub debug: Vec<u8>,
+    pub debug: Arc<Vec<u8>>,
     pub description_locale: Option<Locale>,
     pub common: Common,
     pub max_gem_slots: u8,
@@ -32,7 +39,7 @@ impl ReadableItem for Bracelet {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         &mut self.debug
     }
 

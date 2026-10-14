@@ -1,19 +1,25 @@
-use std::io::{BufRead, Seek, SeekFrom};
+use std::{
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
 use crate::{
     game_data::{
-        DataFormat, ReadExt, TagType, common::Common, effects::{EffectKind, ItemMinMaxNoStepEffect, ItemMinMaxStepEffect}, items::{ItemTrait, ReadableItem},
-    }, game_data_view::PreviewBuilder,
+        DataFormat, ReadExt, TagType,
+        common::Common,
+        effects::{EffectKind, ItemMinMaxNoStepEffect, ItemMinMaxStepEffect},
+        items::{ItemTrait, ReadableItem},
+    },
+    game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
-
 
 use gpui_kit::SharedString;
 
 #[derive(Default, Clone)]
 pub struct SealedFellow {
-    pub debug: Vec<u8>,
+    pub debug: Arc<Vec<u8>>,
     pub common: Common,
 
     pub effects: Vec<ItemMinMaxStepEffect>,
@@ -37,7 +43,7 @@ impl ReadableItem for SealedFellow {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         &mut self.debug
     }
 

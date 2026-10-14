@@ -1,28 +1,30 @@
-use std::{collections::BTreeMap, io::{BufRead, Seek, SeekFrom}, sync::Arc};
+use std::{
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
-use crate::game_data::{ DataFormat, Item, ReadExt, TagType, items::{ItemNode, ReadableItem}};
+use crate::game_data::{DataFormat, ReadExt, TagType, items::ReadableItem};
 use anyhow::Result;
 use indexmap::IndexMap;
 
 use parking_lot::Mutex;
-
 
 use gpui_kit::SharedString;
 
 #[derive(Clone)]
 
 pub struct MaterialItem {
-    pub node: ItemNode,
+    pub id: SharedString,
     pub count: u16,
-    pub additional_node: Option<ItemNode>,
+    pub additional_id: Option<SharedString>,
     pub additional_count: u16,
 }
 
 #[derive(Default, Clone)]
 pub struct Product {
     pub recipe: Option<SharedString>,
-    pub debug: Vec<u8>,
-    pub node: ItemNode,
+    pub debug: Arc<Vec<u8>>,
+    pub id: SharedString,
     pub productid: SharedString,
     pub technology_grade: u8,
     pub multiproduct: bool,
@@ -38,7 +40,7 @@ impl ReadableItem for Product {
     type Key = SharedString;
 
     fn key(&self) -> Self::Key {
-        self.node.id.clone()
+        self.id.clone()
     }
 
     type CollectionItem = Arc<Mutex<Self>>;
@@ -46,7 +48,7 @@ impl ReadableItem for Product {
         Arc::new(Mutex::new(item))
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         &mut self.debug
     }
 
@@ -74,10 +76,7 @@ impl ReadableItem for Product {
 
             match tag_idx {
                 0 => {
-                    self.node = ItemNode {
-                        id: SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
-                        item: None,
-                    }
+                    self.id = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase());
                 }
                 1 => self.productid = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
 
@@ -119,38 +118,23 @@ impl ReadableItem for Product {
 }
 
 impl Product {
-    fn parse_material_id<R: BufRead + ?Sized>(
-        &mut self,
-        index: usize,
-        reader: &mut R,
-        format: DataFormat,
-    ) -> Result<()> {
+    fn parse_material_id<R: BufRead + ?Sized>(&mut self, index: usize, reader: &mut R, format: DataFormat) -> Result<()> {
         let id = SharedString::new(reader.read_string(format)?.to_uppercase());
         if id != "*" {
-            self.materials
-                .entry(index)
-                .and_modify(|f| f.node.id = id.clone())
-                .or_insert(MaterialItem {
-                    node: ItemNode { id, item: None },
-                    count: 0,
-                    additional_node: None,
-                    additional_count: 0,
-                });
+            self.materials.entry(index).and_modify(|f| f.id = id.clone()).or_insert(MaterialItem {
+                id,
+                count: 0,
+                additional_id: None,
+                additional_count: 0,
+            });
         }
         Ok(())
     }
 
-    fn parse_material_additional_id<R: BufRead + ?Sized>(
-        &mut self,
-        index: usize,
-        reader: &mut R,
-        format: DataFormat,
-    ) -> Result<()> {
+    fn parse_material_additional_id<R: BufRead + ?Sized>(&mut self, index: usize, reader: &mut R, format: DataFormat) -> Result<()> {
         let id = SharedString::new(reader.read_string(format)?.to_uppercase());
         if id != "*" {
-            self.materials
-                .entry(index)
-                .and_modify(|f| f.additional_node = Some(ItemNode { id, item: None }));
+            self.materials.entry(index).and_modify(|f| f.additional_id = Some(id));
         }
         Ok(())
     }
@@ -162,35 +146,10 @@ impl Product {
         Ok(())
     }
 
-    fn parse_material_additional_count<R: BufRead + ?Sized>(
-        &mut self,
-        index: usize,
-        reader: &mut R,
-    ) -> Result<()> {
+    fn parse_material_additional_count<R: BufRead + ?Sized>(&mut self, index: usize, reader: &mut R) -> Result<()> {
         let count = reader.read_f32_le()? as u16;
 
         self.materials.entry(index).and_modify(|f| f.additional_count = count);
         Ok(())
-    }
-
-    pub fn set_materials(&mut self, items: &IndexMap<SharedString, Arc<Mutex<Item>>>, unknown_ids: &mut BTreeMap<SharedString, u32>) {
-        self.node.item = items.get(&self.node.id).map(|f| Arc::downgrade(f));
-        if self.node.item.is_none() {
-            unknown_ids.entry(self.node.id.clone()).and_modify(|count| *count += 1).or_insert(1);
-        }
-
-        for (_, m) in self.materials.iter_mut() {
-            m.node.item = items.get(&m.node.id).map(|f| Arc::downgrade(f));
-            if m.node.item.is_none() {
-                unknown_ids.entry(m.node.id.clone()).and_modify(|count| *count += 1).or_insert(1);
-            }
-
-            if let Some(node) = m.additional_node.as_mut() {
-                node.item = items.get(&node.id).map(|f| Arc::downgrade(f));
-                if node.item.is_none() {
-                    unknown_ids.entry(node.id.clone()).and_modify(|count| *count += 1).or_insert(1);
-                }
-            }
-        }
     }
 }

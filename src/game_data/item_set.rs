@@ -1,4 +1,8 @@
-use std::{collections::HashMap, io::{BufRead, Seek, SeekFrom}};
+use std::{
+    collections::HashMap,
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
 use crate::game_data::{DataFormat, ReadExt, TagType, effects::ItemEffect, items::ReadableItem, locale::Locale};
 use anyhow::Result;
@@ -59,7 +63,7 @@ impl ReadableItem for ItemSet {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         unimplemented!()
     }
 

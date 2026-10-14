@@ -1,10 +1,13 @@
-use std::{collections::HashMap, io::{BufRead, Seek, SeekFrom}};
+use std::{
+    collections::HashMap,
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
 use crate::game_data::{DataFormat, ReadExt, TagType, grade::Grade, items::ReadableItem, locale::Locale};
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-
 
 #[derive(Clone)]
 pub struct FishingDrop {
@@ -57,7 +60,7 @@ impl ReadableItem for Fishing {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         unimplemented!()
     }
 

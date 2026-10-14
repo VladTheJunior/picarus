@@ -1,27 +1,30 @@
-use std::{ collections::BTreeMap, io::{BufRead, Seek, SeekFrom}, sync::Arc};
+use std::{
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
 use crate::{
     game_data::{
-         DataFormat, Item, ReadExt, TagType, common::Common, items::{ItemNode, ItemTrait, ReadableItem},
-    }, game_data_view::PreviewBuilder,
+        DataFormat, ReadExt, TagType,
+        common::Common,
+        items::{ItemTrait, ReadableItem},
+    },
+    game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
-
-use parking_lot::Mutex;
-
 
 use gpui_kit::SharedString;
 
 #[derive(Default, Clone)]
 pub struct PackageItem {
-    pub node: ItemNode,
+    pub id: SharedString,
     pub count: u16,
 }
 
 #[derive(Default, Clone)]
 pub struct Package {
-    pub debug: Vec<u8>,
+    pub debug: Arc<Vec<u8>>,
     pub common: Common,
 
     pub package_items: IndexMap<usize, PackageItem>,
@@ -40,7 +43,7 @@ impl ReadableItem for Package {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         &mut self.debug
     }
 
@@ -106,21 +109,13 @@ impl ReadableItem for Package {
 }
 
 impl Package {
-    fn parse_package_id<R: BufRead + ?Sized>(
-        &mut self,
-        index: usize,
-        reader: &mut R,
-        format: DataFormat,
-    ) -> Result<()> {
+    fn parse_package_id<R: BufRead + ?Sized>(&mut self, index: usize, reader: &mut R, format: DataFormat) -> Result<()> {
         let id = SharedString::new(reader.read_string(format)?.to_uppercase());
         if id != "*" {
             self.package_items
                 .entry(index)
-                .and_modify(|f| f.node.id = id.clone())
-                .or_insert(PackageItem {
-                    node: ItemNode { id, item: None },
-                    count: 0,
-                });
+                .and_modify(|f| f.id = id.clone())
+                .or_insert(PackageItem { id, count: 0 });
         }
         Ok(())
     }
@@ -130,15 +125,6 @@ impl Package {
 
         self.package_items.entry(index).and_modify(|f| f.count = count);
         Ok(())
-    }
-
-    pub fn set_package_contents(&mut self, items: &IndexMap<SharedString, Arc<Mutex<Item>>>, unknown_ids: &mut BTreeMap<SharedString, u32>) {
-        for (_, content) in &mut self.package_items {
-            content.node.item = items.get(&content.node.id).map(|f| Arc::downgrade(f));
-            if content.node.item.is_none() {
-                unknown_ids.entry(content.node.id.clone()).and_modify(|count| *count += 1).or_insert(1);
-            }
-        }
     }
 }
 

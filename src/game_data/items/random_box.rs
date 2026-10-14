@@ -1,24 +1,27 @@
 use std::{
-
-    collections::HashMap, io::{BufRead, Seek, SeekFrom}, sync::{Arc, Weak},
+    collections::HashMap,
+    io::{BufRead, Seek, SeekFrom},
+    sync::{Arc, Weak},
 };
 
 use crate::{
     game_data::{
-        DataFormat, ReadExt, TagType, common::Common, items::{ItemTrait, ReadableItem}, random_box_group::RandomBoxGroup,
-    }, game_data_view::PreviewBuilder,
+        DataFormat, ReadExt, TagType,
+        common::Common,
+        items::{ItemTrait, ReadableItem},
+        random_box_group::RandomBoxGroup,
+    },
+    game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
-
-use parking_lot::Mutex;
 
 use gpui_kit::SharedString;
 
 #[derive(Default, Clone)]
 pub struct RandomBox {
-    pub debug: Vec<u8>,
-    pub content: Option<Weak<Mutex<RandomBoxGroup>>>,
+    pub debug: Arc<Vec<u8>>,
+    pub content: Option<Weak<RandomBoxGroup>>,
 
     pub common: Common,
     random_item_id: SharedString,
@@ -37,7 +40,7 @@ impl ReadableItem for RandomBox {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         &mut self.debug
     }
 
@@ -76,7 +79,7 @@ impl ReadableItem for RandomBox {
 }
 
 impl RandomBox {
-    pub fn set_random_box_group(&mut self, random_box_groups: &HashMap<SharedString, Arc<Mutex<RandomBoxGroup>>>) {
+    pub fn set_random_box_group(&mut self, random_box_groups: &HashMap<SharedString, Arc<RandomBoxGroup>>) {
         self.content = random_box_groups.get(&self.random_item_id).map(|f| Arc::downgrade(f));
     }
 }

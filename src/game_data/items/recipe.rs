@@ -1,17 +1,23 @@
 use std::{
-    collections::BTreeSet, io::{BufRead, Seek, SeekFrom}, sync::{Arc, Weak},
+    collections::BTreeSet,
+    io::{BufRead, Seek, SeekFrom},
+    sync::{Arc, Weak},
 };
 
 use crate::{
     game_data::{
-        DataFormat, ReadExt, TagType, common::Common, items::{ItemTrait, ReadableItem}, product::Product,
-    }, game_data_view::PreviewBuilder, language::t,
+        DataFormat, ReadExt, TagType,
+        common::Common,
+        items::{ItemTrait, ReadableItem},
+        product::Product,
+    },
+    game_data_view::PreviewBuilder,
+    language::t,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
 use parking_lot::Mutex;
 use serde::Serialize;
-
 
 use gpui_kit::SharedString;
 
@@ -56,7 +62,7 @@ impl RecipeType {
 
 #[derive(Default, Clone)]
 pub struct Recipe {
-    pub debug: Vec<u8>,
+    pub debug: Arc<Vec<u8>>,
     pub product: Option<Weak<Mutex<Product>>>,
     pub common: Common,
 
@@ -77,7 +83,7 @@ impl ReadableItem for Recipe {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         &mut self.debug
     }
 
@@ -124,7 +130,7 @@ impl Recipe {
             .iter()
             .find(|p| {
                 let g = p.lock();
-                g.node.id == self.common.id || g.productid == self.crafted_item_id
+                g.id == self.common.id || g.productid == self.crafted_item_id
             })
             .map(|f| Arc::downgrade(f));
 

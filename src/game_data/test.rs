@@ -1,10 +1,12 @@
-use std::io::{BufRead, Seek, SeekFrom};
+use std::{
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
-use crate::game_data::{ DataFormat, ReadExt, TagType, items::ReadableItem};
+use crate::game_data::{DataFormat, ReadExt, TagType, items::ReadableItem};
 use anyhow::Result;
 use gpui_kit::SharedString;
 use indexmap::IndexMap;
-
 
 #[derive(Default, Clone)]
 pub struct Test {}
@@ -22,7 +24,7 @@ impl ReadableItem for Test {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         unimplemented!()
     }
 

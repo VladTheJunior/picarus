@@ -1,4 +1,8 @@
-use std::{collections::HashMap, io::{BufRead, Seek, SeekFrom}};
+use std::{
+    collections::HashMap,
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
 use crate::{
     game_data::{
@@ -16,7 +20,7 @@ use gpui_kit::SharedString;
 
 #[derive(Default, Clone)]
 pub struct FellowConsume {
-    pub debug: Vec<u8>,
+    pub debug: Arc<Vec<u8>>,
     pub description_locale: Option<Locale>,
     pub common: Common,
 }
@@ -34,7 +38,7 @@ impl ReadableItem for FellowConsume {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         &mut self.debug
     }
 

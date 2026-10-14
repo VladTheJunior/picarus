@@ -57,12 +57,11 @@ use anyhow::Result;
 use enum_dispatch::enum_dispatch;
 use gpui_kit::{Image, SharedString};
 use indexmap::IndexMap;
-use parking_lot::Mutex;
 use rayon::prelude::*;
 use std::{
     collections::{HashMap, HashSet},
-    io::{BufRead, BufReader, Cursor, Read, Seek, SeekFrom},
-    sync::{Arc, Weak},
+    io::{BufRead, Cursor, Read, Seek, SeekFrom},
+    sync::Arc,
 };
 use strum::EnumIter;
 
@@ -282,12 +281,6 @@ pub trait ItemTrait {
     fn build_preview(&self) -> PreviewBuilder<'_>;
 }
 
-#[derive(Default, Clone)]
-pub struct ItemNode {
-    pub id: SharedString,
-    pub item: Option<Weak<Mutex<Item>>>,
-}
-
 #[enum_dispatch(ItemTrait)]
 #[derive(Clone)]
 pub enum Item {
@@ -454,7 +447,7 @@ pub trait ReadableItem: Sized + Default {
 
     fn key(&self) -> Self::Key;
 
-    fn debug_mut(&mut self) -> &mut Vec<u8>;
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>>;
 
     fn read_all<R: std::io::Read + std::io::Seek>(
         gamedatas_zip: &mut ZipArchive<R>,
@@ -464,7 +457,7 @@ pub trait ReadableItem: Sized + Default {
         let mut data = vec![];
         file.read_to_end(&mut data)?;
 
-        let mut reader = BufReader::new(Cursor::new(data.as_slice()));
+        let mut reader = Cursor::new(data.as_slice());
 
         let definitions = read_definitions(&mut reader)?;
         let item_count = read_item_count(&mut reader)?;
@@ -475,7 +468,7 @@ pub trait ReadableItem: Sized + Default {
             .into_par_iter()
             .with_min_len(32)
             .map_init(
-                || BufReader::new(Cursor::new(data.as_slice())),
+                || Cursor::new(data.as_slice()),
                 |reader, idx| {
                     let item = Self::default().read(reader, &offsets, idx, &definitions, global_offset)?;
                     Ok((item.key(), Self::new_collection_item(item)))
@@ -491,7 +484,7 @@ pub trait ReadableItem: Sized + Default {
         let mut data = vec![];
         file.read_to_end(&mut data)?;
 
-        let mut reader = BufReader::new(Cursor::new(data.as_slice()));
+        let mut reader = Cursor::new(data.as_slice());
 
         let definitions = read_definitions(&mut reader)?;
         let item_count = read_item_count(&mut reader)?;
@@ -510,7 +503,7 @@ pub trait ReadableItem: Sized + Default {
             .into_par_iter()
             .with_min_len(32)
             .map_init(
-                || BufReader::new(Cursor::new(data.as_slice())),
+                || Cursor::new(data.as_slice()),
                 |reader, idx| {
                     let item = Self::default().read(reader, &offsets, idx, &definitions, global_offset)?;
                     Ok(Self::new_collection_item(item))
@@ -548,7 +541,7 @@ pub trait ReadableItem: Sized + Default {
                 TagType::Float => debug.insert(key.clone(), DebugValue::Float(reader.read_f32_le()?)),
             };
         }
-        *self.debug_mut() = lz4_flex::block::compress_prepend_size(&serde_json::to_vec_pretty(&debug)?);
+        *self.debug_mut() = Arc::new(lz4_flex::block::compress_prepend_size(&serde_json::to_vec_pretty(&debug)?));
         Ok(())
     }
 

@@ -1,4 +1,7 @@
-use std::io::{BufRead, Seek, SeekFrom};
+use std::{
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
 use crate::game_data::{DataFormat, ReadExt, TagType, items::ReadableItem};
 use anyhow::Result;
@@ -9,8 +12,6 @@ use gpui_kit::SharedString;
 #[derive(Default, Clone)]
 pub struct RandomBoxProbability {
     pub randomboxgroupid: SharedString,
-
-    pub attributes: IndexMap<usize, f32>,
     pub probabilities: IndexMap<usize, f32>,
 }
 
@@ -27,7 +28,7 @@ impl ReadableItem for RandomBoxProbability {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         unimplemented!()
     }
 
@@ -55,12 +56,6 @@ impl ReadableItem for RandomBoxProbability {
             match tag_idx {
                 0 => self.randomboxgroupid = SharedString::new(reader.read_string(Self::FORMAT)?.to_uppercase()),
 
-                1..101 => {
-                    let v = reader.read_f32_le()?;
-                    if v != 0.0 {
-                        self.attributes.insert(tag_idx - 1, v);
-                    }
-                }
                 101..201 => {
                     let v = reader.read_f32_le()?;
                     if v != 0.0 {

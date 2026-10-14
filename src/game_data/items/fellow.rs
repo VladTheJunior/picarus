@@ -1,15 +1,23 @@
 use std::{
-    collections::{BTreeSet, HashMap}, io::{BufRead, Seek, SeekFrom},
+    collections::{BTreeSet, HashMap},
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
 };
 
 use crate::{
     game_data::{
-         DataFormat, ReadExt, TagType, common::Common, effects::EffectKind, items::{ItemTrait, ReadableItem}, locale::Locale, skill::Skill,
-    }, game_data_view::PreviewBuilder, language::t,
+        DataFormat, ReadExt, TagType,
+        common::Common,
+        effects::EffectKind,
+        items::{ItemTrait, ReadableItem},
+        locale::Locale,
+        skill::Skill,
+    },
+    game_data_view::PreviewBuilder,
+    language::t,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
-
 
 use gpui_kit::SharedString;
 use tracing::warn;
@@ -54,7 +62,7 @@ impl FellowType {
 pub struct Fellow {
     pub region_locale: Option<Locale>,
     pub skills: Vec<Skill>,
-    pub debug: Vec<u8>,
+    pub debug: Arc<Vec<u8>>,
     pub common: Common,
     pub region_id: Option<SharedString>,
     pub adventure_points: u16,
@@ -81,7 +89,7 @@ impl ReadableItem for Fellow {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         &mut self.debug
     }
 

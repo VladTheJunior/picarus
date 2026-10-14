@@ -1,4 +1,8 @@
-use std::{collections::HashMap, io::{BufRead, Seek, SeekFrom}};
+use std::{
+    collections::HashMap,
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
+};
 
 use crate::{
     game_data::{
@@ -12,13 +16,11 @@ use crate::{
 use anyhow::Result;
 use indexmap::IndexMap;
 
-
-
 use gpui_kit::SharedString;
 
 #[derive(Default, Clone)]
 pub struct Bag {
-    pub debug: Vec<u8>,
+    pub debug: Arc<Vec<u8>>,
     pub common: Common,
     pub description_locale: Option<Locale>,
 }
@@ -36,7 +38,7 @@ impl ReadableItem for Bag {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         &mut self.debug
     }
 

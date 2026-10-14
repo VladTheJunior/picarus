@@ -1,15 +1,23 @@
 use std::{
-    collections::{BTreeSet, HashMap}, io::{BufRead, Seek, SeekFrom},
+    collections::{BTreeSet, HashMap},
+    io::{BufRead, Seek, SeekFrom},
+    sync::Arc,
 };
 
 use crate::{
     game_data::{
-         DataFormat, ReadExt, TagType, common::Common, effects::EffectKind, items::{ItemTrait, ReadableItem}, locale::Locale, reverse_tempering_rate::ReverseTemperingRate, skill::Skill,
-    }, game_data_view::PreviewBuilder,
+        DataFormat, ReadExt, TagType,
+        common::Common,
+        effects::EffectKind,
+        items::{ItemTrait, ReadableItem},
+        locale::Locale,
+        reverse_tempering_rate::ReverseTemperingRate,
+        skill::Skill,
+    },
+    game_data_view::PreviewBuilder,
 };
 use anyhow::Result;
 use indexmap::IndexMap;
-
 
 use gpui_kit::SharedString;
 
@@ -17,7 +25,7 @@ use gpui_kit::SharedString;
 pub struct Consume {
     pub skills: Vec<Skill>,
     pub reverse_tempering_rates: Option<ReverseTemperingRate>,
-    pub debug: Vec<u8>,
+    pub debug: Arc<Vec<u8>>,
     pub description_locale: Option<Locale>,
     pub common: Common,
     pub skill_effect: Option<SharedString>,
@@ -36,7 +44,7 @@ impl ReadableItem for Consume {
         item
     }
 
-    fn debug_mut(&mut self) -> &mut Vec<u8> {
+    fn debug_mut(&mut self) -> &mut Arc<Vec<u8>> {
         &mut self.debug
     }
 

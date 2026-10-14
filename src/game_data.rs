@@ -39,12 +39,16 @@ use parking_lot::Mutex;
 use rust_xlsxwriter::{DocProperties, Table, TableColumn, workbook::Workbook};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet}, fs::File, io::{BufRead, BufReader, Cursor, Read, Seek}, path::{Path, PathBuf}, sync::Arc, time::Duration,
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    fs::File,
+    io::{BufRead, Cursor, Read, Seek},
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
 };
 use strum::IntoEnumIterator;
-use tokio::{
-    time::Instant,
-};
+use tokio::time::Instant;
 use tracing::{error, warn};
 use zip::ZipArchive;
 
@@ -100,11 +104,12 @@ pub enum DebugValue {
 
 #[derive(Default, Clone)]
 pub struct GameData {
-    pub items: IndexMap<SharedString, Arc<Mutex<Item>>>,
+    items: IndexMap<SharedString, Item>,
+    pub shared: IndexMap<SharedString, Arc<Item>>,
     effects_by_grade: HashMap<Grade, HashMap<u16, ItemOption>>,
     tempering_by_types: HashMap<SharedString, HashMap<u16, Tempering>>,
     quality_by_types: HashMap<SharedString, HashMap<u16, ItemQuality>>,
-    random_box_groups: HashMap<SharedString, Arc<Mutex<RandomBoxGroup>>>,
+    random_box_groups: HashMap<SharedString, Arc<RandomBoxGroup>>,
     products: Vec<Arc<Mutex<Product>>>,
 
     pub elapsed: Duration,
@@ -113,11 +118,9 @@ pub struct GameData {
 }
 
 impl GameData {
-    pub fn get_all_effects(&self) -> BTreeSet<SharedString> {
-        self.items
+    pub fn get_all_effects(effects: &Vec<EffectKind>) -> BTreeSet<SharedString> {
+        effects
             .iter()
-            .flat_map(|(_, item)| item.lock().get_unique_effects())
-            .into_iter()
             .filter_map(|e| match e {
                 EffectKind::Common { id: _, effect } => effect.parsed.as_ref().map(|(key, _)| key.clone()),
                 EffectKind::MinMaxNoStep { id: _, effect } => effect.parsed.as_ref().map(|(key, _, _)| key.clone()),
@@ -126,11 +129,9 @@ impl GameData {
             .collect()
     }
 
-    fn validate_effects(&self) {
-        let unknown_effects = self
-            .items
+    fn validate_effects(effects: &Vec<EffectKind>) {
+        let unknown_effects = effects
             .iter()
-            .flat_map(|(_, item)| item.lock().get_unique_effects())
             .filter_map(|e| match e {
                 EffectKind::Common { id, effect } => {
                     if effect.parsed.is_none() {
@@ -194,14 +195,13 @@ impl GameData {
             .and_then(|tempering| tempering.get(&item_level))
     }
 
-    pub fn load(game_path: String) -> Result<Self> {
+    pub fn load(game_path: String) -> Result<(Self, BTreeSet<SharedString>)> {
         let start = Instant::now();
         let gamedatas = File::open(Path::new(&game_path).join(r"Game\gamedatas.npk"))?;
         let gamelibs = File::open(Path::new(&game_path).join(r"Game\gamelibs.npk"))?;
         let mut gamedatas_zip = ZipArchive::new(gamedatas)?;
         let mut gamelibs_zip = ZipArchive::new(gamelibs)?;
 
-        let mut unknown_ids: BTreeMap<SharedString, u32> = BTreeMap::new();
         let mut unknown_icons: BTreeMap<SharedString, BTreeSet<SharedString>> = BTreeMap::new();
         let mut unknown_skills: BTreeSet<SharedString> = BTreeSet::new();
 
@@ -219,17 +219,13 @@ impl GameData {
         data.load_product_materials(&mut gamedatas_zip)?; // always first
         data.load_recipes(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?; // always right after products
 
-        let random_box_probabilities = Self::load_random_box_probabilities(&mut gamedatas_zip)?;
         data.load_random_box_groups(&mut gamedatas_zip)?;
         data.load_boosts(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?;
         let item_set_fellow = Self::load_itemset_fellow(&mut gamedatas_zip, &locales)?;
 
-        data.load_consumes(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons, &skills, &mut unknown_skills)
-            ?;
-        data.load_fellow_consumes(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)
-            ?;
-        data.load_fellow_equips(&mut gamedatas_zip, &locales, &item_set_fellow, &icons, &mut unknown_icons)
-            ?;
+        data.load_consumes(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons, &skills, &mut unknown_skills)?;
+        data.load_fellow_consumes(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?;
+        data.load_fellow_equips(&mut gamedatas_zip, &locales, &item_set_fellow, &icons, &mut unknown_icons)?;
         data.load_elluns(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?;
         data.load_exchanges(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?;
         data.load_quests(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?;
@@ -238,69 +234,38 @@ impl GameData {
         data.load_bags(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?;
         data.load_fellow_books(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?;
         data.load_skill_books(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?;
-        data.load_fellows(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons, &skills, &mut unknown_skills)
-            ?;
-        data.load_monsters(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons, &skills, &mut unknown_skills)
-            ?;
+        data.load_fellows(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons, &skills, &mut unknown_skills)?;
+        data.load_monsters(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons, &skills, &mut unknown_skills)?;
         data.load_events(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?;
         data.load_relics(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?;
         data.load_sealed_fellows(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?;
-        data.load_weapons(&mut gamedatas_zip, &locales, &item_set, &icons, &mut unknown_icons)
-            ?;
-        data.load_accessory(&mut gamedatas_zip, &locales, &item_set, &icons, &mut unknown_icons)
-            ?;
-        data.load_secondary_weapons(&mut gamedatas_zip, &locales, &item_set, &icons, &mut unknown_icons)
-            ?;
-        data.load_armors(&mut gamedatas_zip, &locales, &item_set, &icons, &mut unknown_icons)
-            ?;
-        data.load_styles(&mut gamedatas_zip, &locales, &item_set, &icons, &mut unknown_icons)
-            ?;
-        data.load_fellow_styles(&mut gamedatas_zip, &locales, &item_set, &icons, &mut unknown_icons)
-            ?;
+        data.load_weapons(&mut gamedatas_zip, &locales, &item_set, &icons, &mut unknown_icons)?;
+        data.load_accessory(&mut gamedatas_zip, &locales, &item_set, &icons, &mut unknown_icons)?;
+        data.load_secondary_weapons(&mut gamedatas_zip, &locales, &item_set, &icons, &mut unknown_icons)?;
+        data.load_armors(&mut gamedatas_zip, &locales, &item_set, &icons, &mut unknown_icons)?;
+        data.load_styles(&mut gamedatas_zip, &locales, &item_set, &icons, &mut unknown_icons)?;
+        data.load_fellow_styles(&mut gamedatas_zip, &locales, &item_set, &icons, &mut unknown_icons)?;
         data.load_materials(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?;
 
         data.load_temperings(
-            data.items.iter().filter_map(|(_, item)| item.lock().get_full_type()).collect(),
+            data.items.iter().filter_map(|(_, item)| item.get_full_type()).collect(),
             &mut gamedatas_zip,
-        )
-        ?;
+        )?;
         data.load_options(&mut gamedatas_zip)?;
 
-        data.load_qualites(
-            data.items.iter().filter_map(|(_, item)| item.lock().get_type()).collect(),
-            &mut gamedatas_zip,
-        )
-        ?;
+        data.load_qualites(data.items.iter().filter_map(|(_, item)| item.get_type()).collect(), &mut gamedatas_zip)?;
         data.load_random_boxes(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?;
         data.load_packages(&mut gamedatas_zip, &locales, &icons, &mut unknown_icons)?;
-        let evolution = data.load_evolutuion(&mut gamedatas_zip, &mut unknown_ids)?; // always last
-        let synthesis_parts = data.load_synthesis_parts(&mut gamedatas_zip, &mut unknown_ids)?; // always last
-        let fellow_combinations = data
-            .load_fellow_combination(&mut gamedatas_zip, &locales, &mut unknown_ids, &skills, &mut unknown_skills)
-            ?; // always last
+        let evolution = data.load_evolutuion(&mut gamedatas_zip)?; // always last
+        let synthesis_parts = data.load_synthesis_parts(&mut gamedatas_zip)?; // always last
+        let fellow_combinations = data.load_fellow_combination(&mut gamedatas_zip, &locales, &skills, &mut unknown_skills)?; // always last
         let synthesis_fellows = data.load_synthesis_fellows(&mut gamedatas_zip)?;
-        for (_, item) in data.items.iter() {
-            let mut guard = item.lock();
-
-            if let Item::Package(package) = &mut *guard {
-                package.set_package_contents(&data.items, &mut unknown_ids);
-            }
-            guard.set_fishing_drop(&data.fishing);
-            guard.set_evolution(&evolution);
-            guard.set_synthesis_parts(&synthesis_parts);
-            guard.set_synthesis_fellows(&synthesis_fellows);
-            guard.set_fellow_combinations(&fellow_combinations);
-        }
-        for item in &data.products {
-            item.lock().set_materials(&data.items, &mut unknown_ids);
-        }
-
-        for (_, item) in &data.random_box_groups {
-            item.lock().set_items(&data.items, &random_box_probabilities, &mut unknown_ids);
-        }
-
-        if !unknown_ids.is_empty() {
-            warn!(unknown_ids_len = unknown_ids.len(), unknown_ids = ?unknown_ids);
+        for (_, item) in data.items.iter_mut() {
+            item.set_fishing_drop(&data.fishing);
+            item.set_evolution(&evolution);
+            item.set_synthesis_parts(&synthesis_parts);
+            item.set_synthesis_fellows(&synthesis_fellows);
+            item.set_fellow_combinations(&fellow_combinations);
         }
 
         if !unknown_icons.is_empty() {
@@ -310,15 +275,15 @@ impl GameData {
         if !unknown_skills.is_empty() {
             warn!(unknown_skills_len = unknown_skills.len(), unknown_skills = ?unknown_skills);
         }
-        data.validate_effects();
+        let effects = data.items.iter().flat_map(|(_, item)| item.get_unique_effects()).collect();
+        //Self::validate_effects(&effects);
+        let effects = Self::get_all_effects(&effects);
+        data.shared = data.items.drain(..).map(|(k, v)| (k, Arc::new(v))).collect();
         data.elapsed = start.elapsed();
-        Ok(data)
+        Ok((data, effects))
     }
 
-    fn load_locales<R: std::io::Read + std::io::Seek>(
-        gamedatas_zip: &mut ZipArchive<R>,
-        locale_path: &str,
-    ) -> Result<HashMap<SharedString, Locale>> {
+    fn load_locales<R: std::io::Read + std::io::Seek>(gamedatas_zip: &mut ZipArchive<R>, locale_path: &str) -> Result<HashMap<SharedString, Locale>> {
         Locale::read_all(gamedatas_zip, locale_path)
     }
 
@@ -363,7 +328,14 @@ impl GameData {
             let parsed: HashMap<String, Arc<Image>> = raw
                 .into_par_iter()
                 .filter_map(|(path, bytes)| match dds_to_jpeg(bytes) {
-                    Ok(icon) => Some((path.to_lowercase(), icon)),
+                    Ok(icon) => Some((
+                        Path::new(&path)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .map(str::to_lowercase)
+                            .unwrap_or_default(),
+                        icon,
+                    )),
                     Err(e) => {
                         error!(?e, ?path, "Failed to convert icon");
                         None
@@ -424,10 +396,7 @@ impl GameData {
         Ok(skills)
     }
 
-    fn load_itemset<R: Read + std::io::Seek>(
-        gamedatas_zip: &mut ZipArchive<R>,
-        locales: &HashMap<SharedString, Locale>,
-    ) -> Result<Vec<ItemSet>> {
+    fn load_itemset<R: Read + std::io::Seek>(gamedatas_zip: &mut ZipArchive<R>, locales: &HashMap<SharedString, Locale>) -> Result<Vec<ItemSet>> {
         let mut items = ItemSet::read_all_vec(gamedatas_zip, r"gamedata\adatabin\itemset_setcharacter.bin")?;
         for item in items.iter_mut() {
             item.set_locale(&locales);
@@ -436,11 +405,7 @@ impl GameData {
         Ok(items)
     }
 
-    fn load_fishing<R: Read + std::io::Seek>(
-        &mut self,
-        gamedatas_zip: &mut ZipArchive<R>,
-        locales: &HashMap<SharedString, Locale>,
-    ) -> Result<()> {
+    fn load_fishing<R: Read + std::io::Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>, locales: &HashMap<SharedString, Locale>) -> Result<()> {
         let mut items = Fishing::read_all_vec(gamedatas_zip, r"gamedata\adatabin\fishing_timegroup.bin")?;
         for item in items.iter_mut() {
             item.set_map_locale(locales);
@@ -453,39 +418,26 @@ impl GameData {
         &mut self,
         gamedatas_zip: &mut ZipArchive<R>,
         locales: &HashMap<SharedString, Locale>,
-        unknown_ids: &mut BTreeMap<SharedString, u32>,
+
         skills: &HashMap<SharedString, Skill>,
         unknown_skills: &mut BTreeSet<SharedString>,
     ) -> Result<Vec<FellowCombination>> {
         let mut items = FellowCombination::read_all_vec(gamedatas_zip, r"gamedata\adatabin\fellowfarm_fellowcombination.bin")?;
         for item in items.iter_mut() {
-            item.set_fellows(&self.items, unknown_ids);
+            //item.set_fellows(&self.items, unknown_ids);
             item.set_skills(skills, locales, unknown_skills)?;
         }
         Ok(items)
     }
 
-    fn load_evolutuion<R: Read + std::io::Seek>(
-        &mut self,
-        gamedatas_zip: &mut ZipArchive<R>,
-        unknown_ids: &mut BTreeMap<SharedString, u32>,
-    ) -> Result<Vec<Evolution>> {
-        let mut items = Evolution::read_all_vec(gamedatas_zip, r"gamedata\adatabin\fellowcompose_evolvegroup.bin")?;
-        for item in items.iter_mut() {
-            item.set_fellows(&self.items, unknown_ids);
-        }
+    fn load_evolutuion<R: Read + std::io::Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<Vec<Evolution>> {
+        let items = Evolution::read_all_vec(gamedatas_zip, r"gamedata\adatabin\fellowcompose_evolvegroup.bin")?;
         Ok(items)
     }
 
-    fn load_synthesis_parts<R: Read + std::io::Seek>(
-        &mut self,
-        gamedatas_zip: &mut ZipArchive<R>,
-        unknown_ids: &mut BTreeMap<SharedString, u32>,
-    ) -> Result<Vec<SynthesisParts>> {
-        let mut items = SynthesisParts::read_all_vec(gamedatas_zip, r"gamedata\adatabin\fellowcompose_hopecompose.bin")?;
-        for item in items.iter_mut() {
-            item.set_parts(&self.items, unknown_ids);
-        }
+    fn load_synthesis_parts<R: Read + std::io::Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<Vec<SynthesisParts>> {
+        let items = SynthesisParts::read_all_vec(gamedatas_zip, r"gamedata\adatabin\fellowcompose_hopecompose.bin")?;
+
         Ok(items)
     }
 
@@ -499,13 +451,15 @@ impl GameData {
         Ok(())
     }
 
-    fn load_random_box_probabilities<R: Read + Seek>(gamedatas_zip: &mut ZipArchive<R>) -> Result<HashMap<SharedString, RandomBoxProbability>> {
-        RandomBoxProbability::read_all(gamedatas_zip, r"gamedata\adatabin\randomboxtable_randomboxprobability.bin")
-    }
-
     fn load_random_box_groups<R: Read + Seek>(&mut self, gamedatas_zip: &mut ZipArchive<R>) -> Result<()> {
-        self.random_box_groups = RandomBoxGroup::read_all(gamedatas_zip, r"gamedata\adatabin\randomboxtable_randomboxgroup.bin")?;
-
+        let random_box_probabilities = RandomBoxProbability::read_all(gamedatas_zip, r"gamedata\adatabin\randomboxtable_randomboxprobability.bin")?;
+        let random_box_groups = RandomBoxGroup::read_all(gamedatas_zip, r"gamedata\adatabin\randomboxtable_randomboxgroup.bin")?;
+        let mut items = HashMap::new();
+        for (id, mut item) in random_box_groups.into_iter() {
+            item.set_probabilities(&random_box_probabilities);
+            items.insert(id, Arc::new(item));
+        }
+        self.random_box_groups = items;
         Ok(())
     }
 
@@ -540,7 +494,7 @@ impl GameData {
             item.set_skill_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
             item.common.set_item_set(item_set);
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Armor(item))));
+            self.items.insert(item.key(), Item::Armor(item));
         }
 
         Ok(())
@@ -565,7 +519,7 @@ impl GameData {
             item.set_skill_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
             item.common.set_item_set(item_set);
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Weapon(item))));
+            self.items.insert(item.key(), Item::Weapon(item));
         }
 
         Ok(())
@@ -590,7 +544,7 @@ impl GameData {
             item.set_skill_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
             item.common.set_item_set(item_set);
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Accessory(item))));
+            self.items.insert(item.key(), Item::Accessory(item));
         }
 
         Ok(())
@@ -615,7 +569,7 @@ impl GameData {
             item.set_skill_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
             item.common.set_item_set(item_set);
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Style(item))));
+            self.items.insert(item.key(), Item::Style(item));
         }
 
         Ok(())
@@ -639,7 +593,7 @@ impl GameData {
             item.common.set_linked_recipes(&self.products);
             item.common.set_icon(&res, icons, unknown_icons);
             item.common.set_item_set(item_set);
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::FellowStyle(item))));
+            self.items.insert(item.key(), Item::FellowStyle(item));
         }
 
         Ok(())
@@ -664,7 +618,7 @@ impl GameData {
             item.set_skill_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
             item.common.set_item_set(item_set);
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::SecondaryWeapon(item))));
+            self.items.insert(item.key(), Item::SecondaryWeapon(item));
         }
 
         Ok(())
@@ -688,7 +642,7 @@ impl GameData {
             item.common.set_linked_recipes(&self.products);
             item.common.set_icon(&res, icons, unknown_icons);
             item.common.set_item_set(item_set);
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::FellowEquip(item))));
+            self.items.insert(item.key(), Item::FellowEquip(item));
         }
 
         Ok(())
@@ -712,7 +666,7 @@ impl GameData {
 
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Package(item))));
+            self.items.insert(item.key(), Item::Package(item));
         }
 
         Ok(())
@@ -736,7 +690,7 @@ impl GameData {
             item.set_random_box_group(&self.random_box_groups);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::RandomBox(item))));
+            self.items.insert(item.key(), Item::RandomBox(item));
         }
 
         Ok(())
@@ -760,7 +714,7 @@ impl GameData {
             item.set_description_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Boost(item))));
+            self.items.insert(item.key(), Item::Boost(item));
         }
 
         Ok(())
@@ -786,7 +740,7 @@ impl GameData {
             item.common.set_icon(&res, icons, unknown_icons);
             item.set_skills(skills, locales, unknown_skills)?;
             item.set_region_locale(&locales);
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Fellow(item))));
+            self.items.insert(item.key(), Item::Fellow(item));
         }
 
         Ok(())
@@ -810,7 +764,7 @@ impl GameData {
             item.set_description_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Material(item))));
+            self.items.insert(item.key(), Item::Material(item));
         }
 
         Ok(())
@@ -834,7 +788,7 @@ impl GameData {
             item.set_description_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::FellowConsume(item))));
+            self.items.insert(item.key(), Item::FellowConsume(item));
         }
 
         Ok(())
@@ -852,8 +806,7 @@ impl GameData {
         unknown_skills: &mut BTreeSet<SharedString>,
     ) -> Result<()> {
         let res = Self::load_itemres(gamedatas_zip, r"gamedata\adatabin\itemres_consume.bin")?;
-        let titles: HashMap<SharedString, AchievementTitle> =
-            AchievementTitle::read_all(gamedatas_zip, r"gamedata\adatabin\achievement_title.bin")?;
+        let titles: HashMap<SharedString, AchievementTitle> = AchievementTitle::read_all(gamedatas_zip, r"gamedata\adatabin\achievement_title.bin")?;
         let reverse_rates: HashMap<SharedString, ReverseTemperingRate> =
             ReverseTemperingRate::read_all(gamedatas_zip, r"gamedata\adatabin\itemreinforceratetable_reversereinforcerate.bin")?;
 
@@ -871,7 +824,7 @@ impl GameData {
                 item.reverse_tempering_rates = Some(rate.clone());
             }
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Consume(item))));
+            self.items.insert(item.key(), Item::Consume(item));
         }
 
         Ok(())
@@ -895,7 +848,7 @@ impl GameData {
             item.set_description_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::FellowBook(item))));
+            self.items.insert(item.key(), Item::FellowBook(item));
         }
 
         Ok(())
@@ -919,7 +872,7 @@ impl GameData {
             item.set_description_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Event(item))));
+            self.items.insert(item.key(), Item::Event(item));
         }
 
         Ok(())
@@ -943,7 +896,7 @@ impl GameData {
             item.set_description_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Elluns(item))));
+            self.items.insert(item.key(), Item::Elluns(item));
         }
 
         Ok(())
@@ -967,7 +920,7 @@ impl GameData {
             item.set_description_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Bag(item))));
+            self.items.insert(item.key(), Item::Bag(item));
         }
 
         Ok(())
@@ -991,7 +944,7 @@ impl GameData {
             item.set_description_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Exchange(item))));
+            self.items.insert(item.key(), Item::Exchange(item));
         }
 
         Ok(())
@@ -1014,7 +967,7 @@ impl GameData {
             item.common.set_linked_recipes(&self.products);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Relic(item))));
+            self.items.insert(item.key(), Item::Relic(item));
         }
 
         Ok(())
@@ -1038,7 +991,7 @@ impl GameData {
             item.set_description_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Bracelet(item))));
+            self.items.insert(item.key(), Item::Bracelet(item));
         }
 
         Ok(())
@@ -1062,7 +1015,7 @@ impl GameData {
             item.set_description_locale(&locales);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Quest(item))));
+            self.items.insert(item.key(), Item::Quest(item));
         }
 
         Ok(())
@@ -1085,7 +1038,7 @@ impl GameData {
             item.common.set_linked_recipes(&self.products);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::SealedFellow(item))));
+            self.items.insert(item.key(), Item::SealedFellow(item));
         }
 
         Ok(())
@@ -1108,7 +1061,7 @@ impl GameData {
             item.common.set_linked_recipes(&self.products);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Gem(item))));
+            self.items.insert(item.key(), Item::Gem(item));
         }
 
         Ok(())
@@ -1131,7 +1084,7 @@ impl GameData {
             item.common.set_linked_recipes(&self.products);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::SkillBook(item))));
+            self.items.insert(item.key(), Item::SkillBook(item));
         }
 
         Ok(())
@@ -1157,7 +1110,7 @@ impl GameData {
             item.common.set_linked_recipes(&self.products);
             item.common.set_icon(&res, icons, unknown_icons);
             item.set_skills(skills, locales, unknown_skills)?;
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Monster(item))));
+            self.items.insert(item.key(), Item::Monster(item));
         }
 
         Ok(())
@@ -1180,7 +1133,7 @@ impl GameData {
             item.set_product(&self.products);
             item.common.set_icon(&res, icons, unknown_icons);
 
-            self.items.insert(item.key(), Arc::new(Mutex::new(Item::Recipe(item))));
+            self.items.insert(item.key(), Item::Recipe(item));
         }
 
         Ok(())
@@ -1198,9 +1151,7 @@ impl GameData {
                     "at_01" => r"gamedata\adatabin\itemreinforcetable_ar_01.bin".to_string(),
                     _ => format!(r"gamedata\adatabin\itemreinforcetable_{}.bin", item_type),
                 },
-            )
-            
-            {
+            ) {
                 Ok(tempering) => {
                     tempering_by_types.insert(SharedString::new(item_type), tempering);
                 }
@@ -1227,9 +1178,7 @@ impl GameData {
                     Grade::Mythical => r"gamedata\adatabin\itemoption_basicstatancientmythic.bin",
                     Grade::Unknown(_) => unimplemented!(),
                 },
-            )
-            
-            {
+            ) {
                 Ok(effects) => {
                     by_grade.insert(grade, effects);
                 }
@@ -1266,10 +1215,10 @@ impl GameData {
 
         let mut items_data: Vec<(ItemType, Vec<Vec<u8>>)> = Vec::new();
 
-        for (item_type, group) in self.items.iter().into_group_map_by(|(_, value)| value.lock().item_type()) {
+        for (item_type, group) in self.shared.iter().into_group_map_by(|(_, value)| value.item_type()) {
             let mut debug_data = Vec::with_capacity(group.len());
             for (_, item) in group {
-                debug_data.push(item.lock().debug().to_vec());
+                debug_data.push(item.debug().to_vec());
             }
             items_data.push((item_type, debug_data));
         }
@@ -1309,10 +1258,13 @@ impl GameData {
 
 fn dds_to_jpeg(bytes: Vec<u8>) -> Result<std::sync::Arc<Image>> {
     let cursor = Cursor::new(bytes);
-    let img = ImageReader::new(cursor)
-        .with_guessed_format()?
-        .decode()?
-        .resize(128, 128, FilterType::Triangle);
+    let img = ImageReader::new(cursor).with_guessed_format()?.decode()?;
+
+    let img = if img.width() > 128 || img.height() > 128 {
+        img.resize(128, 128, FilterType::Triangle)
+    } else {
+        img
+    };
 
     let mut data = Vec::new();
     img.write_to(&mut Cursor::new(&mut data), image::ImageFormat::Jpeg)?;
@@ -1321,8 +1273,7 @@ fn dds_to_jpeg(bytes: Vec<u8>) -> Result<std::sync::Arc<Image>> {
 }
 
 pub trait ReadExt: BufRead {
-
-   fn read_u8(&mut self) -> Result<u8> {
+    fn read_u8(&mut self) -> Result<u8> {
         let mut b = [0u8; 1];
         self.read_exact(&mut b)?;
         Ok(b[0])
@@ -1340,15 +1291,13 @@ pub trait ReadExt: BufRead {
         Ok(f32::from_le_bytes(b))
     }
 
-        fn read_u32_le(&mut self) -> Result<u32> {
+    fn read_u32_le(&mut self) -> Result<u32> {
         let mut b = [0u8; 4];
         self.read_exact(&mut b)?;
         Ok(u32::from_le_bytes(b))
     }
 
-    fn read_string(&mut self, format: DataFormat) -> Result<SharedString>
- 
-    {
+    fn read_string(&mut self, format: DataFormat) -> Result<SharedString> {
         match format {
             DataFormat::String => read_c_string(self),
             DataFormat::WideString => read_wide_c_string(self),
@@ -1359,38 +1308,44 @@ pub trait ReadExt: BufRead {
 // Blanket impl: anything that is `Read` gets these methods.
 impl<R: BufRead + ?Sized> ReadExt for R {}
 
+thread_local! {
+    static SCRATCH_U8: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(256));
+    static SCRATCH_U16: RefCell<Vec<u16>> = RefCell::new(Vec::with_capacity(256));
+}
+
 fn read_c_string<R: BufRead + ?Sized>(reader: &mut R) -> Result<SharedString> {
-    let mut buffer = Vec::with_capacity(256);
+    SCRATCH_U8.with(|scratch| -> Result<SharedString> {
+        let mut buffer = scratch.borrow_mut();
+        buffer.clear();
 
-    // 0 is the null terminator byte ('\0')
-    reader.read_until(0, &mut buffer)?;
+        reader.read_until(0, &mut buffer)?;
 
-    // Optional: Remove the trailing null byte if you don't want it in your vector
-    if buffer.last() == Some(&0) {
-        buffer.pop();
-    }
-    let (value, _, _) = EUC_KR.decode(&buffer);
-    Ok(SharedString::new(value))
+        if buffer.last() == Some(&0) {
+            buffer.pop();
+        }
+        let (value, _, _) = EUC_KR.decode(&buffer);
+        Ok(SharedString::new(value))
+    })
 }
 
 fn read_wide_c_string<R: BufRead + ?Sized>(reader: &mut R) -> Result<SharedString> {
-    let mut byte_buffer = Vec::with_capacity(256);
+    SCRATCH_U16.with(|scratch| -> Result<SharedString> {
+        let mut byte_buffer = scratch.borrow_mut();
+        byte_buffer.clear();
 
-    let mut null_terminated = false;
-    while !null_terminated {
-        let byte = reader.read_u16_le()?;
-
-        if byte == 0 {
-            null_terminated = true;
-        } else {
+        loop {
+            let byte = reader.read_u16_le()?;
+            if byte == 0 {
+                break;
+            }
             byte_buffer.push(byte);
         }
-    }
 
-    Ok(SharedString::from(String::from_utf16_lossy(&byte_buffer)))
+        Ok(SharedString::from(String::from_utf16_lossy(&byte_buffer)))
+    })
 }
 
-fn read_definitions(reader: &mut BufReader<Cursor<&[u8]>>) -> Result<IndexMap<SharedString, TagType>> {
+fn read_definitions<R: BufRead + ?Sized>(reader: &mut R) -> Result<IndexMap<SharedString, TagType>> {
     let tag_count = reader.read_u16_le()? as usize;
 
     let mut definitions = IndexMap::with_capacity(tag_count);
@@ -1411,12 +1366,12 @@ fn read_definitions(reader: &mut BufReader<Cursor<&[u8]>>) -> Result<IndexMap<Sh
     Ok(definitions)
 }
 
-fn read_item_count(reader: &mut BufReader<Cursor<&[u8]>>) -> Result<usize> {
+fn read_item_count<R: BufRead + ?Sized>(reader: &mut R) -> Result<usize> {
     let item_count = reader.read_u16_le()? as usize;
     Ok(item_count)
 }
 
-fn read_offsets(reader: &mut BufReader<Cursor<&[u8]>>, item_count: usize, tag_count: usize) -> Result<Vec<u32>> {
+fn read_offsets<R: BufRead + ?Sized>(reader: &mut R, item_count: usize, tag_count: usize) -> Result<Vec<u32>> {
     let mut offsets = Vec::with_capacity(item_count * tag_count + 1);
     for _ in 0..=item_count * tag_count {
         let len = reader.read_u32_le()?;
