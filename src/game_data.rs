@@ -39,16 +39,9 @@ use parking_lot::Mutex;
 use rust_xlsxwriter::{DocProperties, Table, TableColumn, workbook::Workbook};
 use serde::{Deserialize, Serialize};
 use std::{
-    cell::RefCell,
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    fs::File,
-    io::{BufRead, Cursor, Read, Seek},
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
+    cell::RefCell, collections::{BTreeMap, BTreeSet, HashMap, HashSet}, fs::File, io::{BufRead, Cursor, Read, Seek}, path::{Path, PathBuf}, sync::Arc, time::{Duration, Instant},
 };
 use strum::IntoEnumIterator;
-use tokio::time::Instant;
 use tracing::{error, warn};
 use zip::ZipArchive;
 
@@ -1208,14 +1201,14 @@ impl GameData {
         Ok(())
     }
 
-    pub fn export_xlsx(&self, path: PathBuf) -> Result<()> {
+    pub fn export_xlsx(data: &IndexMap<SharedString, Arc<Item>>, path: PathBuf) -> Result<()> {
         let mut workbook = Workbook::new();
         let properties = DocProperties::new().set_author("picarus");
         workbook.set_properties(&properties);
 
         let mut items_data: Vec<(ItemType, Vec<Vec<u8>>)> = Vec::new();
 
-        for (item_type, group) in self.shared.iter().into_group_map_by(|(_, value)| value.item_type()) {
+        for (item_type, group) in data.iter().into_group_map_by(|(_, value)| value.item_type()) {
             let mut debug_data = Vec::with_capacity(group.len());
             for (_, item) in group {
                 debug_data.push(item.debug().to_vec());

@@ -50,7 +50,10 @@ impl LanguageController {
     }
 
     fn value(&self, id: &str, args: Option<&FluentArgs>) -> Option<SharedString> {
-        let bundle = &self.bundles[&Self::get_current_language()];
+        let bundle = self
+            .bundles
+            .get(&Self::get_current_language())
+            .unwrap_or_else(|| &self.bundles[&Language::English]);
 
         let msg = bundle.get_message(id)?;
         let mut errors = vec![];

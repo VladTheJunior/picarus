@@ -370,3 +370,10 @@ item-effect-physical-poison-addiction = Отравление парализую�
 success-chance = Шанс успеха
 
 usage-period = Срок { $value }
+
+export-filtered = Только отфильтрованные
+
+new-version-detected-title = Доступно обновление (v{ $current } → v{ $new })
+new-version-detected-description = Доступна новая версия приложения. Обновитесь прямо сейчас, чтобы воспользоваться новейшими функциями и улучшениями
+later-button = Позже
+update-now-button = Обновить сейчас

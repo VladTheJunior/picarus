@@ -435,6 +435,7 @@ impl Item {
         id.to_lowercase().contains(&input)
             || locale.is_some_and(|l| l.rus.to_lowercase().contains(&input))
             || locale.is_some_and(|l| l.eng.to_lowercase().contains(&input))
+            || locale.is_some_and(|l| l.ger.to_lowercase().contains(&input))
     }
 }
 

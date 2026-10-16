@@ -16,6 +16,7 @@ pub struct Locale {
     pub key: SharedString,
     pub eng: SharedString,
     pub rus: SharedString,
+    pub ger: SharedString,
 }
 
 impl Locale {
@@ -24,6 +25,7 @@ impl Locale {
 
         let s = match language {
             crate::settings::Language::English => self.eng.clone(),
+            crate::settings::Language::German => self.ger.clone(),
             crate::settings::Language::Russian => self.rus.clone(),
         };
         if s.is_empty() {
@@ -81,6 +83,7 @@ impl ReadableItem for Locale {
                 }
                 "eng" => self.eng = reader.read_string(Self::FORMAT)?,
                 "rus" => self.rus = reader.read_string(Self::FORMAT)?,
+                "jpn" => self.ger = reader.read_string(Self::FORMAT)?,
                 _ => {}
             }
         }

@@ -32,8 +32,8 @@ fn main() {
     // This is used for avoid tokio spawn hangs in the main thread.
     //
     // https://github.com/huacnlee/gpui-component/pull/100
-    let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
-    let _guard = rt.enter();
+    //let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+    //let _guard = rt.enter();
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug,html5ever=off"));
 
@@ -101,8 +101,6 @@ fn main() {
                 .detach();
 
                 cx.new(|cx| GameDataView::new(window, cx))
-
-                // cx.new(|_| HelloWorld)
             },
         )
         .expect("Failed to open window");

@@ -360,3 +360,11 @@ item-effect-physical-poison-addiction = Physical Poison Addiction
 success-chance = Success Chance
 
 usage-period = Usage Period { $value }
+
+export-filtered = Only Filtered
+
+
+new-version-detected-title = Update Available (v{ $current } → v{ $new })
+new-version-detected-description = A newer version of the app is available. Update now to enjoy the latest features and improvements
+later-button = Later
+update-now-button = Update Now

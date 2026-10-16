@@ -1,5 +1,7 @@
 use gpui_kit::Div;
 use gpui_kit::assets::IconName;
+use gpui_kit::base::Placement;
+use gpui_kit::component::button::DropdownButton;
 use gpui_kit::component::{
     ActiveTheme, Disableable, Icon, IndexPath, Sizable, StyledExt, TitleBar, WindowExt,
     button::{Button, ButtonCustomVariant, ButtonVariants},
@@ -31,10 +33,12 @@ use indexmap::{IndexMap, IndexSet};
 use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
+use semver::Version;
 use serde::Deserialize;
+use serde_json::Value;
 use strum::IntoEnumIterator;
 
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 use std::{
     collections::{BTreeSet, HashMap},
     ops::Range,
@@ -420,8 +424,52 @@ pub struct GameDataView {
     selected_item: Option<SharedString>,
 }
 
+
 impl GameDataView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        cx.spawn_in(window, async move |_, cx| {
+            let version = cx
+                .background_spawn(async || -> Result<Version> {
+                    ureq::get("https://api.github.com/repos/VladTheJunior/picarus/releases/latest")
+                        .call()?
+                        .body_mut()
+                        .read_json::<Value>()?                   
+                        .get("tag_name")
+                        .and_then(|f| f.as_str())
+                        .map(|s| s.trim_start_matches('v'))
+                        .map(Version::parse)
+                        .transpose()?
+                        .ok_or_else(|| anyhow::anyhow!("tag no found"))
+                }())
+                .await;
+            if let Ok(version) = version
+            && let Ok(current) = Version::parse(env!("CARGO_PKG_VERSION"))
+                && current.cmp_precedence(&version).is_lt()
+            {
+                let _ = cx.update(move |window, cx| {
+                    window.open_dialog(cx, move |this, _, _| {
+                        this.overlay_closable(false).title(t_v("new-version-detected-title", vec![("current", current.to_string()), ("new", version.to_string())]))
+                            .child(t("new-version-detected-description"))
+                            .footer(
+                                h_flex()
+                                    .justify_end()
+                                    .gap_3()
+                                    .child(
+                                        Button::new("update-now")
+                                            .primary()
+                                            .label(t("update-now-button"))
+                                            .on_click(|_, _, cx| cx.open_url("https://github.com/VladTheJunior/picarus")),
+                                    )
+                                    .child(Button::new("later").label(t("later-button")).on_click(|_, window, cx| {
+                                        window.close_dialog(cx);
+                                    })),
+                            )
+                    });
+                });
+            }
+        })
+        .detach();
+
         Self {
             game_data: GameData::default(),
             tabs: IndexSet::new(),
@@ -444,7 +492,7 @@ impl GameDataView {
         }
     }
 
-    pub fn export_xlsx(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn export_xlsx(&mut self, window: &mut Window, cx: &mut Context<Self>, is_filtered: bool) {
         self.is_exporting = true;
         cx.notify();
         if let Ok(path) = cx.app_path() {
@@ -455,9 +503,16 @@ impl GameDataView {
                     if path.extension().is_none_or(|f| f != "xlsx") {
                         path.set_extension("xlsx");
                     }
-                    let game_data = this.read_with(cx, |this, _| this.game_data.clone()).unwrap();
+                    let items = if is_filtered {
+                        this.read_with(cx, |this, _| this.filtered.clone()).unwrap()
+                    } else {
+                        this.read_with(cx, |this, _| this.game_data.shared.clone()).unwrap()
+                    };
+
                     let p = path.clone();
-                    let export_result = cx.background_spawn(async move || -> Result<()> { game_data.export_xlsx(p) }()).await;
+                    let export_result = cx
+                        .background_spawn(async move || -> Result<()> { GameData::export_xlsx(&items, p) }())
+                        .await;
 
                     let _ = cx.update({
                         move |window, cx| {
@@ -2080,7 +2135,7 @@ impl Render for GameDataView {
         let focus_handle = self.focus_handle(cx);
         let language = LanguageController::get_current_language();
         let game_path = self.game_path.clone();
-
+        let is_exporting = self.is_exporting;
         v_flex()
             .size_full()
             .child(
@@ -2133,6 +2188,10 @@ impl Render for GameDataView {
                                             LanguageController::switch(crate::settings::Language::Russian);
                                         }
                                         crate::settings::Language::Russian => {
+                                            Settings::update_global(cx, |this, _| this.language = crate::settings::Language::German);
+                                            LanguageController::switch(crate::settings::Language::German);
+                                        }
+                                        crate::settings::Language::German => {
                                             Settings::update_global(cx, |this, _| this.language = crate::settings::Language::English);
                                             LanguageController::switch(crate::settings::Language::English);
                                         }
@@ -3019,17 +3078,31 @@ impl Render for GameDataView {
                                             }),
                                     )
                                     .right(
-                                        Button::new("button-export")
-                                            .ghost()
-                                            .xsmall()
-                                            .icon(IconName::Upload)
-                                            .loading(self.is_exporting)
-                                            .cursor_pointer()
+                                        DropdownButton::new("dropdown")
                                             .disabled(self.is_reading)
-                                            .label(t("button-export"))
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.export_xlsx(window, cx);
-                                            })),
+                                            .button(
+                                                Button::new("button-export")
+                                                    .ghost()
+                                                    .xsmall()
+                                                    .icon(IconName::Upload)
+                                                    .cursor_pointer()
+                                                    .loading(is_exporting)
+                                                    .label(t("button-export"))
+                                                    .on_click(cx.listener(|this, _, window, cx| {
+                                                        this.export_xlsx(window, cx, false);
+                                                    })),
+                                            )
+                                            .dropdown_menu({
+                                                let entity = cx.entity();
+                                                move |menu, window, _| {
+                                                    menu.item(PopupMenuItem::new(t("export-filtered")).on_click(window.listener_for(
+                                                        &entity,
+                                                        |this, _, window, cx| {
+                                                            this.export_xlsx(window, cx, true);
+                                                        },
+                                                    )))
+                                                }
+                                            }),
                                     ),
                             )
                         },

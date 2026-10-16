@@ -14,6 +14,7 @@ pub enum Language {
     #[default]
     English,
     Russian,
+    German,
 }
 
 impl From<Language> for usize {
@@ -27,6 +28,7 @@ impl From<String> for Language {
         match value.as_str() {
             "en-US" => Self::English,
             "ru-RU" => Self::Russian,
+            "de-DE" => Self::German,
             _ => Self::default(),
         }
     }
@@ -37,6 +39,7 @@ impl EnumNameExt for Language {
         match self {
             Language::English => "English".into(),
             Language::Russian => "Русский".into(),
+            Language::German => "Deutsch".into(),
         }
     }
 }

@@ -71,10 +71,6 @@ version = "=0.17.0"
 version = "=0.9.6"
 features = ["macros"]
 
-[dependencies.tokio]
-version = "=1.53.3"
-features = ["macros", "rt-multi-thread", "fs", "time"]
-
 [dependencies.anyhow]
 version = "=1.0.104"
 
@@ -103,6 +99,13 @@ version = "=2.14.2"
 
 [dependencies.regex]
 version = "=1.13.1"
+
+[dependencies.semver]
+version = "=1.0.28"
+
+[dependencies.ureq]
+version = "=3.4.2"
+features = ["json"]
 
 [build-dependencies]
 winresource = "=0.1.34"
