@@ -118,6 +118,9 @@ lto = true
 codegen-units = 1
 panic = "abort"
 
+[patch.crates-io]
+zip = { git = "https://github.com/zip-rs/zip2", tag = "v8.3.0" }
+
 
 [profile.dev]
 opt-level = 0
